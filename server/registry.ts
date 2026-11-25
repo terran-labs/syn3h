@@ -24,7 +24,13 @@ export const REFRESH_MS = 2 * 60_000
 
 export const PRESENCE_REFRESH_MS = 30_000
 export const PRESENCE_TTL_MS = 90_000
-export interface RegistryEntry { players: number; at: number; recipeId?: RecipeId | null }
+export interface RegistryEntry {
+  players: number
+  at: number
+  recipeId?: RecipeId | null
+  /** Places held for dropped players (game.rejoin): they occupy seats but are not playing. */
+  held?: number
+}
 
 export interface Totals {
   /** Rooms with at least one connected player. */
@@ -39,15 +45,44 @@ export class RoomRegistry {
 
   constructor(saved?: Record<string, RegistryEntry>) {
     for (const [room, e] of Object.entries(saved ?? {})) {
-      if (e && Number.isInteger(e.players) && e.players > 0 && Number.isFinite(e.at)) this.entries.set(room, { players: e.players, at: e.at, recipeId: cleanRecipeId(e.recipeId) })
+      if (e && Number.isInteger(e.players) && e.players >= 0 && Number.isFinite(e.at) && e.players + cleanHeld(e.held) > 0) {
+        this.entries.set(room, { players: e.players, at: e.at, recipeId: cleanRecipeId(e.recipeId), ...(cleanHeld(e.held) ? { held: cleanHeld(e.held) } : {}) })
+      }
     }
   }
 
-  /** A room says how many players are connected. Zero forgets the room. */
-  report(room: string, players: number, now: number, recipeId?: unknown): void {
+  /**
+   * A room says how many players are connected, and how many places it holds for dropped
+   * players. Nobody either way forgets the room. A room held only for absent players is kept
+   * for seat assignment (assign) but counts as nobody playing in totals and presence.
+   */
+  report(room: string, players: number, now: number, recipeId?: unknown, held?: unknown): void {
     if (typeof room !== 'string' || !room || room.length > 128) return
-    if (!Number.isInteger(players) || players <= 0) this.entries.delete(room)
-    else this.entries.set(room, { players: Math.min(players, 1000), at: now, recipeId: cleanRecipeId(recipeId) })
+    const h = cleanHeld(held)
+    if (!Number.isInteger(players) || players < 0 || players + h <= 0) {
+      this.entries.delete(room)
+      this.seats?.reported(room, Infinity, 0)
+    } else {
+      const before = this.entries.get(room)
+      const next: RegistryEntry = { players: Math.min(players, 1000), at: now, recipeId: cleanRecipeId(recipeId), ...(h ? { held: h } : {}) }
+      this.entries.set(room, next)
+      this.seats?.reported(room, before ? before.players + (before.held ?? 0) : 0, next.players + h)
+    }
+  }
+
+  /** Seat assignment for public rooms (see PublicSeats); created on first use. */
+  private seats: PublicSeats | null = null
+
+  /** Pick the public room a new arrival should join: see PublicSeats.assign. */
+  assign(request: AssignRequest, now: number): string {
+    this.seats ??= new PublicSeats()
+    return this.seats.assign(request, now, (room) => this.fresh(room, now))
+  }
+
+  /** A room's entry if it reported recently enough to trust for seating, else null. */
+  private fresh(room: string, now: number): RegistryEntry | null {
+    const e = this.entries.get(room)
+    return e && now - e.at < ASSIGN_TTL_MS && e.at <= now ? e : null
   }
 
   totals(now: number): Totals {
@@ -58,6 +93,7 @@ export class RoomRegistry {
         this.entries.delete(room)
         continue
       }
+      if (e.players <= 0) continue // Only held places: nobody is playing there.
       rooms++
       players += e.players
     }
@@ -69,7 +105,7 @@ export class RoomRegistry {
     this.totals(now) // Prune only after the longer status TTL.
     const groups = new Map<RecipeId | null, PresenceSnapshot['byRecipe'][number]>()
     for (const e of this.entries.values()) {
-      if (now - e.at >= PRESENCE_TTL_MS || e.at > now) continue
+      if (now - e.at >= PRESENCE_TTL_MS || e.at > now || e.players <= 0) continue
       const id = cleanRecipeId(e.recipeId)
       const g = groups.get(id) ?? { recipeId: id, rooms: 0, players: 0, oldestReportAt: e.at }
       g.rooms++; g.players += e.players; g.oldestReportAt = Math.min(g.oldestReportAt, e.at)
@@ -82,5 +118,115 @@ export class RoomRegistry {
   /** For storage, so the counts survive the registry object being evicted. */
   save(): Record<string, RegistryEntry> {
     return Object.fromEntries(this.entries)
+  }
+}
+
+function cleanHeld(raw: unknown): number {
+  return Number.isInteger(raw) && (raw as number) > 0 ? Math.min(raw as number, 1000) : 0
+}
+
+/**
+ * Public room overflow ("lobby", then "lobby-2", "lobby-3" ...). When the public room is full,
+ * the next new arrival is sent to the lowest numbered public room with a free seat, so they
+ * meet real people instead of being refused. Off unless the Worker asks (server/worker.ts,
+ * PUBLIC_OVERFLOW and the runtime flag); with it off every public arrival goes to "lobby".
+ *
+ * The registry is one object and handles one request at a time, so it can hand out seats
+ * without two arrivals taking the last one: each assignment reserves a seat for RESERVE_MS,
+ * until the room's own report shows the arrival (a rise in its count uses up reservations,
+ * oldest first). A room's occupancy is its reported players and held places plus live
+ * reservations. Counts older than ASSIGN_TTL_MS are not trusted and read as an empty room:
+ * a room reset by a deploy never reports its players leaving.
+ *
+ * The room itself still enforces its cap (MAX_ROOM_PLAYERS, server/room.ts), so a wrong count
+ * here costs a refusal (4001), never a seventeenth player. A client told "full" retries once
+ * naming the room (AssignRequest.full), which marks it full here until it reports again.
+ *
+ * Planet balancing is meant to build on this: a later caller may add a recipe to the request
+ * and a per-planet cap, filtering candidates in `assign` (the base name and cap already come
+ * from the request). Nothing here knows about planets today.
+ */
+export const PUBLIC_BASE = 'lobby'
+/** Public rooms per base: lobby plus lobby-2 ... lobby-64, about 1,000 players. */
+export const MAX_PUBLIC_ROOMS = 64
+/** A seat handed out is held for its arrival this long, ms. */
+export const RESERVE_MS = 10_000
+/** Counts older than this are not trusted for seating, ms (rooms with traffic refresh every 30 s). */
+export const ASSIGN_TTL_MS = PRESENCE_TTL_MS
+
+export interface AssignRequest {
+  /** The room this tab was assigned before (a reconnect, a reload): kept if it has a seat. */
+  prefer?: string | null
+  /** A room that just refused this tab as full: skipped, and treated as full until it reports. */
+  full?: string | null
+  /** Seats per room (the room's own cap). */
+  cap: number
+  /** Family of public rooms, default PUBLIC_BASE. */
+  base?: string
+}
+
+/** The public room names of a base, in fill order. */
+export function publicRooms(base = PUBLIC_BASE): string[] {
+  return Array.from({ length: MAX_PUBLIC_ROOMS }, (_, i) => (i === 0 ? base : `${base}-${i + 1}`))
+}
+
+/** True for a name assign could have handed out for `base`. */
+export function isPublicRoom(name: unknown, base = PUBLIC_BASE): name is string {
+  if (typeof name !== 'string') return false
+  if (name === base) return true
+  const m = name.startsWith(`${base}-`) ? /^([2-9]|[1-9][0-9])$/.exec(name.slice(base.length + 1)) : null
+  return !!m && Number(m[1]) <= MAX_PUBLIC_ROOMS
+}
+
+class PublicSeats {
+  /** Room to the times (ms) of its live reservations, oldest first. */
+  private readonly reserved = new Map<string, number[]>()
+  /** Rooms a client reported full, until their next report. */
+  private readonly refused = new Set<string>()
+
+  /** A room reported: a rise in occupancy is arrivals turning up, using up their reservations. */
+  reported(room: string, before: number, after: number): void {
+    this.refused.delete(room)
+    const r = this.reserved.get(room)
+    if (!r) return
+    if (after === 0) { this.reserved.delete(room); return }
+    if (after > before) r.splice(0, after - before)
+    if (!r.length) this.reserved.delete(room)
+  }
+
+  assign(request: AssignRequest, now: number, entry: (room: string) => RegistryEntry | null): string {
+    const base = request.base ?? PUBLIC_BASE
+    const cap = request.cap
+    const live = (room: string): number => {
+      const r = this.reserved.get(room)
+      if (!r) return 0
+      while (r.length && now - r[0] >= RESERVE_MS) r.shift()
+      if (!r.length) this.reserved.delete(room)
+      return r?.length ?? 0
+    }
+    const occupied = (room: string): number => {
+      const e = entry(room)
+      return (e ? e.players + (e.held ?? 0) : 0) + live(room)
+    }
+    const take = (room: string): string => {
+      const r = this.reserved.get(room) ?? []
+      r.push(now)
+      this.reserved.set(room, r)
+      return room
+    }
+    const full = isPublicRoom(request.full, base) ? request.full : null
+    if (full) this.refused.add(full)
+    const prefer = isPublicRoom(request.prefer, base) && request.prefer !== full ? request.prefer : null
+    if (prefer) {
+      // Coming back: a free seat, or a held place that may be this player's own (the room
+      // checks the secret; if it is someone else's, the room refuses and the client retries).
+      if (!this.refused.has(prefer) && occupied(prefer) < cap) return take(prefer)
+      if (!this.refused.has(prefer) && (entry(prefer)?.held ?? 0) > 0) return prefer
+    }
+    for (const room of publicRooms(base)) {
+      if (!this.refused.has(room) && occupied(room) < cap) return take(room)
+    }
+    // Every public room is full: today's behaviour, the room refuses and the client copes.
+    return base
   }
 }

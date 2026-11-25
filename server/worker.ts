@@ -6,8 +6,8 @@
  *
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
-import type { PlayerInfo } from '../shared/protocol'
-import { RoomRegistry, type RegistryEntry } from './registry'
+import { MAX_ROOM_PLAYERS, type PlayerInfo } from '../shared/protocol'
+import { type AssignRequest, isPublicRoom, PUBLIC_BASE, RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
@@ -69,6 +69,15 @@ interface Env {
   ASSETS: Fetcher
   /** Frozen versions in R2 (v/<version>/<path>); absent in local dev and tests that omit it. */
   FROZEN?: FrozenBucket
+  /**
+   * Public room overflow, deploy-time master switch (wrangler.toml [vars]). Anything but
+   * "runtime" means the assignment code never runs: every public arrival goes to "lobby" as
+   * before, and the registry is not asked. With "runtime", the registry's runtime flag decides
+   * (POST /overflow), and that flag is off until someone sets it.
+   */
+  PUBLIC_OVERFLOW?: string
+  /** Bearer secret for POST /overflow (wrangler secret put OVERFLOW_TOKEN). Unset: no switch. */
+  OVERFLOW_TOKEN?: string
 }
 
 interface Attachment {
@@ -90,8 +99,21 @@ export default {
         return new Response('expected a websocket', { status: 426 })
       }
       const name = roomName(url.searchParams.get('room'))
+      // Public room overflow: only clients that ask (assign=1) and only with the master switch
+      // at "runtime" (then the runtime flag decides). Frozen clients never ask, so they keep
+      // today's behaviour exactly. Assigned "lobby": the request goes on untouched.
+      if (name === PUBLIC_BASE && url.searchParams.get('assign') === '1' && env.PUBLIC_OVERFLOW === 'runtime') {
+        const seat = await assignPublic(env, url.searchParams.get('prefer'), url.searchParams.get('full'))
+        if (seat !== name) {
+          const to = new URL(req.url)
+          to.searchParams.set('room', seat)
+          return env.ROOMS.get(env.ROOMS.idFromName(seat)).fetch(new Request(to.href, req))
+        }
+      }
       return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(req)
     }
+    // The overflow runtime switch: GET reads it, POST {"on": boolean} sets it. Bearer only.
+    if (url.pathname === '/overflow') return overflowSwitch(req, env)
     // How many people are playing, in total: counts only. Read before a release.
     if (url.pathname === '/status' || url.pathname === '/presence') {
       if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
@@ -107,6 +129,76 @@ export default {
     if (url.pathname === PRESENT_TEST) return serveVersioned(req, url, { ...env, ASSETS: htmlAsset(env.ASSETS) })
     return serveVersioned(req, url, env)
   },
+}
+
+/** How long a public arrival waits for the registry before going to "lobby" as before, ms. */
+export const ASSIGN_TIMEOUT_MS = 1000
+/**
+ * After the registry says overflow is off, this isolate sends public arrivals to "lobby"
+ * without asking again for this long, ms: with the runtime flag off, almost no join waits on
+ * the registry. Turning the flag on therefore reaches every isolate within this time.
+ */
+export const OFF_CACHE_MS = 15_000
+let offUntil = 0
+/** Tests run many deployments in one isolate. */
+export function forgetOverflowCache(): void { offUntil = 0 }
+
+/**
+ * The public room this arrival should join (server/registry.ts PublicSeats), or "lobby" when
+ * the registry says overflow is off, answers nonsense, fails or takes over ASSIGN_TIMEOUT_MS.
+ */
+async function assignPublic(env: Env, prefer: string | null, full: string | null): Promise<string> {
+  if (Date.now() < offUntil) return PUBLIC_BASE
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    const body: AssignRequest = { prefer, full, cap: MAX_ROOM_PLAYERS }
+    const asked = env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID))
+      .fetch(new Request('https://registry/assign', { method: 'POST', body: JSON.stringify(body) }))
+      .then(async (r) => {
+        if (r.headers.get('x-overflow') === 'off') offUntil = Date.now() + OFF_CACHE_MS
+        return r.ok ? r.text() : PUBLIC_BASE
+      })
+    const late = new Promise<string>((resolve) => { timer = setTimeout(() => resolve(PUBLIC_BASE), ASSIGN_TIMEOUT_MS) })
+    const seat = await Promise.race([asked, late])
+    return isPublicRoom(seat) ? seat : PUBLIC_BASE
+  } catch (error) {
+    logError('error', error, { where: 'assign' })
+    return PUBLIC_BASE
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Constant time string comparison, so the switch's secret cannot be guessed by timing. */
+function sameSecret(a: string, b: string): boolean {
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b)
+  let diff = x.length ^ y.length
+  for (let i = 0; i < Math.max(x.length, y.length); i++) diff |= (x[i] ?? 0) ^ (y[i] ?? 0)
+  return diff === 0
+}
+
+/**
+ * The overflow runtime switch, for turning overflow on or off without a deploy (a deploy
+ * resets occupied rooms). Needs PUBLIC_OVERFLOW "runtime" to have any effect, and the
+ * OVERFLOW_TOKEN secret as a bearer token; without a secret configured it does not exist.
+ */
+async function overflowSwitch(req: Request, env: Env): Promise<Response> {
+  const secret = env.OVERFLOW_TOKEN
+  const given = /^Bearer (.+)$/.exec(req.headers.get('Authorization') ?? '')?.[1] ?? ''
+  if (!secret || !sameSecret(given, secret)) return new Response('not found', { status: 404 })
+  if (req.method !== 'GET' && req.method !== 'POST') return new Response('GET or POST', { status: 405, headers: { allow: 'GET, POST' } })
+  let on: boolean | undefined
+  if (req.method === 'POST') {
+    const body = (await req.json().catch(() => null)) as { on?: unknown } | null
+    if (typeof body?.on !== 'boolean') return new Response('expected {"on": true|false}', { status: 400 })
+    on = body.on
+  }
+  const got = await env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID))
+    .fetch(new Request('https://registry/overflow', { method: on === undefined ? 'GET' : 'POST', body: on === undefined ? undefined : JSON.stringify({ on }) }))
+  const flag = (await got.json()) as { on: boolean }
+  return new Response(JSON.stringify({ master: env.PUBLIC_OVERFLOW === 'runtime', on: flag.on }), {
+    headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
+  })
 }
 
 const PRESENT_TEST = '/webgpu-present-test.html'
@@ -335,15 +427,36 @@ export class RoomDO {
 
   /** Only on the registry instance: the counts, loaded from storage on first use. */
   private registryReady: Promise<RoomRegistry> | null = null
+  /** Only on the registry instance: the overflow runtime flag (off unless set by /overflow). */
+  private overflowReady: Promise<boolean> | null = null
 
   /** The registry instance's two requests; see REGISTRY_ID. */
   private async registryFetch(req: Request, path: string): Promise<Response> {
     this.registryReady ??= this.state.storage.get<Record<string, RegistryEntry>>('counts').then(saved => new RoomRegistry(saved))
+    this.overflowReady ??= this.state.storage.get<boolean>('overflow').then(on => on === true)
     const registry = await this.registryReady
+    if (path === '/assign' && req.method === 'POST') {
+      // Overflow off (the default): every public arrival goes to "lobby", nothing is reserved.
+      if (!(await this.overflowReady)) return new Response(PUBLIC_BASE, { headers: { 'x-overflow': 'off' } })
+      const body = (await req.json().catch(() => null)) as Partial<AssignRequest> | null
+      const cap = typeof body?.cap === 'number' && Number.isInteger(body.cap) && body.cap > 0 ? body.cap : MAX_ROOM_PLAYERS
+      return new Response(registry.assign({ prefer: body?.prefer ?? null, full: body?.full ?? null, cap }, Date.now()))
+    }
+    if (path === '/overflow') {
+      if (req.method === 'POST') {
+        const body = (await req.json().catch(() => null)) as { on?: unknown } | null
+        if (typeof body?.on === 'boolean') {
+          await this.state.storage.put('overflow', body.on)
+          this.overflowReady = Promise.resolve(body.on)
+          logEvent('overflow', { on: body.on })
+        }
+      }
+      return new Response(JSON.stringify({ on: await this.overflowReady }), { headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } })
+    }
     if (path === '/report' && req.method === 'POST') {
-      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown } | null
+      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; held?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
-        registry.report(body.room, body.players, Date.now(), body.recipeId)
+        registry.report(body.room, body.players, Date.now(), body.recipeId, body.held)
         await this.state.storage.put('counts', registry.save())
       }
       return new Response(null, { status: 204 })
@@ -355,7 +468,7 @@ export class RoomDO {
 
   async fetch(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname
-    if (path === '/report' || path === '/totals' || path === '/presence') return this.registryFetch(req, path)
+    if (path === '/report' || path === '/totals' || path === '/presence' || path === '/assign' || path === '/overflow') return this.registryFetch(req, path)
     const name = roomName(new URL(req.url).searchParams.get('room'))
     const room = this.ensureRoom(name)
     const pair = new WebSocketPair()

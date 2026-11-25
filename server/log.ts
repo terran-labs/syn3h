@@ -31,7 +31,10 @@ export function logError(event: string, error: unknown, fields: LogFields = {}):
  * synchronous code), and computed once per room.
  */
 export function roomTag(name: string): string {
-  return name === PUBLIC_ROOM ? 'public' : sha256Hex(name).slice(0, 8)
+  if (name === PUBLIC_ROOM) return 'public'
+  // Overflow public rooms (server/registry.ts PublicSeats): lobby-2 logs as public-2.
+  const overflow = /^lobby-(\d{1,2})$/.exec(name)
+  return overflow ? `public-${overflow[1]}` : sha256Hex(name).slice(0, 8)
 }
 
 const K = new Uint32Array([

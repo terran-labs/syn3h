@@ -1,7 +1,8 @@
 import { PRESENCE_REFRESH_MS } from './registry'
 import type { RecipeId } from '../shared/recipes'
 
-export interface RoomPresenceReport { room: string; players: number; recipeId: RecipeId | null }
+/** `held`: places kept for dropped players, which still take seats (public room overflow). */
+export interface RoomPresenceReport { room: string; players: number; held?: number; recipeId: RecipeId | null }
 interface Pending { report: RoomPresenceReport; signature: string }
 
 /** One request at a time. Changes during delivery collapse to the newest room state.
@@ -21,7 +22,7 @@ export class PresenceReporter {
     private readonly failed: (error: unknown) => void = () => {}) {}
 
   report(report: RoomPresenceReport, seed: unknown): Promise<void> {
-    this.latest = { report: { ...report }, signature: JSON.stringify([report.players, report.recipeId, seed]) }
+    this.latest = { report: { ...report }, signature: JSON.stringify([report.players, report.held ?? 0, report.recipeId, seed]) }
     if (this.running) return this.running
     if (this.now() < this.retryAt || (this.latest.signature === this.delivered && this.now() - this.deliveredAt < PRESENCE_REFRESH_MS)) return Promise.resolve()
     this.running = this.flush().finally(() => { this.running = null })

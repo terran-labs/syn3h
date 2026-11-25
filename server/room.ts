@@ -382,7 +382,7 @@ export class Room {
   /** Authoritative current world, not the first hello or the mutable global registry. */
   presence() {
     const value = (id: string) => this.values.get(id) ?? registry.get(id)?.def.default
-    return { players: this.playerCount - this.heldCount,
+    return { players: this.playerCount - this.heldCount, held: this.heldCount,
       recipeId: recipeIdForLook(value('terrain.look')), seed: value('world.seed') ?? null }
   }
 

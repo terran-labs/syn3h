@@ -10,7 +10,17 @@ preview_urls = false
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html"]
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html", "/overflow"]
+
+# Public room overflow (server/registry.ts PublicSeats): when the public room is full, new
+# arrivals go to lobby-2, lobby-3 ... Two switches, both off unless someone acts:
+#  - PUBLIC_OVERFLOW, the master: "runtime" lets the runtime flag decide; anything else ("off")
+#    keeps today's behaviour with no registry call at all. Changing it is a deploy.
+#  - The runtime flag, off until set, no deploy needed (POST /overflow, bearer OVERFLOW_TOKEN):
+#    curl -X POST -H "Authorization: Bearer $OVERFLOW_TOKEN" -d '{"on":true}' https://<host>/overflow
+#    The token is a secret: npx wrangler secret put OVERFLOW_TOKEN. Never commit or log it.
+[vars]
+PUBLIC_OVERFLOW = "runtime"
 
 # Frozen versions, stored once in R2 (tools/frozen-versions.mjs archive) and read by the Worker for
 # every version but its own; deployments carry none. "/v/*" above sends a frozen page's own

@@ -53,13 +53,14 @@ describe('aggregate presence', () => {
     const peer: Peer = { send() {}, close() {} }
     r.connect(peer); expect(r.presence().players).toBe(0)
     r.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'A', resume: 'presence-test-token-12345678', params: { 'terrain.look': 2, 'world.seed': 123 } }))
-    expect(r.presence()).toEqual({ players: 1, recipeId: 'alpine', seed: 123 })
+    expect(r.presence()).toEqual({ players: 1, held: 0, recipeId: 'alpine', seed: 123 })
     r.receive(peer, JSON.stringify({ type: 'param', id: 'terrain.look', value: 1 }))
     r.receive(peer, JSON.stringify({ type: 'param', id: 'world.seed', value: 456 }))
-    expect(r.presence()).toEqual({ players: 1, recipeId: 'desert', seed: 456 })
+    expect(r.presence()).toEqual({ players: 1, held: 0, recipeId: 'desert', seed: 456 })
     now += 100; r.disconnect(peer)
     expect(r.presence().players).toBe(0)
     expect(r.heldCount).toBe(1)
+    expect(r.presence().held).toBe(1) // still takes a seat: public overflow counts it
   })
 })
 
