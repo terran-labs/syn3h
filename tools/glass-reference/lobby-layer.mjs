@@ -46,7 +46,8 @@ try {
       inspector.options.oneOpen = () => false
       inspector.fit = () => {}
     })
-    assert.equal(await page.locator('.glass-setting-reset').count(), 9)
+    // The Glass group's resets are the shared control (src/ui/resetControl.ts); live ones are changed.
+    assert.equal(await page.locator('.wi-row[data-id^="glass."] > .reset-control').count(), 9)
     const heads = card.locator('.wi-cards > .wi-card:visible > .wi-head')
     for (const head of await heads.all()) {
       if (await head.getAttribute('aria-expanded') !== 'true') await head.tap()
@@ -54,17 +55,17 @@ try {
     await page.waitForTimeout(600)
     assert.equal(await card.locator('.wi-cards > .wi-card.is-open:visible').count(), await heads.count())
     const frost = card.locator('.wi-row[data-id="glass.frostWidth"]')
-    const reset = frost.locator('.glass-setting-reset')
-    assert.equal(await card.locator('.glass-setting-reset:visible').count(), 0)
+    const reset = frost.locator('.reset-control')
+    assert.equal(await card.locator('.reset-control.is-live').count(), 0)
     await frost.locator('input[type=range]').tap()
-    assert.equal(await card.locator('.glass-setting-reset:visible').count(), 1)
+    assert.equal(await card.locator('.reset-control.is-live').count(), 1)
     const [numberBox, resetBox] = await Promise.all([frost.locator('.wi-num').boundingBox(), reset.boundingBox()])
     assert(resetBox.x >= numberBox.x + numberBox.width - 1 && Math.abs(resetBox.y + resetBox.height/2 - numberBox.y - numberBox.height/2) < 1)
     const value = () => page.evaluate(() => window.mira.params.get('glass.frostWidth').value)
     const measured = await page.evaluate(() => window.mira.params.get('glass.frostWidth').def.default)
     assert.notEqual(await value(), measured)
     await reset.tap()
-    assert.equal(await reset.isVisible(), false)
+    assert.equal(await reset.evaluate(b => b.classList.contains('is-live')), false)
     assert.equal(await value(), measured)
     const layers = await page.evaluate(() => {
       const galaxy = window.mira.shell.galaxy
@@ -97,7 +98,7 @@ try {
     console.log(device, { sections: await heads.count(), taps, resetVerified: true, order, layers })
     await card.locator('.lobby-settings-close').tap()
     await page.locator('#lobby-settings').waitFor({state: 'detached'})
-    assert.equal(await page.locator('.wi-group[data-group="Glass"] .glass-setting-reset').count(), 9)
+    assert.equal(await page.locator('.wi-row[data-id^="glass."] > .reset-control').count(), 9)
     await page.close()
   }
 } finally { await browser.close() }

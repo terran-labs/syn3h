@@ -65,7 +65,7 @@ html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.glass-style-r
   grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px;
 }
 html .mira-shell .world-inspector .wi-row.glass-style-row > small { grid-column: 1 / -1; }
-html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row, html .mira-shell .world-inspector .wi-row.tint-row { grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 4px 10px; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row, html .mira-shell .world-inspector .wi-row.tint-row { grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 10px; }
 html .mira-shell .world-inspector .wi-row.tint-row > input[type=range] { width: 100%; min-width: 0; }
 html .mira-shell .world-inspector .wi-row.tint-row > output { min-width: 3.2ch; text-align: right; font-variant-numeric: tabular-nums; }
 /* ---- Segmented choices: one rule for all of them (the owner, 22 November 2026: "make
@@ -108,18 +108,16 @@ html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice > .
 /* ---- Actions (Default, Randomize, Roll a name, Reset, Reset all, the quality steps, Auto when
    off): one resting look, a solid hairline pill with no fill; the shared outline under the pointer.
    Auto when on is a state, filled like a switch that is on (motion.css). ---- */
-html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)) {
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-randomize, .wi-name-roll, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)) {
   position: relative; box-sizing: border-box; background: transparent; box-shadow: none; text-shadow: inherit;
   border: 1px solid var(--s3-line-quiet); border-radius: var(--glass-control-radius, 24px); outline: 1px solid transparent; outline-offset: -1px;
   color: var(--s3-ink); text-decoration: none;
 }
-html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)):hover:not(:disabled) {
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-randomize, .wi-name-roll, [data-quality="reset-all"], .wi-step, .wi-res-auto:not(.is-on)):hover:not(:disabled) {
   border-color: transparent; background: transparent; outline: var(--control-hover-outline); outline-offset: -1px;
 }
-html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step, .wi-res-auto):focus-visible { outline: 2px solid white; outline-offset: 2px; }
-html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.tint-default, .wi-randomize, .wi-name-roll, button.glass-setting-reset, [data-quality="reset-all"], .wi-step):disabled { opacity: .45; }
-html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.tint-row > .tint-default { min-width: 0; min-height: 28px; height: 28px; margin: 0; padding: 0 10px; font: inherit; font-size: 12px; }
-html .mira-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::after { content: ''; position: absolute; inset: -8px 0; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-randomize, .wi-name-roll, [data-quality="reset-all"], .wi-step, .wi-res-auto):focus-visible { outline: 2px solid white; outline-offset: 2px; }
+html .mira-shell.exploration-ui .world-inspector .wi-cards :is(.wi-randomize, .wi-name-roll, [data-quality="reset-all"], .wi-step):disabled { opacity: .45; }
 
 /* ---- The search field's magnifier (Shell.ts SEARCH_ICON): over the start of the field ---- */
 :root .mira-shell.exploration-ui .world-inspector .rail-command { position: relative; }

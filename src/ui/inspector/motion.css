@@ -116,14 +116,9 @@
 .mira-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto::after { content: ""; position: absolute; inset: calc((28px - var(--wi-hit)) / 2 - 1px) -4px; }
 .mira-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-auto.is-on { color: #0d0d0d; border-color: transparent; background: var(--s3-accent-2); box-shadow: 0 0 8px rgb(194 194 194 / .45); }
 .mira-shell.exploration-ui .world-inspector .wi-cards .wi-resolution .wi-res-size { grid-column: 2 / -1; grid-row: 2; margin-top: -8px; color: var(--s3-soft); font-size: 11px; font-variant-numeric: tabular-nums; }
-/* Reset marks use a second line so they never consume the setting label. */
+/* Fine-tune rows lay out like every other row; their reset is the shared slot (reset-control.css). */
 .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-fine { grid-template-columns: minmax(0,1fr) 100px var(--wi-num); }
 .mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-fine.is-choice { grid-template-columns: minmax(0,82px) 1fr; }
-.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-fine.is-changed .wi-label { grid-column: 1 / -1; white-space: normal; padding-top: 6px; }
-.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-changed .wi-label { color: var(--s3-accent-2); }
-.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-changed { position: relative; min-height: 20px; padding: 1px 7px; background: none; border: 1px solid var(--s3-line); border-radius: 999px; box-shadow: none; color: var(--s3-accent-2); font: 500 10.5px 'Barlow', sans-serif; letter-spacing: .08em; text-transform: uppercase; }
-.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-changed:hover { border-color: var(--s3-accent-2); background: none; }
-.mira-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-changed::after { content: ""; position: absolute; inset: calc((20px - var(--wi-hit)) / 2 - 1px) -6px; }
 /* Diagnostics flow inside the card's own scroll, not a box of their own. */
 .mira-shell.exploration-ui .world-inspector .wi-cards .performance-diagnostics .performance-body { overflow: visible; min-height: 0; padding: 0 2px 8px; }
 @media (pointer: coarse) { .mira-shell.exploration-ui .world-inspector .wi-cards .wi-level-pick select { font-size: 16px; } }

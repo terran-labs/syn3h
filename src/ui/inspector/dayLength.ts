@@ -70,9 +70,9 @@ export function fillDayLengthRow(row: HTMLElement, id: string): () => void {
   input.setAttribute('aria-label', 'Day length')
   const number = document.createElement('button'); number.type = 'button'; number.className = 'wi-num'
   const note = document.createElement('small'); note.className = 'wi-day-note'
+  // Going back to the orbit is the row's shared reset control (resetControl.ts), not a button here.
   const text = document.createElement('span')
-  const reset = document.createElement('button'); reset.type = 'button'; reset.className = 'wi-day-reset'
-  note.append(text, reset)
+  note.append(text)
   row.append(label, input, number, note)
 
   const setting = () => Number(params.get(id)?.value ?? ORBIT_DEFAULT)
@@ -86,7 +86,6 @@ export function fillDayLengthRow(row: HTMLElement, id: string): () => void {
     const following = value < 0
     row.classList.toggle('is-orbit', following)
     text.textContent = following ? `Orbit default for ${planet}` : `Set by host · ${planet}'s orbit gives ${showDay(orbit)}`
-    reset.textContent = 'Use orbit'; reset.hidden = following
   }
   input.addEventListener('input', () => write(positionToSetting(Number(input.value), orbitDay())))
   input.addEventListener('change', () => { input.blur(); sync() })
@@ -96,7 +95,6 @@ export function fillDayLengthRow(row: HTMLElement, id: string): () => void {
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? DAY_SLIDER_MAX : stepSetting(setting(), orbitDay(), event.key === 'ArrowRight' || event.key === 'ArrowUp' ? 1 : -1)
     write(next); input.value = String(dayToPosition(effectiveDayLength(next))); sync()
   })
-  reset.addEventListener('click', () => { write(ORBIT_DEFAULT); sync() })
   // The number is a button: press it to type a length ("4.5", "90 s", "stop", "orbit").
   number.addEventListener('click', () => {
     if (number.disabled) return

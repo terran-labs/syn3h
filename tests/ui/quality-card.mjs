@@ -94,7 +94,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await levelIs(page, 2)
 
     // ---- An override appears, marked, and is reset; then "Reset all". ----
-    const mark = budget.locator('.wi-changed'), resetAll = card.locator('[data-quality=reset-all]')
+    const mark = budget.locator('.wi-reset-row.is-live'), resetAll = card.locator('[data-quality=reset-all]')
     assert.equal(await mark.isVisible(), false); assert.equal(await resetAll.isDisabled(), true)
     await budget.scrollIntoViewIfNeeded()
     await press(budget.locator('.wi-num')); await page.keyboard.type('1200'); await page.keyboard.press('Enter')
@@ -102,7 +102,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     assert.equal(await page.evaluate(id => mira.params.get(id).value, BUDGET), 1200)
     assert.equal(await mark.isVisible(), true, 'an override shows its mark')
     assert.equal(await budget.evaluate(row => row.classList.contains('is-changed')), true)
-    assert.match(await mark.getAttribute('aria-label'), /Reset .* to the Medium value/)
+    assert.match(await mark.getAttribute('aria-label'), /^Reset .* to 960$/)
     assert.equal(await resetAll.isDisabled(), false); assert.equal(await resetAll.innerText(), 'Reset all to Medium')
     await page.screenshot({ path: `${shots}/${mode}-override.png` })
     await press(mark)

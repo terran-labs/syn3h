@@ -162,14 +162,6 @@ html #lobby-settings[data-glass-surface="shader"] button.is-on {
 html:not([data-game-glass]) .wi-group[data-group="Glass"],
 .mira-shell:not([data-lobby-glass]) .lobby-settings .wi-card[data-section="glass"] .wi-row:not(.glass-material-row) { display: none; }
 [data-glass-surface="shader"]:is(button:active, button.held):not([data-glass-press]) { scale: var(--glass-extra-scale, none); }
-/* Keep the extra action in a trailing column only while the row is edited. */
-.mira-shell .wi-row:has(> .glass-setting-reset) { grid-auto-flow: column; grid-auto-columns: max-content; }
-.mira-shell.exploration-ui .world-inspector .wi-row > button.glass-setting-reset {
-  appearance: none; border: 0; border-radius: var(--glass-control-radius, 24px); background: transparent; box-shadow: none;
-  min-width: 0; min-height: 28px; padding: 0 10px; font: inherit; color: inherit;
-  text-transform: none; letter-spacing: normal; text-decoration: none;
-}
-.mira-shell .wi-row > .glass-setting-reset[hidden] { display: none; }
 /* A rail theme can frost Search and the two icons at tablet widths.
    Once their surfaces are in the framebuffer, there is no DOM blur to apply. */
 html .mira-shell.exploration-ui > .world-inspector .rail-command > [data-glass-surface="shader"],
