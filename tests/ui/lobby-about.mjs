@@ -208,13 +208,15 @@ for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,39
   assert.match((await state()).status,/2 of 6/,`${name}: a screen reader hears the move`)
   await foot.locator('[data-ring=prev]').click();await expect(0,'previous')
   await foot.locator('[data-ring=prev]').click();await expect(titles.length-1,'previous past the first')
-  await foot.locator('[data-ring=next]').focus();await page.keyboard.press('ArrowRight');await expect(1,'the right arrow key')
-  await page.keyboard.press('ArrowLeft');await expect(0,'the left arrow key')
+  await foot.locator('[data-ring=next]').focus();await page.keyboard.press('ArrowRight');await expect(0,'the right arrow key, round from the last')
+  await page.keyboard.press('ArrowLeft');await expect(titles.length-1,'the left arrow key')
   await ring.locator('.welcome-ring-dot').nth(3).click();await expect(3,'the fourth dot')
   // A swipe: a sideways drag across the front picture.
   const box=await ring.locator('.welcome-ring-track').boundingBox()
   const cy=box.y+box.height/2
-  await page.mouse.move(box.x+box.width*.75,cy);await page.mouse.down();await page.mouse.move(box.x+box.width*.45,cy,{steps:4});await page.mouse.move(box.x+box.width*.25,cy,{steps:4});await page.mouse.up()
+  // Playwright cannot drag a finger: on touch the finger's pointer events are sent to the picture itself.
+  if(touch)await ring.locator('.welcome-ring-card[data-slot=front] img').evaluate((img,[x0,x1,y])=>{const at=(type,x)=>img.dispatchEvent(new PointerEvent(type,{pointerId:7,pointerType:'touch',isPrimary:true,clientX:x,clientY:y,bubbles:true,cancelable:true}));at('pointerdown',x0);at('pointermove',(x0+x1)/2);at('pointermove',x1);at('pointerup',x1)},[box.x+box.width*.75,box.x+box.width*.25,cy])
+  else{await page.mouse.move(box.x+box.width*.75,cy);await page.mouse.down();await page.mouse.move(box.x+box.width*.45,cy,{steps:4});await page.mouse.move(box.x+box.width*.25,cy,{steps:4});await page.mouse.up()}
   await expect(4,'a swipe to the left')
   await settled()
   const sides=await ring.evaluate(r=>r.hasAttribute('data-sides'))
