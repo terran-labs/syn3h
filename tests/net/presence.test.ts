@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { RoomRegistry, PRESENCE_TTL_MS } from '../../server/registry'
-import { PresenceReporter, type RoomPresenceReport } from '../../server/presenceReporter'
+import { ACTIVE_REPORT_MS, PresenceReporter, type RoomPresenceReport } from '../../server/presenceReporter'
 import { Room, type Peer } from '../../server/room'
 import { encodeState, FLAG_PAUSED, PROTOCOL_VERSION } from '../../shared/protocol'
 import { emptyInputLike } from './helpers'
@@ -128,14 +128,20 @@ describe('ordered room reports', () => {
     now = 30001; await reporter.report(report(), 2); expect(sent).toHaveLength(3)
     expect(Object.keys(sent[0]).sort()).toEqual(['players', 'recipeId', 'room'])
   })
-  it('reports when a player pauses or resumes, and not for each heartbeat', async () => {
+  it('reports a pause or resume within ACTIVE_REPORT_MS, the latest value, and not each heartbeat', async () => {
     let now = 0; const sent: RoomPresenceReport[] = []
     const reporter = new PresenceReporter(async r => { sent.push(r) }, () => now)
-    const at = (active: number) => ({ room: 'room', players: 2, active, recipeId: 'alpine' as const })
+    const at = (active: number, players = 2) => ({ room: 'room', players, active, recipeId: 'alpine' as const })
     await reporter.report(at(2), 1)
-    for (let i = 0; i < 5; i++) { now += 1000; await reporter.report(at(1), 1) } // pause, then heartbeats
-    now += 1000; await reporter.report(at(2), 1) // resume
+    now = ACTIVE_REPORT_MS; await reporter.report(at(1), 1) // a pause, after the window: at once
+    for (let i = 0; i < 5; i++) { now += 1000; await reporter.report(at(1), 1) } // heartbeats: nothing
+    now += 1000; await reporter.report(at(2), 1) // a resume inside the window: held...
+    expect(sent.map(r => r.active)).toEqual([2, 1])
+    now = 2 * ACTIVE_REPORT_MS; await reporter.report(at(2), 1) // ...and sent with the next traffic after it
     expect(sent.map(r => r.active)).toEqual([2, 1, 2])
+    // A change in who is connected reports at once, carrying the latest active count.
+    now += 1; await reporter.report(at(1, 3), 1)
+    expect(sent.at(-1)).toMatchObject({ players: 3, active: 1 })
   })
   it('retries failed delivery with bounded backoff rather than marking it delivered', async () => {
     let now = 0, attempts = 0

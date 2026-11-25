@@ -7,7 +7,7 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import type { PlayerInfo } from '../shared/protocol'
-import { RoomRegistry, type RegistryEntry } from './registry'
+import { ACTIVE_SAVE_MS, RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 import { ATTACHMENT_PAUSE_MS, CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
@@ -339,6 +339,8 @@ export class RoomDO {
 
   /** Only on the registry instance: the counts, loaded from storage on first use. */
   private registryReady: Promise<RoomRegistry> | null = null
+  /** Only on the registry instance: when the counts were last stored (ms), see ACTIVE_SAVE_MS. */
+  private countsSavedAt = -Infinity
 
   /** The registry instance's two requests; see REGISTRY_ID. */
   private async registryFetch(req: Request, path: string): Promise<Response> {
@@ -347,8 +349,11 @@ export class RoomDO {
     if (path === '/report' && req.method === 'POST') {
       const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
-        registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
-        await this.state.storage.put('counts', registry.save())
+        const durability = registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
+        if (durability === 'save' || (durability === 'later' && Date.now() - this.countsSavedAt >= ACTIVE_SAVE_MS)) {
+          this.countsSavedAt = Date.now()
+          await this.state.storage.put('counts', registry.save())
+        }
       }
       return new Response(null, { status: 204 })
     }

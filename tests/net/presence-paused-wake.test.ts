@@ -9,6 +9,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ATTACHMENT_PAUSE_MS, PAUSE_PERSIST_MS, Room, type Peer, type RoomSnapshot } from '../../server/room'
 import { RoomDO } from '../../server/worker'
+import { ACTIVE_REPORT_MS, PresenceReporter } from '../../server/presenceReporter'
+import { ACTIVE_SAVE_MS } from '../../server/registry'
 import { encodeState, PROTOCOL_VERSION } from '../../shared/protocol'
 import { emptyInputLike } from './helpers'
 
@@ -143,6 +145,53 @@ describe('pause persistence is bounded, whatever a client sends', () => {
     rewrites = 0
     for (let i = 0; i < 2000; i++) { clock += 5; room.webSocketMessage(ws as never, state(i % 2 === 0) as never) }
     expect(rewrites).toBeLessThanOrEqual(10_000 / ATTACHMENT_PAUSE_MS + 1)
+    vi.restoreAllMocks()
+  })
+})
+
+describe('the shared registry is bounded too', () => {
+  it('a minute of a client flipping its pause 200 times a second, through the real reporter and registry', async () => {
+    let clock = 10_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    let puts = 0
+    const store = new Map<string, unknown>()
+    const registryState = {
+      storage: {
+        get: async (k: string) => store.get(k),
+        put: async (k: string, v: unknown) => { if (k === 'counts') puts++; store.set(k, structuredClone(v)) },
+        deleteAll: async () => {}, setAlarm: async () => {},
+      },
+      waitUntil: () => {}, acceptWebSocket: () => {}, getWebSockets: () => [],
+      blockConcurrencyWhile: async <T>(fn: () => Promise<T>) => fn(),
+    }
+    const registry = new RoomDO(registryState as never, {} as never)
+    let delivered = 0
+    const reporter = new PresenceReporter(async (report) => {
+      delivered++
+      const res = await registry.fetch(new Request('https://registry/report', { method: 'POST', body: JSON.stringify(report) }))
+      if (!res.ok) throw new Error('report failed')
+    }, () => clock)
+    const r = new Room('flap-registry', { now: () => clock })
+    const a = peer()
+    r.connect(a); r.receive(a, hello('A', TOKEN))
+    const send = async () => { const { seed, ...p } = r.presence(); await reporter.report({ room: 'flap-registry', ...p }, seed) }
+    await send()
+    delivered = 0; puts = 0
+    for (let i = 0; i < 200 * 60; i++) {
+      clock += 5
+      r.receive(a, state(i % 2 === 0))
+      await send()
+    }
+    // Reports: at most one per ACTIVE_REPORT_MS. Stored counts: at most one per ACTIVE_SAVE_MS.
+    expect(delivered).toBeLessThanOrEqual(60_000 / ACTIVE_REPORT_MS + 1)
+    expect(puts).toBeLessThanOrEqual(60_000 / ACTIVE_SAVE_MS + 1)
+    // A change in who is connected is still reported and stored at once.
+    const b = peer()
+    clock += 5; r.connect(b); r.receive(b, hello('B'))
+    const before = puts
+    await send()
+    expect(puts).toBe(before + 1)
+    expect((await (await registry.fetch(new Request('https://registry/totals'))).json())).toEqual({ rooms: 1, players: 2 })
     vi.restoreAllMocks()
   })
 })
