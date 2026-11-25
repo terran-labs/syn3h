@@ -35,6 +35,8 @@ import { defineParam, type ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { lobbyLook, type LobbyLook } from '../../world/lobbyLook'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
+import { pickTwin, projectTwins, type TwinAction, type TwinPlace } from './twinProjection'
+import { TwinRenderer } from './twinRenderer'
 
 export interface GalaxyWorld {
   id: string
@@ -57,6 +59,10 @@ export interface GalaxyWorld {
 }
 export interface GalaxyOptions {
   worlds: readonly GalaxyWorld[]
+  twins?: boolean
+  onTwinAction?(worldId: string, action: TwinAction): void
+  /** Private caption anchors in host-relative CSS pixels, keyed by the public recipe ID. */
+  onTwinLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[]): void
   /** A world was tapped and the camera has arrived at it. */
   onArrive(id: string): void
   /** A world was tapped. Return true to take it from here (a drop); otherwise the camera flies to it. */
@@ -919,6 +925,9 @@ export class Galaxy {
   private drewGlassBackdrop = false
   private glass?: GalaxyGlass
   private gl: WebGL2RenderingContext | null = null
+  private twinRenderer?: TwinRenderer
+  private twinScreen: TwinPlace[] = []
+  private twinsVisible = false
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   /** Painted maps keyed by world, recipe, seed, snapshot and size; kept across context loss. */
   private readonly maps = new Map<string, { data: Uint8ClampedArray; width: number; height: number }>()
@@ -1252,6 +1261,7 @@ export class Galaxy {
       gl.useProgram(blur); gl.uniform1i(this.blurUniforms.uScene, 2); gl.useProgram(program)
     }
     this.gl = gl
+    if (this.options.twins) this.twinRenderer = TwinRenderer.create(gl)
     if (this.options.logo) {
       // The galaxy draws the glow; the mark itself is a vector over the canvas, at the
       // screen's full resolution (see WordmarkOverlay).
@@ -1281,6 +1291,7 @@ export class Galaxy {
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       this.glass?.dispose(); this.glass = undefined
+      this.clearTwinLayout()
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
       // Until the context comes back (then the name in the scene returns with it), the page's own SVG mark shows.
       startupTiming.wordmarkFallback = 'the lobby WebGL2 context was lost'
@@ -1331,6 +1342,8 @@ export class Galaxy {
   }
   private release(): void {
     this.glass?.dispose(); this.glass = undefined
+    this.twinRenderer?.dispose(); this.twinRenderer = undefined
+    this.clearTwinLayout()
     this.markStart = null; this.markRig.pose = null; this.leaving = null
     // An opening cut short here must not leave the lobby's controls held back.
     if (this.opening) { this.opening = null; this.chrome(null) }
@@ -1602,7 +1615,8 @@ export class Galaxy {
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.worldsShown !== this.worlds || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     const glassBackdrop = !!this.glass?.available && liquidSelected()
     const glassChanged = glassBackdrop !== this.drewGlassBackdrop
-    if (still && !moving && !glassChanged && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
+    const twinsVisible = !!this.twinRenderer && this.controllable && !behindVeil && this.opening === null
+    if (still && !moving && twinsVisible === this.twinsVisible && !glassChanged && !this.glass?.dirty && this.wake <= 0) { this.idle++; return }
     // A flight held before launch (leaving a world, waiting behind the game) shows one still
     // frame of the world's air: draw it, and the maps as they arrive, and nothing more.
     const held = this.flight?.start === Infinity
@@ -1667,6 +1681,23 @@ export class Galaxy {
       gl.uniform1f(this.blurUniforms.uBlur, this.blur); gl.uniform2f(this.blurUniforms.uSize, this.canvas.width, this.canvas.height)
       gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
     }
+    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
+    this.screen = places.map((place, i) => {
+      const d = sub(place.position, view.eye), z = dot(d, view.forward)
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.3, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
+    })
+    // The sun's bright core, which labels keep clear of.
+    const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
+    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02), depth: sunZ }
+    if (twinsVisible && this.twinRenderer) {
+      this.twinsVisible = true
+      this.twinScreen = projectTwins(this.screen, this.sunScreen, width, height, id => {
+        const world = worlds.find(world => world.id === id)
+        return !!world && !world.forming && (world.recipe ?? world.id) === id && !world.mapVariant?.startsWith('saved:')
+      })
+      this.twinRenderer.draw(this.twinScreen, this.screen, this.sunScreen, width, height)
+      gl.useProgram(this.program)
+    } else this.clearTwinLayout(false)
     // The main galaxy pass has reached the canvas, through the blur composite if used.
     if (this.frames === 0) recordStartupLobbyFrame()
     if (this.markCrisp) {
@@ -1692,19 +1723,18 @@ export class Galaxy {
     this.drewGlassBackdrop = glassBackdrop
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
-    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
-    this.screen = places.map((place, i) => {
-      const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.3, labelled: reveal.labels[this.lanes(places)[i]] ?? true, depth: z }
-    })
-    // The sun's bright core, which labels keep clear of.
-    const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
-    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02), depth: sunZ }
     this.publishSun()
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
+    if (this.options.twins) this.options.onTwinLayout?.(this.twinScreen)
     this.options.onRest?.(this.pulses)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
+  }
+  private clearTwinLayout(notify = true): void {
+    this.twinsVisible = false
+    if (!this.twinScreen.length) return
+    this.twinScreen = []
+    if (notify) this.options.onTwinLayout?.(this.twinScreen)
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
   /** Where the worlds were shown when a press skipped the opening: that press picks from these. */
@@ -2009,9 +2039,10 @@ export class Galaxy {
         for (let tries = 0; tries < count - 1 && !this.screen.find(p => p.id === this.options.worlds[this.focusIndex].id)?.visible; tries++) this.focusIndex = (this.focusIndex + (next ? 1 : -1) + count) % count
         this.options.onFocus?.(this.options.worlds[this.focusIndex].id)
       }
-      if (count && pressed(0)) {
+      if (count && (pressed(0) || (this.twinScreen.length > 0 && pressed(2)))) {
         const index = this.focusIndex < 0 ? 0 : this.focusIndex, id = this.options.worlds[index].id
-        this.activate(id)
+        if (pressed(0)) this.activate(id)
+        else if (this.twinScreen.some(twin => twin.id === id)) this.options.onTwinAction?.(id, 'private')
       }
     }
     this.padButtons = buttons
@@ -2024,7 +2055,13 @@ export class Galaxy {
     if (event.pointerType !== 'mouse' && event.type !== 'pointerdown' && !this.pointers.has(event.pointerId)) return
     if (this.drag?.moved) { this.pointAt(undefined); return }
     if (this.drag?.caption) { this.pointAt(this.drag.target); return }
-    this.pointAt(this.pointerTarget(event, event.pointerType === 'mouse' ? 6 : 16, caption))
+    const margin = event.pointerType === 'mouse' ? 6 : 16
+    this.pointAt((caption ? undefined : this.twinTarget(event, margin))?.id ?? this.pointerTarget(event, margin, caption))
+  }
+  private twinTarget(event: PointerEvent, margin: number): ReturnType<typeof pickTwin> {
+    if (this.skipped || !this.controllable || !this.options.onTwinAction || !this.twinScreen.length) return
+    const box = this.canvas.getBoundingClientRect()
+    return pickTwin(this.screen, this.twinScreen, this.sunScreen, event.clientX - box.left, event.clientY - box.top, margin, event.pointerType === 'touch')
   }
   private pointerTarget(event: PointerEvent, margin: number, caption?: string): string | undefined {
     const box = this.canvas.getBoundingClientRect()
@@ -2086,13 +2123,17 @@ export class Galaxy {
       this.skipped = null
       return
     }
-    const found = drag.caption ? drag.target : this.pointerTarget(event, 22)
+    const twin = drag.caption ? undefined : this.twinTarget(event, 22)
+    const found = drag.caption ? drag.target : twin?.id ?? this.pointerTarget(event, 22)
     this.skipped = null
     if (drag.caption) {
       const hit = document.elementFromPoint(event.clientX, event.clientY)
       if (hit !== this.canvas && !hit?.closest('.galaxy-label')) return
     }
-    if (found) this.activate(found)
+    if (found) {
+      if (twin && twin.action !== 'public') this.options.onTwinAction?.(found, twin.action)
+      else this.activate(found)
+    }
     else if (!drag.caption && this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
