@@ -39,7 +39,11 @@
   border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) var(--chat-bubble-radius) 0;
   background: rgb(12 12 13 / .62); color: var(--glass-ink, var(--s3-ink, #f4f4f4));
   text-shadow: var(--glass-under, 0 1px 2px rgb(0 0 0 / .6));
-  transition: opacity .7s ease; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  transition: opacity .7s ease; overflow: hidden;
+}
+/* Keep padding outside the clamp so it cannot reveal text from a third line. */
+.chat-strip .chat-bubble-content {
+  overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
 }
 .chat-strip .chat-line.is-leaving { opacity: 0; }
 .chat-strip .chat-time { display: none; }

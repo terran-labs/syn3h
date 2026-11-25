@@ -390,10 +390,15 @@ export class ChatCard {
     const row = document.createElement(tag)
     row.className = `chat-line${line.system ? ' is-system' : ''}${line.bot ? ' is-bot' : ''}${line.mine ? ' is-mine' : ''}${fresh ? ' is-new' : ''}`
     row.dataset.seq = String(line.seq)
-    if (line.system) { row.textContent = line.text; return row }
+    const inLog = tag === 'li'
+    const content = inLog ? row : document.createElement('div')
+    if (!inLog) {
+      content.className = 'chat-bubble-content'
+      row.append(content)
+    }
+    if (line.system) { content.textContent = line.text; return row }
     // In the log the name opens the mute menu; over the game (the strip) it is plain text, as
     // the strip takes no touches.
-    const inLog = tag === 'li'
     const name = document.createElement(inLog ? 'button' : 'span')
     if (name instanceof HTMLButtonElement) {
       name.type = 'button'; name.title = line.mine ? '' : `Options for ${line.name}`
@@ -403,10 +408,10 @@ export class ChatCard {
     name.style.color = legibleTint(line.color)
     // A bot's name leads with the bot mark (playerMarks.ts), in the same colour; screen readers hear "Bot".
     name.append(...markedName({ name: line.name, bot: line.bot, color: line.color }, line.mine ? 'You' : line.name))
-    row.append(name)
+    content.append(name)
     const text = document.createElement('span'); text.className = 'chat-text'; text.textContent = line.text
     const time = document.createElement('time'); time.className = 'chat-time'; time.dateTime = new Date(line.wall).toISOString(); time.textContent = timeOf(line.wall)
-    row.append(text, time)
+    content.append(text, time)
     row.title = timeOf(line.wall)
     return row
   }
