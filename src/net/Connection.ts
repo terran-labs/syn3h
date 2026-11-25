@@ -43,7 +43,8 @@ export class Connection {
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
 
-  constructor(readonly url: string) {}
+  /** The address, or a function giving it afresh for each attempt (a reconnect may ask for a different public room). */
+  constructor(readonly url: string | (() => string)) {}
 
   open(): void {
     this.stopped = false
@@ -95,7 +96,7 @@ export class Connection {
     this.state = 'connecting'
     let ws: WebSocket
     try {
-      ws = new WebSocket(this.url)
+      ws = new WebSocket(typeof this.url === 'function' ? this.url() : this.url)
     } catch {
       this.scheduleRetry()
       return
@@ -166,9 +167,13 @@ export class Connection {
   }
 }
 
-/** Where the room server is: same host in production, VITE_SERVER_URL in development. */
-export function serverUrl(room: string): string {
-  const q = `/ws?room=${encodeURIComponent(room)}`
+/**
+ * Where the room server is: same host in production, VITE_SERVER_URL in development.
+ * `extra` adds query parameters after the room (public overflow: assign, prefer, full).
+ */
+export function serverUrl(room: string, extra: Record<string, string> = {}): string {
+  let q = `/ws?room=${encodeURIComponent(room)}`
+  for (const [k, v] of Object.entries(extra)) q += `&${encodeURIComponent(k)}=${encodeURIComponent(v)}`
   // An HTTPS page (production, or a dev server behind the preview broker) can only open
   // secure sockets, so it uses its own origin; the dev server proxies /ws to the room server.
   if (import.meta.env.PROD || location.protocol === 'https:') {

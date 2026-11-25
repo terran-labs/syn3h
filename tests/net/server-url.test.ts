@@ -16,3 +16,9 @@ it('always uses secure same-origin sockets on HTTPS', () => {
   vi.stubGlobal('location', { protocol: 'https:', host: 'example.test:32796' })
   expect(serverUrl('room')).toBe('wss://example.test:32796/ws?room=room')
 })
+it('adds public overflow parameters after the room, leaving the plain address unchanged', () => {
+  vi.stubEnv('PROD', false); vi.stubEnv('VITE_SERVER_URL', undefined)
+  vi.stubGlobal('location', { protocol: 'https:', host: 'mira.cc' })
+  expect(serverUrl('lobby', {})).toBe('wss://mira.cc/ws?room=lobby')
+  expect(serverUrl('lobby', { assign: '1', prefer: 'lobby-2' })).toBe('wss://mira.cc/ws?room=lobby&assign=1&prefer=lobby-2')
+})
