@@ -400,7 +400,7 @@
 .galaxy-labels { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 /* `:not(#galaxy-caption)` lifts these over the shell's and themes' generic button rules (a
    caption is a button), which would otherwise give it a rim and a fill; no element has that id. */
-.mira-shell button.galaxy-label:not(#galaxy-caption) {
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption) {
   --caption-strength: 1; --caption-foreground: 1; --caption-tint: #f6f9fc; --caption-accent: #f6f9fc;
   /* Scale the whole button from its top centre. Its layout box stays at the farthest size. */
   font-size: 1px;
@@ -420,27 +420,89 @@
    more solid white", over the sun's shafts as well as dark space. */
 .mira-shell { --caption-base: .92; }
 .galaxy-caption-text { display: grid; justify-items: center; }
-.mira-shell button.galaxy-label .galaxy-caption-text > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
-.mira-shell button.galaxy-label .galaxy-caption-text > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
-.mira-shell button.galaxy-label .galaxy-caption-text > small:empty { display: none; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption) .galaxy-caption-text > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption) .galaxy-caption-text > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption) .galaxy-caption-text > small:empty { display: none; }
 /* A planet hovered (or held under a finger, or its caption focused, or chosen and flown to)
    brings its caption to full strength in its corona's colour (--caption-accent, set by Shell from
    the glow the galaxy draws round it), easing in over 220 ms and out over the resting 350 ms. The
    biome and online lines rise with it and stay a step quieter. A caption at strength 0 (its planet hidden, or not yet arrived in the
    opening) stays hidden. */
-.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: calc(var(--caption-foreground) * min(1, calc(var(--caption-strength) * 100))); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out; }
-.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) .galaxy-caption-text > small { opacity: .85; transition: opacity .22s ease-out; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: calc(var(--caption-foreground) * min(1, calc(var(--caption-strength) * 100))); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) .galaxy-caption-text > small { opacity: .85; transition: opacity .22s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .mira-shell button.galaxy-label:not(#galaxy-caption), .mira-shell button.galaxy-label:not(#galaxy-caption) .galaxy-caption-text > small { transition: none; }
+  .mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption), .mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption) .galaxy-caption-text > small { transition: none; }
 }
-.mira-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
-.mira-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption)[hidden] { display: none; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
 .galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
-.mira-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
-.galaxy-open button.galaxy-label:not(#galaxy-caption):not(.is-suppressed) { pointer-events: auto; cursor: pointer; }
-.mira-shell button.galaxy-label:not(#galaxy-caption).is-suppressed { opacity: 0; transition: none; }
+.mira-shell.galaxy-flat :is(.galaxy-label, .galaxy-private-caption) { position: static; translate: none; transform: none; }
+.galaxy-open button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption):not(.is-suppressed) { pointer-events: auto; cursor: pointer; }
+.mira-shell button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption).is-suppressed { opacity: 0; transition: none; }
+
+.mira-shell button.galaxy-private-caption:not(#galaxy-caption) {
+  --caption-tint: #deefff;
+  --caption-accent: #deefff;
+  min-height: 44px;
+}
+.mira-shell button.galaxy-private-caption:not(#galaxy-caption) .galaxy-caption-text > strong {
+  font-size: 10em;
+  letter-spacing: .1em;
+  text-transform: none;
+}
+.mira-shell button.galaxy-private-caption:not(#galaxy-caption):hover:not(.is-suppressed) {
+  color: var(--caption-accent);
+  opacity: var(--caption-foreground);
+}
+.mira-shell.lobby-twins .galaxy-ui[inert] { visibility: hidden; }
+.mira-shell.lobby-twins.galaxy-flat .galaxy-ui {
+  inset: clamp(120px, 25vh, 255px) 0 0;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 10px 16px max(12px, env(safe-area-inset-bottom));
+}
+.mira-shell.lobby-twins.galaxy-flat .galaxy-labels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 1fr);
+  align-items: stretch;
+  width: min(100%, 460px);
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 5px 6px 52px;
+  margin: 0;
+  gap: 8px;
+}
+.mira-shell.lobby-twins.galaxy-flat button:is(.galaxy-label, .galaxy-private-caption):not(#galaxy-caption) {
+  --caption-strength: 1;
+  --caption-foreground: 1;
+  font-size: 1.3px;
+  align-content: center;
+  min-height: 52px;
+  padding: 5px 9px;
+  border: 1px solid var(--s3-line-quiet);
+  border-radius: 8px;
+  background: var(--s3-panel);
+  touch-action: pan-y;
+  white-space: normal;
+}
+.mira-shell .galaxy-twin-chooser {
+  position: fixed;
+  max-width: min(420px, calc(100% - 32px));
+  padding: 22px;
+  margin: auto;
+  border: 1px solid var(--s3-line-quiet);
+  border-radius: var(--s3-radius);
+  background: var(--s3-space);
+  color: var(--s3-ink);
+  text-align: center;
+}
+.mira-shell .galaxy-twin-chooser::backdrop { background: rgb(0 0 0 / .55); }
+.mira-shell .galaxy-twin-chooser h2 { margin: 0 0 16px; font-size: 28px; }
+.mira-shell .galaxy-twin-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.mira-shell .galaxy-twin-actions button { min-height: 44px; }
 
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
@@ -504,6 +566,7 @@
     justify-content: center; align-items: flex-end;
     padding: 0 max(12px, env(safe-area-inset-right)) 0 0;
   }
+  .mira-shell.lobby-twins.galaxy-flat .galaxy-ui { inset-block-start: min(124px, 35vh); }
   .mira-shell.exploration-ui.galaxy-open .galaxy-links {
     display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px; border-radius: 22px;
   }

@@ -30,9 +30,11 @@ import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/s
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
-import { populationLabel } from './galaxy/presence'
+import { populationLabel, PresenceFeed, type Populations } from './galaxy/presence'
+import { nextTwinControl, twinPopulationLabel, twinWorldCode, type TwinAction } from './galaxy/twinActions'
+import { lobbyTwinsEnabled } from '../core/twinPreview'
 import { wordmarkSvg } from './brand/logo'
-import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
+import { Galaxy, GALAXY_MAX, type GalaxyOptions, type GalaxyWorld } from './galaxy/Galaxy'
 import { captionBox, captionClearance, captionHidden, captionLayout, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
@@ -203,6 +205,13 @@ export interface CinematicCamera {
 export class Shell implements System {
   readonly element = document.createElement('div')
   onPlay?: () => void
+  onPrivateTwin?: (recipeId: string, worldCode: string) => void
+  private readonly twins = lobbyTwinsEnabled()
+  private twinChooser?: HTMLDialogElement
+  private twinChooserWorld?: string
+  private twinChooserOpener?: HTMLElement
+  private twinPadButtons: readonly boolean[] = []
+  private flatTwinPresence?: PresenceFeed
   private readonly abort = new AbortController()
   private readonly nameInput: HTMLInputElement
   private readonly roomInput: HTMLInputElement
@@ -1210,6 +1219,7 @@ export class Shell implements System {
     if (!this.started || this.dropping) return
     this.lobbyAddress?.showPlay(this.room)
     if (this.menuVisible && recordStartupReveal()) markShaderReveal()
+    if (this.twins) { this.closeTwinChooser(); this.flatTwinPresence?.setActive(false) }
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
     this.lobbySettings.close(); for (const sheet of this.lobbySheets) sheet.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
@@ -1581,6 +1591,22 @@ export class Shell implements System {
   private keydown(event: KeyboardEvent): void {
     // Waiting for the tap that begins (TapToBegin.ts): that press only begins.
     if (document.documentElement.dataset.boot === 'ready') return
+    if (this.twinChooser?.open) {
+      event.stopImmediatePropagation()
+      if (event.key === 'Escape') { event.preventDefault(); this.closeTwinChooser(true) }
+      else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        this.focusTwinControl(this.twinControls(), event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1)
+      }
+      return
+    }
+    if (this.twins && this.element.classList.contains('galaxy-flat') && event.target instanceof Element
+      && event.target.closest('.galaxy-labels') && /^Arrow(Left|Right|Up|Down)$/.test(event.key)) {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      this.focusTwinControl(this.twinControls(), event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1)
+      return
+    }
     // A lobby sheet is open: it owns the keyboard (LobbySheet), and no shortcut fires behind it.
     if (this.lobbySheets.some(sheet => sheet?.isOpen)) return
     if (this.aboutOpen) {
@@ -1654,7 +1680,7 @@ export class Shell implements System {
         else this.requestPause()
       }
     } else if (this.menuVisible && event.key === 'Tab') {
-      const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
+      const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled && (!this.twins || el.tabIndex >= 0))
       const first = targets[0], last = targets[targets.length - 1]
       if (event.shiftKey && (document.activeElement === first || !targets.includes(document.activeElement as HTMLElement))) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && (document.activeElement === last || !targets.includes(document.activeElement as HTMLElement))) { event.preventDefault(); first?.focus() }
@@ -1822,9 +1848,162 @@ export class Shell implements System {
     this.savedOutcomeStop = stop
     this.abort.signal.addEventListener('abort', stop, { once: true })
   }
+  private lobbyPresenceVisible(): boolean {
+    return this.menuVisible && !this.attracting && !this.inviteOpen && !this.dropping
+  }
+
+  private makePrivateTwinCaption(world: GalaxyWorld): HTMLButtonElement {
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'galaxy-private-caption'
+    button.dataset.twinFor = world.id
+    const caption = document.createElement('span')
+    caption.className = 'galaxy-caption-text'
+    const label = document.createElement('strong')
+    label.id = `twin-private-${world.id}`
+    label.textContent = 'Private'
+    caption.append(label)
+    button.append(caption)
+    button.setAttribute('aria-labelledby', `${label.id} twin-world-${world.id}`)
+    button.title = 'Invite only'
+    const options = { signal: this.abort.signal }
+    button.addEventListener('click', () => this.actOnTwin(world.id, 'private'), options)
+    button.addEventListener('focus', () => this.galaxy?.refreshCaptions(), options)
+    this.chipSizes.observe(button)
+    this.chipSizes.observe(caption)
+    return button
+  }
+
+  private updateTwinPresence(values: Populations): void {
+    for (const world of this.galaxyWorlds) {
+      const count = this.galaxyChips.get(world.id)?.querySelector('.galaxy-population')
+      const biome = planetById(world.recipe ?? world.id)?.label ?? world.label
+      const label = twinPopulationLabel(biome, values.get(world.recipe ?? world.id) ?? null)
+      if (count && count.textContent !== label) count.textContent = label
+    }
+  }
+
+  private installTwinChooser(): void {
+    const chooser = this.twinChooser = document.createElement('dialog')
+    chooser.className = 'galaxy-twin-chooser'
+    chooser.setAttribute('aria-labelledby', 'twin-chooser-title')
+    chooser.innerHTML = `<h2 id="twin-chooser-title"></h2>
+      <div class="galaxy-twin-actions">
+        <button type="button" data-action="public">Play publicly</button>
+        <button type="button" data-action="private">Play privately</button>
+        <button type="button">Back</button>
+      </div>`
+    const options = { signal: this.abort.signal }
+    chooser.addEventListener('click', event => {
+      const button = event.target instanceof Element ? event.target.closest('button') : null
+      if (!button) return
+      const action = button.dataset.action
+      const id = this.twinChooserWorld
+      if (id && (action === 'public' || action === 'private')) this.actOnTwin(id, action)
+      else this.closeTwinChooser(true)
+    }, options)
+    chooser.addEventListener('cancel', event => { event.preventDefault(); this.closeTwinChooser(true) }, options)
+    this.overlay.append(chooser)
+  }
+
+  private actOnTwin(id: string, action: TwinAction): void {
+    if (!this.menuVisible || !this.element.classList.contains('galaxy-open') || this.overlay.inert
+      || this.transitioning || this.inviteOpen || this.lobbySheets.some(sheet => sheet.isOpen)) return
+    const world = this.galaxyWorlds.find(world => world.id === id)
+    if (!world || world.forming) return
+    if (action === 'choose') {
+      const chooser = this.twinChooser
+      if (!chooser || chooser.open) return
+      this.twinChooserWorld = id
+      this.twinChooserOpener = this.galaxyChips.get(id)
+      chooser.querySelector('h2')!.textContent = `How do you want to play ${planetLabelText(world).name}?`
+      if (this.galaxy) this.galaxy.backdrop = SHEET_BACKDROP
+      chooser.showModal()
+      this.twinPadButtons = this.readTwinPad()
+      chooser.querySelector('button')?.focus()
+      return
+    }
+    this.closeTwinChooser()
+    if (action === 'public') this.tapWorld(id)
+    else {
+      const recipe = world.recipe ?? world.id
+      this.onPrivateTwin?.(recipe, twinWorldCode(recipe, world.seed, world.nameSeed))
+    }
+  }
+
+  private closeTwinChooser(restoreFocus = false): void {
+    if (!this.twinChooser?.open) return
+    const opener = this.twinChooserOpener
+    this.twinChooser.close()
+    this.twinChooserWorld = undefined
+    this.twinChooserOpener = undefined
+    if (this.galaxy) this.galaxy.backdrop = 1
+    if (restoreFocus && opener?.tabIndex === 0 && !opener.closest('[hidden], [inert]')) opener.focus({ preventScroll: true })
+  }
+
+  private syncTwinLobby(): void {
+    const flat = !this.galaxy?.live
+    if (flat !== this.element.classList.contains('galaxy-flat')) {
+      this.element.classList.toggle('galaxy-flat', flat)
+      if (flat) for (const chip of this.galaxyChips.values()) {
+        chip.hidden = false
+        chip.classList.remove('is-suppressed')
+        chip.tabIndex = 0
+      }
+    }
+    const labels = this.element.querySelector('.galaxy-labels')!
+    const description = flat ? 'Worlds' : 'Worlds. Drag to look around.'
+    if (labels.getAttribute('aria-label') !== description) labels.setAttribute('aria-label', description)
+    this.flatTwinPresence?.setActive(flat && this.lobbyPresenceVisible() && !document.hidden)
+  }
+
+  private twinControls(): HTMLButtonElement[] {
+    const root = this.twinChooser?.open ? this.twinChooser : this.overlay.querySelector('.galaxy-labels')!
+    return [...root.querySelectorAll('button')].filter(button => !button.disabled && button.tabIndex >= 0 && !button.closest('[hidden], [inert]'))
+  }
+
+  private focusTwinControl(controls: HTMLButtonElement[], direction: -1 | 1): void {
+    const index = controls.findIndex(control => control === document.activeElement)
+    controls[nextTwinControl(index, controls.length, direction)]?.focus()
+  }
+
+  private readTwinPad(): boolean[] {
+    return navigator.getGamepads?.().find(pad => pad?.connected && pad.mapping === 'standard')
+      ?.buttons.map(button => button.pressed) ?? []
+  }
+
+  private updateTwinController(): void {
+    if (!this.menuVisible || document.hidden) { this.twinPadButtons = []; return }
+    const buttons = this.readTwinPad()
+    const pressed = (index: number) => buttons[index] && !this.twinPadButtons[index]
+    const accept = pressed(0), back = pressed(1), privateEntry = pressed(2)
+    const next = pressed(13) || pressed(15) || pressed(5)
+    const prev = pressed(12) || pressed(14) || pressed(4)
+    this.twinPadButtons = buttons
+    if (this.overlay.inert || this.transitioning || this.inviteOpen || this.lobbySheets.some(sheet => sheet.isOpen)) return
+    if (!this.twinChooser?.open && (!this.element.classList.contains('galaxy-flat') || !this.element.classList.contains('galaxy-open'))) return
+    if (back && this.twinChooser?.open) { this.closeTwinChooser(true); return }
+    if (!next && !prev && !accept && !privateEntry) return
+    if (this.twinChooser?.open) {
+      if ((accept || privateEntry) && this.twinChooserWorld) this.actOnTwin(this.twinChooserWorld, accept ? 'public' : 'private')
+      return
+    }
+    const controls = this.twinControls()
+    const worlds = controls.filter(control => control.dataset.world)
+    const focused = controls.find(control => control === document.activeElement)
+    const id = focused?.dataset.world ?? focused?.dataset.twinFor
+    if (next || prev) {
+      const index = worlds.findIndex(control => control.dataset.world === id)
+      worlds[nextTwinControl(index, worlds.length, next ? 1 : -1)]?.focus()
+    } else {
+      const selected = id ?? worlds[0]?.dataset.world
+      if (selected) this.actOnTwin(selected, accept ? 'public' : 'private')
+    }
+  }
+
   private startGalaxy(): void {
-    // No WebGL 2: the game cannot draw here either, so the index says so plainly.
-    if (!Galaxy.supported()) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
+    const supported = Galaxy.supported()
+    if (!supported && !this.twins) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
     const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
     // Every planet recipe, up to the galaxy's limit with room for Custom. In development,
     // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
@@ -1836,6 +2015,12 @@ export class Shell implements System {
     if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
     this.galaxyWorlds = worlds
+    if (this.twins) {
+      this.element.classList.add('lobby-twins')
+      this.installTwinChooser()
+      this.flatTwinPresence = new PresenceFeed(PLANETS.map(planet => planet.id), values => this.updateTwinPresence(values))
+      document.addEventListener('visibilitychange', () => this.syncTwinLobby(), { signal: this.abort.signal })
+    }
     for (const world of worlds) {
       // A caption on the scene, not a plate (the owner, 16 November 2026: the lobby is a quiet
       // picture): the world's name, its biome in small lower case under it, then how many are
@@ -1852,11 +2037,36 @@ export class Shell implements System {
       chip.style.setProperty('--caption-accent', captionAccent(world))
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; caption.append(count) }
       if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
+      if (this.twins && !world.forming) {
+        const name = chip.querySelector('strong')!, action = chip.querySelector('small')!
+        const count = chip.querySelector('.galaxy-population')!
+        name.id = `twin-world-${world.id}`
+        action.textContent = `Public · ${planetById(world.recipe ?? world.id)?.label ?? world.label}`
+        action.id = `twin-public-${world.id}`
+        count.id = `twin-count-${world.id}`
+        count.textContent = twinPopulationLabel(world.label, null)
+        chip.setAttribute('aria-labelledby', `${action.id} ${name.id}`)
+        chip.setAttribute('aria-describedby', count.id)
+      }
       chip.addEventListener('click', event => {
+        if (this.twins && !world.forming && (event.detail === 0 || !this.galaxy?.live)) {
+          this.actOnTwin(world.id, 'public')
+          return
+        }
         // Galaxy handles pointer gestures, including drags that begin on a caption.
         if (event.detail === 0 || !this.galaxy?.live) this.galaxy?.activate(world.id)
       })
       labels.append(chip); chips.set(world.id, chip)
+      if (this.twins && !world.forming && world.id === world.recipe) {
+        const privateCaption = this.makePrivateTwinCaption(world)
+        labels.append(privateCaption)
+        chips.set(`${world.id}:private`, privateCaption)
+      }
+    }
+    if (!supported) {
+      this.galaxyFor(this.panels.active || 'index')
+      this.syncTwinLobby()
+      return
     }
     // Settings mounts outside the galaxy overlay. Wake the held view when its box changes.
     const captionControls = new MutationObserver(() => {
@@ -1868,14 +2078,22 @@ export class Shell implements System {
     this.chipSizes.observe(this.lobbySettings.dock)
     this.chipSizes.observe(this.lobbySettings.version)
     this.abort.signal.addEventListener('abort', () => captionControls.disconnect(), { once: true })
+    type WorldPlaces = Parameters<NonNullable<GalaxyOptions['onLayout']>>[0]
+    let basePlaces: WorldPlaces = [], chosenWorld: string | undefined
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
+      ...(this.twins ? {
+        twins: true,
+        onTwinAction: (id, action) => this.actOnTwin(id, action),
+        onTwinLayout: places => this.layoutGalaxyCaptions(labels, basePlaces, chosenWorld, places),
+      } satisfies Pick<GalaxyOptions, 'twins' | 'onTwinAction' | 'onTwinLayout'> : {}),
       logo: () => {
         const mark = this.element.querySelector<SVGElement>('.shell-logo')!, box = mark.getBoundingClientRect(), host = this.overlay.getBoundingClientRect()
         return { box: { x: box.x - host.x, y: box.y - host.y, width: box.width, height: box.height }, level: levelNumber(graphicsLevel.value) }
       },
-      presenceVisible: () => this.menuVisible && !this.attracting && !this.inviteOpen && !this.dropping,
+      presenceVisible: () => this.lobbyPresenceVisible() && (!this.twins || !!this.galaxy?.live),
       onPresence: values => {
+        if (this.twins) { this.updateTwinPresence(values); return }
         for (const world of worlds) {
           if (world.id === 'custom') continue
           const chip = chips.get(world.id)!, value = values.get(world.recipe ?? world.id) ?? null
@@ -1891,7 +2109,10 @@ export class Shell implements System {
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
       topInset: () => this.updateBand(),
       still: () => levelNumber(graphicsLevel.value) === 0,
-      onTap: chosen => this.tapWorld(chosen),
+      onTap: chosen => {
+        if (this.twins && !this.galaxy?.live) return true
+        return this.tapWorld(chosen)
+      },
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
       // A hovered or pressed world gets first claim on caption space.
       onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
@@ -1924,99 +2145,119 @@ export class Shell implements System {
         return inset > 0 ? [frame[0], frame[1] - inset / 2, frame[2] * (1 - inset)] as const : frame
       },
       onLayout: (places, chosen) => {
-        this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
-        // Nothing to lay out or measure until the lobby's own controls are on screen: the galaxy
-        // draws from the loading veil on (the opening's point of light), and sizes and places
-        // measured while they are hidden read every box as zero, and are kept.
-        if (!this.brandBottom && !this.element.querySelector('.galaxy-ui')?.getBoundingClientRect().width) return
-        // Clear of the wordmark too. While flying to a world, only its label stays.
-        if (!this.brandBottom) {
-          this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const nav = this.element.querySelector('.galaxy-links')?.getBoundingClientRect() ?? { top: 0, left: innerWidth }
-          if (matchMedia(SHORT_LANDSCAPE).matches) {
-            // The buttons are a column on the right (shell.css) and the galaxy gets the height
-            // below the wordmark. The sun stays in the middle of the screen's width, as in
-            // portrait (the owner's call): the outer worlds may pass behind the button column.
-            this.linksTop = innerHeight - 8
-            const top = this.brandBottom + 4
-            // The system is wider than tall, so it can grow past the free height a little;
-            // the spread gives the inner worlds' labels room.
-            this.galaxyFrame = [0.5, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
-          } else {
-            this.galaxyFrame = undefined
-            this.linksTop = nav.top > innerHeight / 2 ? nav.top - 24 : innerHeight - 152
-          }
-          this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
-        }
-        const visible = places.filter(place => place.visible)
-        const near = Math.min(...visible.map(place => place.depth)), far = Math.max(...visible.map(place => place.depth))
-        const current = currentPlanet().id, short = Math.min(innerWidth, innerHeight)
-        const sun = this.galaxy?.sunScreen
-        for (const place of places) {
-          const chip = chips.get(place.id)!
-          chip.hidden = !place.visible
-          chip.classList.toggle('is-chosen', place.id === chosen)
-          if (place.visible) {
-            const scale = captionScale(place.radius, short).toFixed(2)
-            if (chip.style.getPropertyValue('--caption-scale') !== scale) chip.style.setProperty('--caption-scale', scale)
-          }
-        }
-
-        // Use the unscaled sizes from the observer. A change of scale needs no layout read.
-        const layer = labels.getBoundingClientRect()
-        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
-          .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
-          .map(r => ({ left: r.left - layer.left, right: r.right - layer.left, top: r.top - layer.top, bottom: r.bottom - layer.top }))
-        const candidates = visible.flatMap(place => {
-          const chip = chips.get(place.id)!
-          if ((chosen && place.id !== chosen) || place.labelled === false) return []
-          const highlighted = place.id === chosen || chip.classList.contains('is-pointed') || chip === document.activeElement
-          if (!highlighted && captionHidden(place, places, sun)) return []
-          const scale = Number(chip.style.getPropertyValue('--caption-scale'))
-          const size = this.chipSize.get(chip)
-          if (!size?.width || !size.height) return []
-          const box = captionBox(place, place.y + place.radius + CAPTION_GAP * scale, { width: size.width * scale, height: size.height * scale }, layer.width, layer.height, blockers)
-          const text = this.chipSize.get(chip.firstElementChild!)
-          if (!box || !text?.width || !text.height) return []
-          const center = (box.left + box.right) / 2, halfText = text.width * scale / 2
-          const foregroundGap = captionClearance({ left: center - halfText, right: center + halfText, top: box.top, bottom: box.top + text.height * scale }, place, places, sun)
-          // Leave space for the half-pixel placement tolerance and the limb's antialiasing.
-          if (foregroundGap <= 1) return []
-          const foregroundStrength = Math.min(1, foregroundGap / 8)
-          const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
-          return [{ id: place.id, place, chip, box, priority, foregroundStrength }]
-        })
-        const strengths = captionLayout(candidates, blockers)
-        for (const [id, chip] of chips) {
-          chip.classList.toggle('is-suppressed', !strengths.get(id))
-          const tabIndex = strengths.get(id) ? 0 : -1
-          if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
-        }
-        for (const { id, place, chip, box, foregroundStrength } of candidates) {
-          const clearance = strengths.get(id)
-          if (!clearance) continue
-          const center = (box.left + box.right) / 2
-          this.placeChip(chip, center, box.top)
-          const depth = far > near ? (place.depth - near) / (far - near) : 0
-          const strength = (clearance * (1 - 0.25 * depth + (id === current ? 0.2 : 0))).toFixed(2)
-          if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
-          const foreground = foregroundStrength.toFixed(2)
-          if (chip.style.getPropertyValue('--caption-foreground') !== foreground) chip.style.setProperty('--caption-foreground', foreground)
-        }
+        if (this.twins) { basePlaces = places; chosenWorld = chosen }
+        else this.layoutGalaxyCaptions(labels, places, chosen, [])
       },
     })
     addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
-    this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
+    if (!this.twins) this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
+    if (this.twins) this.syncTwinLobby()
+  }
+  private layoutGalaxyCaptions(
+    labels: HTMLElement,
+    basePlaces: Parameters<NonNullable<GalaxyOptions['onLayout']>>[0],
+    chosen: string | undefined,
+    twins: Parameters<NonNullable<GalaxyOptions['onTwinLayout']>>[0],
+  ): void {
+    if (this.twins && !this.galaxy?.live) return
+    const chips = this.galaxyChips
+    const places = this.twins ? [...basePlaces, ...twins.flatMap(twin => {
+      const base = basePlaces.find(place => place.id === twin.id)
+      const id = `${twin.id}:private`
+      return base && chips.has(id) ? [{ ...base, ...twin, id }] : []
+    })] : basePlaces
+    if (this.twins) for (const [id, chip] of chips) {
+      if (chip.dataset.twinFor && !places.some(place => place.id === id)) chip.hidden = true
+    }
+    this.savedMoons?.layout(basePlaces, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
+    // Nothing to lay out or measure until the lobby's own controls are on screen: the galaxy
+    // draws from the loading veil on (the opening's point of light), and sizes and places
+    // measured while they are hidden read every box as zero, and are kept.
+    if (!this.brandBottom && !this.element.querySelector('.galaxy-ui')?.getBoundingClientRect().width) return
+    // Clear of the wordmark too. While flying to a world, only its label stays.
+    if (!this.brandBottom) {
+      this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
+      const nav = this.element.querySelector('.galaxy-links')?.getBoundingClientRect() ?? { top: 0, left: innerWidth }
+      if (matchMedia(SHORT_LANDSCAPE).matches) {
+        // The buttons are a column on the right (shell.css) and the galaxy gets the height
+        // below the wordmark. The sun stays in the middle of the screen's width, as in
+        // portrait (the owner's call): the outer worlds may pass behind the button column.
+        this.linksTop = innerHeight - 8
+        const top = this.brandBottom + 4
+        // The system is wider than tall, so it can grow past the free height a little;
+        // the spread gives the inner worlds' labels room.
+        this.galaxyFrame = [0.5, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
+      } else {
+        this.galaxyFrame = undefined
+        this.linksTop = nav.top > innerHeight / 2 ? nav.top - 24 : innerHeight - 152
+      }
+      this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
+    }
+    const visible = places.filter(place => place.visible)
+    const near = Math.min(...visible.map(place => place.depth)), far = Math.max(...visible.map(place => place.depth))
+    const current = currentPlanet().id, short = Math.min(innerWidth, innerHeight)
+    const sun = this.galaxy?.sunScreen
+    for (const place of places) {
+      const chip = chips.get(place.id)!
+      chip.hidden = !place.visible
+      chip.classList.toggle('is-chosen', place.id === chosen)
+      if (place.visible) {
+        const scale = captionScale(place.radius, short).toFixed(2)
+        if (chip.style.getPropertyValue('--caption-scale') !== scale) chip.style.setProperty('--caption-scale', scale)
+      }
+    }
+
+    // Use the unscaled sizes from the observer. A change of scale needs no layout read.
+    const layer = labels.getBoundingClientRect()
+    const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
+      .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
+      .map(r => ({ left: r.left - layer.left, right: r.right - layer.left, top: r.top - layer.top, bottom: r.bottom - layer.top }))
+    const candidates = visible.flatMap(place => {
+      const chip = chips.get(place.id)!
+      if ((chosen && place.id !== chosen) || place.labelled === false) return []
+      const highlighted = place.id === chosen || chip.classList.contains('is-pointed') || chip.contains(document.activeElement)
+      if (!highlighted && captionHidden(place, places, sun)) return []
+      const scale = Number(chip.style.getPropertyValue('--caption-scale'))
+      const size = this.chipSize.get(chip)
+      if (!size?.width || !size.height) return []
+      const box = captionBox(place, place.y + place.radius + CAPTION_GAP * scale, { width: size.width * scale, height: size.height * scale }, layer.width, layer.height, blockers)
+      const text = this.chipSize.get(chip.firstElementChild!)
+      if (!box || !text?.width || !text.height) return []
+      const center = (box.left + box.right) / 2, halfText = text.width * scale / 2
+      const foregroundGap = captionClearance({ left: center - halfText, right: center + halfText, top: box.top, bottom: box.top + text.height * scale }, place, places, sun)
+      // Leave space for the half-pixel placement tolerance and the limb's antialiasing.
+      if (foregroundGap <= 1) return []
+      const foregroundStrength = Math.min(1, foregroundGap / 8)
+      const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip.contains(document.activeElement) ? 2 : place.id === current ? 1 : 0
+      return [{ id: place.id, place, chip, box, priority, foregroundStrength }]
+    })
+    const strengths = captionLayout(candidates, blockers)
+    for (const [id, chip] of chips) {
+      chip.classList.toggle('is-suppressed', !strengths.get(id))
+      const tabIndex = strengths.get(id) ? 0 : -1
+      if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
+    }
+    for (const { id, place, chip, box, foregroundStrength } of candidates) {
+      const clearance = strengths.get(id)
+      if (!clearance) continue
+      const center = (box.left + box.right) / 2
+      this.placeChip(chip, center, box.top)
+      const depth = far > near ? (place.depth - near) / (far - near) : 0
+      const strength = (clearance * (1 - 0.25 * depth + (id === current ? 0.2 : 0))).toFixed(2)
+      if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
+      const foreground = foregroundStrength.toFixed(2)
+      if (chip.style.getPropertyValue('--caption-foreground') !== foreground) chip.style.setProperty('--caption-foreground', foreground)
+    }
   }
   /**
    * Move a planet label. Called every frame, so it writes only what moved by
    * more than half a pixel and reads nothing from the page. x is the label's centre, y its top.
    */
-  private placeChip(chip: HTMLButtonElement, x: number, y: number): void {
+  private placeChip(chip: HTMLElement, x: number, y: number): void {
     const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN }
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
@@ -2030,7 +2271,7 @@ export class Shell implements System {
     }
     this.galaxy?.refreshCaptions()
   })
-  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
+  private readonly chipDrawn = new WeakMap<HTMLElement, { x: number; y: number }>()
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   /** Short landscape: the galaxy's framing (see SHORT_LANDSCAPE). */
@@ -2052,11 +2293,15 @@ export class Shell implements System {
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
+      if (chip.dataset.twinFor) continue
       // The world in play is whatever the room says it is: its sphere and label follow.
       const world = this.galaxyWorlds.find(w => w.id === id)
       if (world && id === current && !world.forming) {
         world.nameSeed = worldNameSeed.value
-        if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
+        if (world.seed !== worldSeed.value) {
+          if (this.galaxy) this.galaxy.setSeed(id, worldSeed.value)
+          else world.seed = worldSeed.value
+        }
       }
       const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
       if (name.textContent !== text) name.textContent = text
@@ -2066,12 +2311,18 @@ export class Shell implements System {
   }
   /** The galaxy is the index; any other panel opens over it. */
   private galaxyFor(panel: string): void {
-    if (!this.galaxy) return
+    if (!this.galaxy && !this.twins) return
     const open = panel === 'index', editing = panel === 'advanced' && this.shapingCustom && this.advancedGroups !== undefined
     this.element.classList.toggle('is-shaping-world', editing)
-    this.galaxy.editing = editing
     this.element.classList.toggle('galaxy-open', open)
-    this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = false
+    const ui = this.element.querySelector<HTMLElement>('.galaxy-ui')!
+    ui.hidden = false
+    if (this.twins) {
+      ui.inert = !open
+      if (!open) this.closeTwinChooser()
+    }
+    if (!this.galaxy) return
+    this.galaxy.editing = editing
     if (open) this.galaxy.home()
     // Behind a panel the galaxy dims and holds still; behind the name form a little less,
     // since the world just chosen is the picture there.
@@ -2283,6 +2534,7 @@ export class Shell implements System {
   driveGlassFrame?: (playing: boolean, eligible: boolean) => void
 
   update(dt = 0): void {
+    if (this.twins) { this.syncTwinLobby(); this.updateTwinController() }
     if (this.tintTransition.update(dt)) this.onTint?.(this.tintTransition.current.body, this.tintTransition.current.accent, false)
     this.touch.update()
     if (!this.menuVisible && this.minimap) {
@@ -2355,7 +2607,7 @@ export class Shell implements System {
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
-    this.abort.abort(); this.chipSizes.disconnect(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.flatTwinPresence?.dispose(); this.abort.abort(); this.chipSizes.disconnect(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
