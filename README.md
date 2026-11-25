@@ -267,8 +267,8 @@ effect at once or after a reload). This table is written from the switch list in
 | `?shadowColor=0` | `0` | Depth-only sun shadow maps: no colour target beside each cascade's depth. | after a reload |
 | `?shadowFilter=hard` | `hard` | Basic shadow maps: one depth comparison per pixel, no soft filtering. | after a reload |
 | `?shadowFade=0` | `0` | No blend between one sun shadow cascade and the next. | after a reload |
-| `?shadowUpdate=once` | `once` | Shadow map refresh: Shadow map refresh: Draw the sun shadow maps once and reuse them (again only on a level change), so no frame draws them. Shadows stay where they were drawn. | at once |
-| `?shadowUpdate=2` | `2` | Shadow map refresh: Shadow map refresh: Draw the sun shadow maps every second frame instead of every frame. | at once |
+| `?shadowUpdate=once` | `once` | Shadow map refresh: Draw the sun shadow maps once and reuse them (again only on a level change), so no frame draws them. Shadows stay where they were drawn. | at once |
+| `?shadowUpdate=2` | `2` | Shadow map refresh: Draw the sun shadow maps every second frame instead of every frame. | at once |
 | `?samples=1` | `1` | Draw the scene without multisampling. Antialias is fixed when the renderer is made. | after a reload |
 | `?webgl=1` | present, any value | Start on WebGL 2 instead of WebGPU. The backend is chosen when the renderer is made. | after a reload |
 | `?canvasAlpha=opaque` | `opaque` | Configure the canvas opaque instead of premultiplied, so the browser composites the frame without blending. The canvas is configured when the renderer is made. | after a reload |
