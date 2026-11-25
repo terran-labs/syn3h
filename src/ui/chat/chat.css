@@ -100,11 +100,10 @@
 .chat-status[hidden] { display: none; }
 /* (The field's selectors carry .chat-body so they outrank theme-halo.css's underline on every
    card input.) */
-/* Offset the field by its inline padding to align its text with the log. */
 /* The field and Send: one gradient rule above, nothing below, and no underline on the field
    itself; it sits on the card. Send is the card's primary action, so it is filled. */
 .chat-form { display: flex; align-items: center; gap: 8px; padding: 8px 0 0; border-top: 1px solid transparent; border-image: var(--rule) 1; }
-:root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { flex: 1; min-width: 0; min-height: 40px; margin-inline-start: -8px; padding: 4px 8px; border: 0; background: none; box-shadow: none; font: 400 14px 'Barlow', sans-serif; }
+:root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { flex: 1; min-width: 0; min-height: 40px; padding: 4px 18px; border: 0; background: none; box-shadow: none; font: 400 14px 'Barlow', sans-serif; }
 :root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field:focus-visible { outline: none; border-radius: var(--glass-control-radius, 24px); background: rgb(255 255 255 / .06); }
 :root .mira-shell.exploration-ui .world-inspector .chat-form .chat-send { min-height: 40px; padding: 0 18px; border: 1px solid transparent; border-radius: var(--glass-control-radius, 24px); background: rgb(255 255 255 / .2); color: #fff; font: 600 12px 'Barlow', sans-serif; letter-spacing: .06em; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px; transition: background-color .18s, outline-color .18s; }
 :root .mira-shell.exploration-ui .world-inspector .chat-form .chat-send:hover { background: rgb(255 255 255 / .28); outline: var(--control-hover-outline); }
@@ -113,8 +112,8 @@
 :root .mira-shell.exploration-ui .world-inspector .chat-form .chat-send:disabled { background: rgb(255 255 255 / .1); }
 /* A finger: 44 px targets, and 16 px text, below which Safari zooms the page into the field. */
 :root .mira-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form :is(input.chat-field.chat-field, .chat-send) { min-height: 44px; }
-:root .mira-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form input.chat-field.chat-field { font-size: 16px; }
-@media (pointer: coarse) { :root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { font-size: 16px; } }
+:root .mira-shell.exploration-ui.has-touch .world-inspector .chat-body .chat-form input.chat-field.chat-field { padding-inline: 20px; font-size: 16px; }
+@media (pointer: coarse) { :root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { padding-inline: 20px; font-size: 16px; } }
 
 /* A name's mute menu, beside the name, over the panel. */
 .chat-menu { position: fixed; z-index: 70; padding: 4px; border: 1px solid var(--s3-line, rgb(232 232 232 / .42)); border-radius: 8px; background: rgb(12 12 13 / .96); pointer-events: auto; }
