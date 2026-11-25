@@ -42,10 +42,22 @@ No rebuild between beta and production: the bytes the owner approved are the byt
   Foreman before one goes out, so the owner is not dropped mid-test. Automated checks use their
   own room names; a check that fills the public room (the full-room look) runs on a local Worker
   only, never on beta.mira.cc.
+- **The fingerprint.** A beta records a sha256 over everything its frozen copy would deploy: each
+  file under dist/, both wrangler configs, and the Worker script wrangler bundles from the copy's
+  own server code (which takes in the dependencies and bundler too, since a frozen copy links the
+  checkout's node_modules). Promote recomputes it and refuses on any difference, so nothing can
+  change between the owner's test and production without the tool noticing. Promote deploys
+  from the frozen copy itself (its wrangler.toml, server/ and shared/), never from the checkout.
+- **Secrets.** A Worker secret is declared in the config's `[secrets] required = [...]` (wrangler
+  supports it). Every deploy checks the target Worker has each declared secret first and stops,
+  with nothing deployed, if one is missing. A beta checks both Workers, so a new secret must be
+  set on production and on staging before the beta that needs it. New bindings and vars are in
+  the frozen copy's config and travel with it; a new resource such as an Analytics Engine dataset
+  is created by Cloudflare on first write.
 - **No direct production release.** A plain `tools/release.sh <n> "note"` (or `--immediate`)
   builds and ships straight to production; it is refused unless `MIRA_DIRECT_RELEASE=<reason>`
-  is set, and that is set only on the Foreman's explicit word, with the reason recorded in the
-  release record.
+  is set, and that is set only on the Foreman's explicit word. The reason is recorded beside the
+  release in `../Syn3h-stable/approvals.tsv` as "DIRECT: <reason>".
 - **Hotfix.** A fault that breaks production still goes through beta: ship the fix as a beta,
   and the owner may approve it in minutes. The Foreman relays the approval in the owner's own
   words as usual.

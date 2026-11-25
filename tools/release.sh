@@ -20,7 +20,13 @@
 #
 # Beta first, production only on the owner's approval in their own words (ops/RELEASE.md, 25
 # November 2026). A plain production release (no option) builds a new copy and deploys it straight
-# to production: it is refused unless MIRA_DIRECT_RELEASE=1 names a reason the Foreman gave.
+# to production: it is refused unless MIRA_DIRECT_RELEASE=<reason> gives the reason the Foreman
+# gave, which is then recorded beside the release in ../Syn3h-stable/approvals.tsv.
+#
+# Every deploy first checks the secrets the frozen copy's config declares (`[secrets] required`)
+# exist on the Worker it will run on: a beta checks both Workers, since its bytes are promoted
+# unchanged. A beta records the copy's fingerprint (tools/frozen-fingerprint.mjs: dist, both
+# configs and the bundled Worker script); a promote recomputes it and refuses on any difference.
 #
 # Run from the integration checkout with a clean tree whose HEAD carries a tag. Steps:
 #  1. tools/promote-stable.sh freezes the build into ../Syn3h-stable/<id> (dist, server,
@@ -97,6 +103,19 @@ STUB="${MIRA_RELEASE_STUB:-}"; [ -z "$DRY" ] || STUB=""
 UPDATE_MODE=""; [ "$MODE" = "--immediate" ] && UPDATE_MODE="--durable-objects-code-update-mode immediate"
 
 fail() { printf '\nRELEASE FAILED: %s\n' "$*" >&2; exit 1; }
+
+# need_secrets <config in the frozen copy> <worker>: refuse, before anything is deployed, if the
+# Worker lacks a secret that config declares in [secrets] required.
+need_secrets() {
+  _need="$(node tools/frozen-fingerprint.mjs secrets "$DEST/$1")" || fail "could not read [secrets] from $DEST/$1"
+  [ -n "$_need" ] || return 0
+  _have="$(with_cf_token node "$WRANGLER" secret list --name "$2" --format json </dev/null 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).map(x=>x.name).join("\n"))}catch{process.exit(1)}})')" \
+    || fail "could not list the secrets of Worker $2 (nothing deployed)"
+  for _s in $_need; do
+    printf '%s\n' "$_have" | grep -qx "$_s" || fail "Worker $2 has no secret $_s, which $1 requires: set it on $2 (wrangler secret put $_s --name $2) before this build is deployed there. Nothing was deployed."
+  done
+  echo "Secrets ok on $2: $(printf '%s ' $_need)"
+}
 
 # --- Preconditions --------------------------------------------------------------------------
 [ -z "$(git status --porcelain)" ] || fail "the working tree is not clean"
@@ -206,6 +225,20 @@ printf '*.map\n' > "$DEST/dist/.assetsignore"
 node tools/frozen-versions.mjs prepare "$DEST" "$CALVER" || fail "could not prepare the frozen versions list"
 fi
 echo "Frozen copy: $DEST"
+if [ -n "$BETA" ] || [ -n "$PROMOTE" ]; then
+  FINGERPRINT="$(node tools/frozen-fingerprint.mjs hash "$DEST")" || fail "could not fingerprint $DEST"
+  echo "Fingerprint: $FINGERPRINT"
+fi
+if [ -n "$PROMOTE" ]; then
+  _tested="$(awk -F '\t' -v id="$PROMOTE_ID" '$5 == id { f = $6 } END { print f }' release-notes/betas.tsv)"
+  [ -n "$_tested" ] || fail "release-notes/betas.tsv has no fingerprint for $PROMOTE_ID: it cannot be shown to be what the owner tested"
+  [ "$_tested" = "$FINGERPRINT" ] || fail "$PROMOTE_ID changed since it shipped as a beta (fingerprint $_tested then, $FINGERPRINT now): nothing promoted. Ship a new beta."
+  echo "Fingerprint matches the beta the owner tested."
+fi
+if [ -z "$DRY" ] && [ -z "$STUB" ]; then
+  [ -n "$PROMOTE" ] || need_secrets wrangler.staging.toml syn3h-staging
+  need_secrets wrangler.toml syn3h
+fi
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
 # Kill a process and all its descendants, by PID only.
@@ -346,8 +379,8 @@ else
     # Recorded in the repository (commit it with the beta's record): the Updates feed lists betas
     # from it, and release-notes.mjs counts its versions as used.
     if [ -z "$STUB" ]; then
-      [ -f release-notes/betas.tsv ] || printf '# Every beta shipped to beta.mira.cc (ops/RELEASE.md), oldest first. Written by tools/release.sh --beta.\n# version\tmilestone tag\tcommit\tPacific time\tfrozen id\n' > release-notes/betas.tsv
-      printf '%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$MILESTONE" "$COMMIT" "$BWHEN" "$ID" >> release-notes/betas.tsv
+      [ -f release-notes/betas.tsv ] || printf '# Every beta shipped to beta.mira.cc (ops/RELEASE.md), oldest first. Written by tools/release.sh --beta.\n# version\tmilestone tag\tcommit\tPacific time\tfrozen id\tfingerprint (tools/frozen-fingerprint.mjs)\n' > release-notes/betas.tsv
+      printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$MILESTONE" "$COMMIT" "$BWHEN" "$ID" "$FINGERPRINT" >> release-notes/betas.tsv
     fi
     echo
     echo "BETA OK: $CALVER ($MILESTONE $COMMIT), frozen as $ID, is live at $BETA_URL. Production was not touched."
@@ -494,6 +527,10 @@ if [ -n "$PROMOTE" ]; then
   # The owner's approval, in their own words, beside the version it approved.
   printf '%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$WHEN" "$ID" "release-$N" "$APPROVAL" >> ../Syn3h-stable/approvals.tsv
   echo "Approval recorded for $CALVER: \"$APPROVAL\""
+elif [ -n "${MIRA_DIRECT_RELEASE:-}" ]; then
+  # A direct release is always explained: the Foreman's reason beside the version.
+  printf '%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$WHEN" "$ID" "release-$N" "DIRECT: $MIRA_DIRECT_RELEASE" >> ../Syn3h-stable/approvals.tsv
+  echo "Direct release recorded for $CALVER: \"$MIRA_DIRECT_RELEASE\""
 fi
 echo
 echo "RELEASE OK: release-$N is live at $URL"
