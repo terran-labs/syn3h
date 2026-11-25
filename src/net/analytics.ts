@@ -13,6 +13,7 @@
  *   as a fallback), never awaited, never retried. A crash loop costs a handful of requests.
  */
 import { levelNumber, qualityLevel } from '../core/quality'
+import { deviceClass } from '../../shared/device'
 import { localStore, sessionStore } from '../core/safeStorage'
 import { cleanFrames, errorName, reduceMessage } from '../../shared/crashText'
 
@@ -67,12 +68,8 @@ export function entryRef(search: string = typeof location === 'undefined' ? '' :
 // Read at module load, before the lobby cleans the bar.
 const REF = entryRef()
 
-/** Phone, tablet or desktop, from the user agent and the pointer. */
-export function deviceClass(ua: string = typeof navigator === 'undefined' ? '' : navigator.userAgent, coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches, maxTouch = typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints): 'phone' | 'tablet' | 'desktop' {
-  if (/iPhone|iPod|Windows Phone|Android.+Mobile|Mobile.+Firefox/.test(ua)) return 'phone'
-  if (/iPad|Android|Tablet|Silk/.test(ua) || (/Macintosh/.test(ua) && maxTouch > 1)) return 'tablet'
-  return coarse && maxTouch > 1 ? 'tablet' : 'desktop'
-}
+/** Phone, tablet or desktop: the one rule, in shared/device.ts (also the players card's labels). */
+export { deviceClass }
 
 export const buildVersion = (): string => {
   const b = typeof __MIRA_BUILD__ === 'string' ? __MIRA_BUILD__ : ''
