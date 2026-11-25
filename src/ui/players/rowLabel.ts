@@ -1,5 +1,5 @@
 /**
- * What the Players & session card says about where a player is and what they play on, and how
+ * What the Players card says about where a player is and what they play on, and how
  * much of it fits (the owner, 25 November 2026: "iPhone 18 Pro • Texas, USA ... this could
  * easily be shortened to iPhone • USA"). Pure: no DOM, so the rules are tested directly.
  *

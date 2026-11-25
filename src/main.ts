@@ -481,12 +481,18 @@ async function main(): Promise<void> {
     })
     // Who is in the room as names are shown: the Players & session rows, the match board and
     // toasts mark each bot with the bot icon in its colour (src/ui/playerMarks.ts).
-    shell.setPlayerRoster(() => [...connection.players.values()].map((p) => ({
-      id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
-      color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
-      // The creator mark comes from the room's role alone (server/creator.ts); bots have none.
-      ...(!p.bot && p.role === 'creator' ? { role: 'creator' as const } : {}),
-    })))
+    // The Players card also shows each vehicle, device and place, and the room's mute.
+    shell.setPlayerRoster(() => [...connection.players.values()].map((p) => {
+      const info = p as typeof p & { country?: string; region?: string; deviceLabel?: string; deviceModel?: string; muted?: boolean }
+      return {
+        id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
+        color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
+        kind: p.kind, country: info.country, region: info.region, deviceLabel: info.deviceLabel,
+        deviceModel: info.deviceModel, mutedForAll: Boolean(info.muted),
+        // The creator mark comes from the room's role alone (server/creator.ts); bots have none.
+        ...(!p.bot && p.role === 'creator' ? { role: 'creator' as const } : {}),
+      }
+    }))
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
     const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')
     // For automated checks (tools/chat-check.mjs). Join can run before window.mira exists.

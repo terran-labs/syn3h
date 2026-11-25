@@ -1,4 +1,4 @@
-/* The Players & session card's rows and the player panel (PlayerPanel.ts, Scoreboard.ts).
+/* The Players card's rows and the player panel (PlayerPanel.ts, Scoreboard.ts).
    Liquid Glass rules: the panel is a .wi-glass surface like the setting tooltip; no shadows on
    text or icons inside it. Icons are white silhouettes in the text colour. */
 
@@ -7,16 +7,16 @@
 .mira-shell .rail-player-body .score-row.is-rich > .score-name { order: 0; flex: 0 1 auto; min-width: 0; }
 .mira-shell .rail-player-body .score-row.is-rich > .score-meta { order: 1; flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-align: right; color: var(--s3-dim, #a9b0bd); font-size: 11.5px; }
 .mira-shell .rail-player-body .score-row.is-rich > small { order: 2; flex: none; }
-.mira-shell .rail-player-body .score-row.is-rich > small:empty { display: none; }
 .mira-shell .rail-player-body .score-row.is-rich > .score-muted { order: 3; flex: none; display: flex; }
-.mira-shell .rail-player-body .score-row.is-rich > .score-muted:empty { display: none; }
 .mira-shell .rail-player-body .score-row.is-rich > strong { order: 4; flex: none; min-width: 2ch; }
 .mira-shell .rail-player-body .score-row.is-rich > .score-vehicle { order: 5; flex: none; display: flex; width: 20px; justify-content: flex-end; color: #fff; }
 /* Every name starts at the same x: one fixed slot for the mark, wide enough for the creator's
-   (about 1.5em), with the bot icon and the tint circle centred in it. */
-.mira-shell .mark-slot { display: inline-flex; flex: none; justify-content: center; align-items: center; width: 1.55em; margin-right: .35em; vertical-align: -.12em; }
+   (1.6em), with the bot icon and the tint circle centred in it. */
+.mira-shell .mark-slot { display: inline-flex; flex: none; justify-content: center; align-items: center; width: 1.6em; margin-right: .35em; vertical-align: -.12em; }
 .mira-shell .mark-slot > svg { margin: 0; vertical-align: 0; }
 .mira-shell .mark-slot > .tint-dot { width: .62em; height: .62em; }
+/* The creator's mark is drawn wider than the slot elsewhere (1.8em); here it fits the slot's width. */
+.mira-shell .mark-slot > .creator-mark { width: 100%; height: auto; aspect-ratio: 200 / 128; vertical-align: 0; }
 .mira-shell .score-row.is-rich > .score-name { display: flex; align-items: center; }
 .mira-shell .score-row.is-rich .mark-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mira-shell .score-vehicle .vehicle-mark { width: 20px; height: 12px; }

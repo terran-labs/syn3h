@@ -1,4 +1,4 @@
-// Exercise the real room, both bot-count controls, and the local mute menu.
+// Exercise the real room, both bot-count controls, and Mute for me in the player panel.
 // MIRA_URL points to the client and its local room server.
 import '../../tools/lib/legacy-env.mjs'
 import assert from 'node:assert/strict'
@@ -22,6 +22,8 @@ const show = async (page, section) => {
 const value = (page, selector, n) => page.waitForFunction(
   ([s, n]) => document.querySelector(s)?.value === String(n), [selector, n],
 )
+const mutedMark = (page, id, name) => page.waitForFunction(([id, name]) =>
+  (document.querySelector(`.score-row[data-player-id="${id}"] .score-muted svg`)?.getAttribute('aria-label') ?? null) === name, [id, name])
 const flags = (page, id, expected) => page.waitForFunction(([id, expected]) =>
   document.querySelector(`.score-row[data-player-id="${id}"] > small`)?.textContent === expected, [id, expected])
 const setRange = (page, selector, n) => page.locator(selector).evaluate((input, n) => {
@@ -138,19 +140,24 @@ try {
         const original = await nameButton.elementHandle()
         const rowHeight = (await row.boundingBox()).height
         const sameNode = () => nameButton.evaluate((button, original) => button === original, original)
-        await nameButton.click()
-        await host.getByRole('menuitem', { name: /^Mute / }).click()
-        await flags(host, guestId, 'MUTED')
+        // Mute for me lives in the player panel the row opens (src/ui/players); the row shows it
+        // as the crossed speaker named "Muted for you", only on the muter's screen.
+        const muteForMe = async on => {
+          if (await host.locator('#player-panel').isHidden()) await nameButton.click()
+          const toggle = host.locator('#player-panel .pp-toggle[data-mute=me]')
+          if ((await toggle.getAttribute('aria-pressed')) !== String(on)) await toggle.click()
+          await host.waitForFunction(([id, on]) => miraNet.chat.muted.has(id) === on, [guestId, on])
+          await mutedMark(host, guestId, on ? 'Muted for you' : null)
+          await host.keyboard.press('Escape')
+          await host.locator('#player-panel').waitFor({ state: 'hidden' })
+        }
+        await muteForMe(true)
         assert.equal(await host.evaluate(id => miraNet.chat.muted.has(id), guestId), true)
         assert.equal(await host.evaluate(id => miraNet.chat.muted.has(id), hostId), false)
         assert.equal(await sameNode(), true)
         assert.equal((await row.boundingBox()).height, rowHeight)
-        await nameButton.click()
-        await host.getByRole('menuitem', { name: /^Unmute / }).click()
-        await flags(host, guestId, '')
-        await nameButton.click()
-        await host.getByRole('menuitem', { name: /^Mute / }).click()
-        await flags(host, guestId, 'MUTED')
+        await muteForMe(false)
+        await muteForMe(true)
         assert.equal(await sameNode(), true)
         await original.dispose()
         await host.evaluate(([guestId, guestName]) => { miraNet.players.get(guestId).name = guestName }, [guestId, guestName])
@@ -207,7 +214,8 @@ try {
       await guest.evaluate(() => mira.shell.pauseControl.pause('user'))
       await host.waitForFunction(id => miraNet.pausedOf(id), guestId)
       if (!before) {
-        await flags(host, guestId, 'PAUSED · MUTED')
+        await flags(host, guestId, 'PAUSED')
+        await mutedMark(host, guestId, 'Muted for you')
         await flags(guest, guestId, 'YOU · PAUSED')
         const row = playerRow(host, guestId)
         const current = await row.evaluate(el => {

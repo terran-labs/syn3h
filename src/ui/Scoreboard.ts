@@ -33,7 +33,7 @@ export interface SessionPlayer extends RosterPlayer {
 }
 
 /**
- * The Players & session card's richer rows (ui/player-panel): each row opens the player panel,
+ * The Players card's richer rows (ui/player-panel): each row opens the player panel,
  * and carries the device and place label, the muted speaker and the vehicle silhouette. The
  * HUD's boards share this class without it.
  */
@@ -142,7 +142,7 @@ export class Scoreboard {
     display.forEach((row, index) => {
       const { player, name, self } = row
       const key = player ? `player-${player.id}` : `text-${index}`
-      const label = JSON.stringify([name, self, player?.bot, player?.color, player?.kind])
+      const label = JSON.stringify([name, self, player?.bot, player?.color, player?.kind, player?.role])
       const previous = this.rows.get(key)
       const entry = previous?.label === label ? previous : { element: this.rowElement(row), label }
       this.updateRow(entry.element, row)
@@ -211,7 +211,7 @@ export class Scoreboard {
   }
 
   /**
-   * A row in the Players & session card: the name is a real button that opens the player panel;
+   * A row in the Players card: the name is a real button that opens the player panel;
    * after the name, flags and score (whose places other code relies on) come the device and place
    * label, the muted speaker, and the vehicle silhouette, which CSS pins to the far edge.
    */
@@ -271,7 +271,8 @@ export class Scoreboard {
         const inner = row.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
         let fixed = 0, shown = 0
         for (const child of row.children as unknown as Iterable<HTMLElement>) {
-          if (child === name || child === meta || !child.offsetWidth) continue
+          // Empty parts still take a flex gap; parts hidden by CSS take nothing.
+          if (child === name || child === meta || getComputedStyle(child).display === 'none') continue
           fixed += child.offsetWidth; shown++
         }
         fixed += gap * shown
