@@ -23,10 +23,17 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
   try {
     const page = await browser.newPage(IPAD[mode] ?? (mode === 'landscape' ? { ...devices['iPhone 14 landscape'], viewport: { width: 844, height: 390 } } : touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } }))
     const errors = []; page.on('pageerror', (e) => errors.push(e.message))
-    await page.goto(`${base}?room=lobby-settings-${mode}-${Date.now()}`)
+    await page.goto(`${base}?tap=0&intro=0&room=lobby-settings-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     await page.waitForTimeout(2000)
+    await page.evaluate(async () => {
+      const { setQualityChoice } = await import('/src/ui/quality/ladder.ts')
+      setQualityChoice('full')
+      mira.game.quality.setAuto(false)
+      mira.game.quality.setLevel(3)
+    })
+    await page.waitForFunction(() => Number(document.documentElement.dataset.gfx) > 0 && document.querySelector('.mira-shell').dataset.uiFrost === 'on')
     const tap = (locator) => touch ? locator.tap() : locator.click()
 
     // The gear and the version beside it, clear of the planet labels, the buttons and the hint.
@@ -71,15 +78,41 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     assert.deepEqual(await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section)), ['performance', 'sound', 'glass', 'play'])
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
 
+    const panelFilters = await panel.evaluate(el => {
+      const shell = el.closest('.mira-shell'), root = document.documentElement
+      const filter = node => getComputedStyle(node).backdropFilter || getComputedStyle(node).webkitBackdropFilter
+      const normal = filter(el)
+      const nested = [...el.querySelectorAll('.wi-glass, button')].map(filter)
+      const toggle = (node, name, value) => {
+        const saved = node.getAttribute(name)
+        node.setAttribute(name, value)
+        const off = filter(el)
+        if (saved === null) node.removeAttribute(name)
+        else node.setAttribute(name, saved)
+        return off
+      }
+      return { normal, nested, lowest: toggle(root, 'data-gfx', '0'), shed: toggle(shell, 'data-ui-frost', 'off'), driveShed: toggle(root, 'data-drive-glass', 'shed') }
+    })
+    assert.equal(panelFilters.normal, 'blur(4px)', `${mode}: Flat Settings card has light blur`)
+    assert.ok(panelFilters.nested.every(value => value === 'none'), `${mode}: Flat Settings controls carry no additional filter`)
+    assert.deepEqual([panelFilters.lowest, panelFilters.shed, panelFilters.driveShed], ['none', 'none', 'none'])
+    await page.screenshot({ path: `${out}/${mode}-flat-settings.png` })
+
     // Glass: Style and Tint, and the Liquid style's tuning in one fold, closed at first, there only
-    // at Liquid. Bug caught: Liquid's sliders shown at Frost or Flat, where they do nothing, or
+    // at Liquid. Bug caught: Liquid's sliders shown at Flat, where they do nothing, or
     // missing at Liquid (the owner, 22 November 2026).
     const glass = panel.locator('.wi-card[data-section=glass]'), style0 = await page.evaluate(() => window.mira.params.get('hud.glass').value)
     await tap(glass.locator('.wi-head'))
     await glass.locator('.wi-row[data-id="hud.glass"]').waitFor({ state: 'visible' })
-    await page.evaluate(() => window.mira.params.set('hud.glass', 0))
+    const choices = glass.locator('.glass-stops button')
+    assert.deepEqual(await choices.allTextContents(), ['Liquid', 'Flat'])
+    assert.equal(style0, 2)
+    assert.equal(await glass.locator('.tint-row input').inputValue(), '65')
+    await page.screenshot({ path: `${out}/${mode}-flat-style.png` })
+    await tap(glass.getByRole('button', { name: 'Liquid', exact: true }))
+    await page.waitForFunction(() => window.mira.params.get('hud.surfaceCoverage').value === 25)
     const fold = glass.locator('details.lobby-liquid')
-    // Registering the lazy settings can rebuild the fold. Check the live locator afterwards.
+    // Lazy registration can rebuild the fold after the tint changes. Wait for the fold itself.
     await page.waitForFunction(() => window.mira.params.get('glass.thickness'), null, { timeout: 20000 })
     try {
       await fold.waitFor({ state: 'visible', timeout: 20000 })
@@ -93,8 +126,10 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     assert.deepEqual(await fold.locator('.wi-row').evaluateAll((rows) => rows.map((r) => r.dataset.id).sort()), liquidIds, `${mode}: Liquid glass holds the Glass and Clear lens settings`)
     await tap(fold.locator('summary'))
     assert.equal(await glass.locator(':scope > .wi-body > .wi-row').count(), 2, `${mode}: Style and Tint stand above the fold`)
-    await page.evaluate(() => window.mira.params.set('hud.glass', 1)); await page.waitForTimeout(500)
-    assert.ok(await fold.evaluate((d) => d.closest('.lobby-liquid-wrap').hidden && d.closest('.lobby-liquid-wrap').inert), `${mode}: at Frost Liquid glass is gone`)
+    await tap(glass.getByRole('button', { name: 'Flat', exact: true }))
+    await page.waitForFunction(() => window.mira.params.get('hud.glass').value === 2)
+    await page.waitForTimeout(500)
+    assert.ok(await fold.evaluate((d) => d.closest('.lobby-liquid-wrap').hidden && d.closest('.lobby-liquid-wrap').inert), `${mode}: at Flat Liquid glass is gone`)
     // A style change (which loads Liquid's settings the first time) leaves the card open.
     assert.ok(await glass.evaluate((c) => c.classList.contains('is-open')), `${mode}: the Glass card stays open through style changes`)
     await page.evaluate((v) => window.mira.params.set('hud.glass', v), style0); await page.waitForTimeout(400)

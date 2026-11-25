@@ -146,10 +146,11 @@ export const worldNameSeed = defineParam({
   default: 0, min: -999999, max: 999999999, step: 1,
 })
 
-/** Personal interface materials, in the order shown in both Settings views. */
+/** Numeric IDs also appear in exported personal settings. ID 1 is reserved for legacy Frost. */
+export const GLASS_LIQUID = 0, GLASS_FLAT = 2
 export const glassStyle = defineParam<number>({
-  id: 'hud.glass', label: 'Style', group: 'Interface', scope: 'client', default: 1, min: 0, max: 2, step: 1,
+  id: 'hud.glass', label: 'Style', group: 'Interface', scope: 'client', default: GLASS_FLAT, min: GLASS_LIQUID, max: GLASS_FLAT, step: 1,
 })
 export const surfaceCoverage = defineParam<number>({
-  id: 'hud.surfaceCoverage', label: 'Tint', group: 'Interface', scope: 'client', default: 25, min: 0, max: 100, step: 1,
+  id: 'hud.surfaceCoverage', label: 'Tint', group: 'Interface', scope: 'client', default: 65, min: 0, max: 100, step: 1,
 })
