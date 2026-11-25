@@ -26,6 +26,11 @@ export const hudRevealStep = defineParam({ id: 'hud.revealStep', label: 'Entry r
 /** Groups in order, by their --reveal-at index (hud-reveal.css); the last one's index. */
 export const HUD_REVEAL_LAST = 6
 export const HUD_REVEAL_ATTRIBUTE = 'data-hud-reveal'
+/** On a group that opened or closed while the reveal ran: it appears at once (hud-reveal.css). */
+export const HUD_REVEAL_SKIP = 'data-reveal-skip'
+/** Every group the reveal moves (hud-reveal.css), to notice one opening or closing mid-reveal. */
+const GROUPS = '.fh-top, .gear-selector, .hud-accessories, .hud-chat, .world-inspector, .hud-navigation, .shell-minimap, .chat-strip, .focus-hud .fh-left, .focus-hud .fh-right, .spawn-help, .touch-controls, .gear-actions'
+const shown = (e: Element): boolean => getComputedStyle(e).display !== 'none'
 
 /** The whole reveal's length in milliseconds at the current settings. */
 export const hudRevealTotal = (): number => hudRevealMs.value + hudRevealStep.value * HUD_REVEAL_LAST
@@ -42,13 +47,21 @@ export function startHudReveal(root: HTMLElement): void {
   root.style.setProperty('--reveal-ms', `${hudRevealMs.value}ms`)
   root.style.setProperty('--reveal-step', `${hudRevealStep.value}ms`)
   root.setAttribute(HUD_REVEAL_ATTRIBUTE, '')
-  const watch = new MutationObserver(() => { if (!root.classList.contains('is-playing')) end() })
+  // What shows as the reveal starts. A group that opens or closes after that (a panel the player
+  // opens) is not part of the arrival: it appears at once, with its own motion, if any.
+  const groups = [...root.querySelectorAll(GROUPS)]
+  const start = new Map(groups.map(e => [e, shown(e)]))
+  const watch = new MutationObserver(() => {
+    if (!root.classList.contains('is-playing')) { end(); return }
+    for (const [e, was] of start) if (shown(e) !== was) { e.setAttribute(HUD_REVEAL_SKIP, ''); start.delete(e) }
+  })
   const timer = setTimeout(() => end(), hudRevealTotal() + 50)
   const off = params.onChange(id => { if (id === hudRevealOn.def.id && !hudRevealOn.value) end() })
   function end(): void {
     clearTimeout(timer); watch.disconnect(); off(); running.delete(root)
     root.removeAttribute(HUD_REVEAL_ATTRIBUTE)
+    for (const e of groups) e.removeAttribute(HUD_REVEAL_SKIP)
   }
-  watch.observe(root, { attributes: true, attributeFilter: ['class'] })
+  watch.observe(root, { attributes: true, subtree: true, attributeFilter: ['class', 'hidden'] })
   running.set(root, end)
 }
