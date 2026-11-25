@@ -252,15 +252,19 @@ export class BotManager implements System {
    */
   /** Personality overrides by place in the line-up (network bot id minus BOT_ID_BASE), from the room. */
   private readonly traitOverrides = new Map<number, BotTraits>()
+  /** A bot's own nature (before overrides), which the host reports so every screen can show it. */
   traitsOf(index: number): BotTraits | undefined {
-    const p = this.brains[index]?.mind?.personality
-    return p ? { boldness: p.boldness, curiosity: p.curiosity, sociability: p.sociability, mischief: p.mischief, patience: p.patience } : undefined
+    const mind = this.brains[index]?.mind
+    return mind ? natureOf(mind.personality, this.natures) : undefined
   }
+  /** The room's whole override set for the bot at this place: its nature with these on top. */
   setBotTraits(index: number, traits: BotTraits): void {
     this.traitOverrides.set(index, traits)
     const mind = this.brains[index]?.mind
-    if (mind) applyTraits(mind.personality, traits)
+    if (mind) applyTraits(mind.personality, { ...natureOf(mind.personality, this.natures), ...traits })
   }
+  /** Each bot's nature, kept before any override touches its personality. */
+  private readonly natures = new WeakMap<object, BotTraits>()
   /**
    * A moderator ejected this bot: it goes now, in its departure cloud where there is one. Network
    * bot ids are places in the line-up, so the bots after it take the next lower ids, and other
@@ -419,7 +423,7 @@ export class BotManager implements System {
       const pilot = createPilot(bot, this.terrain)
       if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
       // A moderator's overrides for this place in the line-up (the room keeps them across hosts).
-      if (brain.mind) applyTraits(brain.mind.personality, this.traitOverrides.get(index))
+      if (brain.mind) { natureOf(brain.mind.personality, this.natures); applyTraits(brain.mind.personality, this.traitOverrides.get(index)) }
       brain.navigator = this.navigator
       brain.setGear(this.gearHooks)
       brain.match = this.match
@@ -522,4 +526,11 @@ function applyTraits(p: Personality, traits: BotTraits | undefined): void {
   const names = { boldness: 'daredevil', curiosity: 'explorer', sociability: 'shadow', mischief: 'trickster', patience: 'cruiser' } as const
   let best = -1
   for (const key of BOT_TRAITS) if (p[key] > best) { best = p[key]; p.archetype = names[key] }
+}
+
+/** The personality's own values, recorded the first time they are asked for (before any override). */
+function natureOf(p: Personality, natures: WeakMap<object, BotTraits>): BotTraits {
+  let n = natures.get(p)
+  if (!n) { n = { boldness: p.boldness, curiosity: p.curiosity, sociability: p.sociability, mischief: p.mischief, patience: p.patience }; natures.set(p, n) }
+  return n
 }

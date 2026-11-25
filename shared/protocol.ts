@@ -222,8 +222,10 @@ export interface PlayerInfo {
    * A general field so later roles (a moderator, say) need no protocol change.
    */
   role?: PlayerRole
-  /** A bot's personality as it drives now: the host's values with any moderator overrides on top, each 0..1. */
+  /** A bot's personality as it drives now: its nature with any moderator overrides on top, each 0..1. */
   traits?: BotTraits
+  /** A bot's own nature, before overrides (what a reset returns to). Only the host can know it, so it reports it. */
+  nature?: BotTraits
 }
 
 /** Roles the room may assert on a PlayerInfo. Kept equal to server/creator.ts ROLES. */
@@ -233,6 +235,8 @@ export type PlayerRole = 'creator'
 export const BOT_TRAITS = ['boldness', 'curiosity', 'sociability', 'mischief', 'patience'] as const
 export type BotTrait = typeof BOT_TRAITS[number]
 export type BotTraits = Partial<Record<BotTrait, number>>
+/** A moderator's change to one bot: a number sets that trait, null drops its override (back to the bot's nature). */
+export type BotTraitsPatch = Partial<Record<BotTrait, number | null>>
 
 /**
  * Game modes, the value of the shared parameter `game.mode`.
@@ -443,7 +447,7 @@ export type ClientMessage =
   | { type: 'banishes' }
   | { type: 'unbanish'; ref: string }
   /** Moderators only: set one bot's personality traits (clamped to 0..1, unknown traits dropped). */
-  | { type: 'bot-traits'; bot: number; traits: BotTraits }
+  | { type: 'bot-traits'; bot: number; traits: BotTraitsPatch }
   /**
    * The grabbed player asks player (or bot) `from` to let go of the cord it has tied to them: a
    * press of their own Grapple, or a double tap of brake. The room checks that `from`'s cord is

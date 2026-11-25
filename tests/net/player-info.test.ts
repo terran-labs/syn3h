@@ -198,6 +198,10 @@ describe('bot personality overrides', () => {
     expect(roster(other.peer, BOT_ID_BASE)?.traits).toEqual({ boldness: 0.2, curiosity: 0.4, sociability: 0.6, mischief: 0.8, patience: 1 })
     send(host.peer, { type: 'bot-traits', bot: BOT_ID_BASE, traits: { mischief: 0 } })
     expect(roster(other.peer, BOT_ID_BASE)?.traits).toMatchObject({ boldness: 0.2, mischief: 0 })
+    expect(roster(other.peer, BOT_ID_BASE)?.nature).toMatchObject({ mischief: 0.8 })
+    // A reset (null) drops the override: back to its nature.
+    send(host.peer, { type: 'bot-traits', bot: BOT_ID_BASE, traits: { mischief: null } })
+    expect(roster(other.peer, BOT_ID_BASE)?.traits).toMatchObject({ mischief: 0.8 })
   })
   it('clamps to 0..1, drops unknown traits, and keeps them across a host change', () => {
     make('friends')

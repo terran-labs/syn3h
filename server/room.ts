@@ -1999,25 +1999,28 @@ export class Room {
     this.botBase.set(id, cleanTraits(raw))
     this.refreshBotTraits(id)
   }
-  private effectiveTraits(id: number): { traits?: BotTraits } {
-    const t = { ...this.botBase.get(id), ...this.botTraits.get(id) }
-    return Object.keys(t).length ? { traits: t } : {}
+  private effectiveTraits(id: number): { traits?: BotTraits; nature?: BotTraits } {
+    const nature = this.botBase.get(id), t = { ...nature, ...this.botTraits.get(id) }
+    return { ...(Object.keys(t).length ? { traits: t } : {}), ...(nature && Object.keys(nature).length ? { nature } : {}) }
   }
   /** Put a bot's effective traits on its roster entry, and tell everyone when they changed. */
   private refreshBotTraits(id: number): void {
     const bot = this.bots.get(id)
     if (!bot) return
-    const next = this.effectiveTraits(id).traits
-    if (JSON.stringify(next) === JSON.stringify(bot.info.traits)) return
+    const { traits: next, nature } = this.effectiveTraits(id)
+    if (JSON.stringify([next, nature]) === JSON.stringify([bot.info.traits, bot.info.nature])) return
     if (next) bot.info.traits = next; else delete bot.info.traits
+    if (nature) bot.info.nature = nature; else delete bot.info.nature
     this.broadcast({ type: 'profile', player: bot.info })
   }
   private onBotTraits(actor: Player, botId: unknown, raw: unknown): void {
     const bot = typeof botId === 'number' ? this.bots.get(botId) : undefined
     if (!bot || !raw || typeof raw !== 'object' || !canModerate(this.moderator(actor), this.moderator(bot), this.kind()).ok) return
     const traits: BotTraits = { ...this.botTraits.get(bot.info.id), ...cleanTraits(raw) }
-    if (!Object.keys(traits).length) return
-    this.botTraits.set(bot.info.id, traits)
+    // null drops that override: the trait goes back to the bot's nature.
+    for (const key of BOT_TRAITS) if ((raw as Record<string, unknown>)[key] === null) delete traits[key]
+    if (JSON.stringify(traits) === JSON.stringify(this.botTraits.get(bot.info.id) ?? {})) return
+    if (Object.keys(traits).length) this.botTraits.set(bot.info.id, traits); else this.botTraits.delete(bot.info.id)
     this.noteCreator('bot-traits', actor)
     this.broadcast({ type: 'bot-traits', bot: bot.info.id, traits })
     this.refreshBotTraits(bot.info.id)

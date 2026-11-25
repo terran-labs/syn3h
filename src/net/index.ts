@@ -64,7 +64,7 @@ import { BotRamReporter } from './botRams'
 import { canModerate, type ModerationReason, type RoomKind } from '../../shared/moderation'
 import { deviceLabelSync, deviceModel } from '../core/device'
 import { localStore } from '../core/safeStorage'
-import { CLOSE_EJECTED, type BanishChoice, type BotTraits } from '../../shared/protocol'
+import { CLOSE_EJECTED, type BanishChoice, type BotTraits, type BotTraitsPatch } from '../../shared/protocol'
 import type { BotGearOption } from '../bots/gear'
 import { seededRandom } from '../bots/random'
 import { playWithMe } from '../bots/play/PlayDirector'
@@ -2073,7 +2073,8 @@ export class NetClient implements System {
   muteForEveryone(id: number, muted: boolean): void { this.send({ type: 'mute', id, muted }) }
   /** Eject a player, kept out of this world for `banish`, or remove a bot. */
   eject(id: number, banish: BanishChoice = 'none'): void { this.send({ type: 'eject', id, banish }) }
-  setBotTraits(bot: number, traits: BotTraits): void { this.send({ type: 'bot-traits', bot, traits }) }
+  /** Set traits (0..1) or drop overrides (null: back to the bot's nature, PlayerInfo.nature). */
+  setBotTraits(bot: number, traits: BotTraitsPatch): void { this.send({ type: 'bot-traits', bot, traits }) }
   requestBanishes(): void { this.send({ type: 'banishes' }) }
   unbanish(ref: string): void { this.send({ type: 'unbanish', ref }) }
   /** Show my region and country to others, or not: kept on this device and told to the room. */
@@ -2117,8 +2118,11 @@ export class NetClient implements System {
       case 'host': {
         // Who had it and why (newer rooms say), once per change: a clear line for everyone.
         const from = msg.from ? this.departed.get(msg.from) ?? this.nameOf(msg.from) : ''
-        const why = msg.reason === 'away' ? `${from} is away. ` : msg.reason === 'ejected' ? `${from} was ejected. ` : from ? `${from} left. ` : ''
-        this.event(msg.actor === this.id ? `${why}You are now the host of this world.` : `${a} is now the host.`)
+        // The leave and eject lines have already said what happened, and the UI's own notice tells
+        // the new host (onHostChange): only an away host needs a line of its own here.
+        if (msg.actor !== this.id) this.event(`${a} is now the host.`)
+        else if (msg.reason === 'away') this.event(`${from} is away.`)
+        else if (!msg.reason) this.event('You are now the host of this world.')
         try { this.ctx.onHostChange?.(msg.actor ?? 0, msg.from, msg.reason) } catch (error) { console.error('Mira: the host change hook failed', error) }
         // The room's bot overrides outlast the host: the new host's bots take them on.
         if (msg.actor === this.id) for (const [id, traits] of this.botTraits) this.ctx.bots?.setBotTraits?.(id - BOT_ID_BASE, traits)
