@@ -12,7 +12,8 @@ builds." It applies to every release after v26.11.2500.
    "note" --beta`). That freezes the build, deploys the frozen copy unedited to the staging
    Worker, checks it there (settle, frozen versions, full two-player smoke) and at
    https://beta.mira.cc/ (certificate, socket, short public check), and records it in
-   `../Syn3h-stable/betas.tsv`: version, time, frozen id, milestone, commit, note. Production is
+   `release-notes/betas.tsv` (version, milestone, commit, time, frozen id; commit it with the
+   beta's record). Production is
    not touched and no production tag is made. The Orchestrator tells the Foreman the version and
    the frozen id; the Foreman tells the owner.
 2. **Promote.** Only when the Foreman relays the owner's approval of that version in their own

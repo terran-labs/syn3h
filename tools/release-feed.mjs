@@ -10,6 +10,16 @@
  * line of its notes. Each entry links its full notes on GitHub. Dates come from
  * release-notes/history.tsv; only production releases with a notes file are listed.
  *
+ * Channels (ops/RELEASE.md, 25 November 2026). Every release is first a beta at beta.mira.cc and
+ * is promoted to production byte for byte, so one feed serves both hosts. Each entry has a
+ * channel; a production release carries `betas`, the betas built since the previous production
+ * release that were never promoted, oldest first (release-notes/betas.tsv with each beta's own
+ * player digest). The version this build is for is listed first with channel "beta" and the feed
+ * names it as `build`: the page cannot know at build time whether its bytes will be served as a
+ * beta or, once promoted, as production, so the view decides by its hostname (on a production
+ * host its own build is production). `changes` lists one line per branch merged into an entry's
+ * train (the merged tip's subject and short commit), read from git where the commits are known.
+ *
  * The feed is emitted into the build and served by the dev server; nothing loads it until a
  * player opens Updates or an update is found. A build for a release (MIRA_RELEASE_VERSION
  * set, as tools/release.sh does) fails unless that version has a valid digest, so a release
@@ -17,14 +27,18 @@
  */
 import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const FEED_FILE = 'releases.json'
-const LIMIT = 12
+// About 18 days at four releases a day: the view folds each day into one entry.
+const LIMIT = 60
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/
 const GITHUB = 'https://github.com/terran-labs/syn3h/releases/tag/'
+// A beta has no GitHub release (only production is published): link its notes file instead.
+const BETA_NOTES = 'https://github.com/terran-labs/syn3h/blob/main/release-notes/releases/'
 export const SUMMARY_MAX = 70
 
 const compare = (a, b) => {
@@ -67,6 +81,50 @@ export function productionDates(tsv) {
   return dates
 }
 
+/** Production releases from history.tsv: version to its commit. */
+function productionCommits(tsv) {
+  const commits = new Map()
+  for (const line of tsv.split('\n')) {
+    if (!line || line.startsWith('#')) continue
+    const [version, , commit, , channel] = line.split('\t')
+    if (channel?.trim() === 'production' && VERSION.test(version) && commit) commits.set(bare(version), commit.trim())
+  }
+  return commits
+}
+
+/** Betas from release-notes/betas.tsv (release.sh --beta): version, milestone, commit, time, frozen id. */
+export function readBetas(tsv) {
+  const betas = []
+  for (const line of tsv.split('\n')) {
+    if (!line || line.startsWith('#')) continue
+    const [version, , commit, when] = line.split('\t')
+    if (VERSION.test(version)) betas.push({ version: bare(version), commit: commit?.trim() ?? '', date: when?.trim() ?? '' })
+  }
+  return betas
+}
+
+/**
+ * The branches merged into a train, oldest first: the merged tip's subject and short commit for
+ * each merge on the first-parent line between two commits, and each plain commit there (a tip
+ * fast-forwarded onto the train). Empty when git or either commit is not available.
+ */
+const NOT_CHANGES = /^(Record v\d|v\d+\.\d+\.\d+ notes|Notes renamed to v\d|Merge )/
+function trainChanges(repo, from, to) {
+  if (!to) return []
+  try {
+    const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    const range = from ? `${from}..${to}` : to
+    // Each commit on the first-parent line: a merge stands for the tip it merged; a plain commit
+    // (a tip fast-forwarded onto the train) for itself. Release records and notes are not changes.
+    const lines = git('log', '--first-parent', '--format=%H %P', range).split('\n').filter(Boolean)
+    const tips = lines.map(line => { const [self, , merged] = line.split(' '); return merged ?? self })
+    return tips
+      .map(tip => ({ title: git('log', '-1', '--format=%s', tip), commit: git('rev-parse', '--short=8', tip) }))
+      .filter(c => !NOT_CHANGES.test(c.title))
+      .reverse()
+  } catch { return [] }
+}
+
 const digestPath = (repo, version) => join(repo, 'release-notes', 'player', `v${bare(version)}.md`)
 
 function readDigest(repo, version) {
@@ -102,28 +160,55 @@ export function pacificStamp(when) {
  */
 export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIRA_RELEASE_VERSION, now = new Date()) {
   const dir = join(repo, 'release-notes', 'releases'), history = join(repo, 'release-notes', 'history.tsv')
-  const dates = existsSync(history) ? productionDates(readFileSync(history, 'utf8')) : new Map()
+  const historyText = existsSync(history) ? readFileSync(history, 'utf8') : ''
+  const dates = productionDates(historyText)
+  const commits = productionCommits(historyText)
+  const betasFile = join(repo, 'release-notes', 'betas.tsv')
+  const allBetas = existsSync(betasFile) ? readBetas(readFileSync(betasFile, 'utf8')) : []
+  const built = building && VERSION.test(String(building)) ? bare(building) : null
   const files = existsSync(dir) ? readdirSync(dir).filter(name => /^v\d+\.\d+\.\d+\.md$/.test(name)) : []
   const versions = new Set(files.map(name => name.slice(1, -3)))
-  if (building && VERSION.test(String(building)) && !dates.has(bare(building))) {
-    dates.set(bare(building), pacificStamp(now))
-    versions.add(bare(building))
+  const promoted = new Set(dates.keys())
+  // This build's own version, until history has its production row: a beta now, perhaps
+  // production later with the same bytes (the view decides by hostname).
+  const own = built && !promoted.has(built) ? built : null
+  if (own) {
+    const beta = allBetas.find(b => b.version === own)
+    dates.set(own, beta?.date || pacificStamp(now))
+    versions.add(own)
   }
-  const releases = [...versions]
-    .filter(version => dates.has(version))
-    .sort((a, b) => compare(b, a))
-    .slice(0, limit)
-    .map(version => {
-      const digest = readDigest(repo, version)
-      const notes = join(dir, `v${version}.md`)
-      return {
-        version, date: dates.get(version),
-        summary: digest?.summary ?? (existsSync(notes) ? notesSummary(readFileSync(notes, 'utf8')) : ''),
-        digest: digest?.digest ?? '',
-        url: `${GITHUB}v${version}`,
-      }
-    })
-  return { releases }
+  const words = (version) => {
+    const digest = readDigest(repo, version)
+    const notes = join(dir, `v${version}.md`)
+    return { summary: digest?.summary ?? (existsSync(notes) ? notesSummary(readFileSync(notes, 'utf8')) : ''), digest: digest?.digest ?? '' }
+  }
+  const ordered = [...versions].filter(version => dates.has(version)).sort((a, b) => compare(b, a))
+  // Betas never promoted, each under the next release after it (or under this build).
+  const unpromoted = allBetas.filter(b => !promoted.has(b.version) && b.version !== own).sort((a, b) => compare(a.version, b.version))
+  const releases = ordered.slice(0, limit).map((version, i) => {
+    const previous = ordered[i + 1] ?? null
+    const commit = version === own ? (built === own ? gitHead(repo) : '') : commits.get(version)
+    const previousCommit = previous ? commits.get(previous) : null
+    const betas = unpromoted
+      .filter(b => compare(b.version, version) < 0 && (!previous || compare(b.version, previous) > 0))
+      .map((b, j, list) => ({
+        version: b.version, date: b.date, ...words(b.version), url: `${BETA_NOTES}v${b.version}.md`,
+        changes: trainChanges(repo, j ? list[j - 1].commit : previousCommit, b.commit),
+      }))
+    const entry = {
+      version, date: dates.get(version), ...words(version),
+      url: `${GITHUB}v${version}`,
+      channel: version === own ? 'beta' : 'production',
+      changes: trainChanges(repo, betas.length ? betas[betas.length - 1].commit || previousCommit : previousCommit, commit),
+    }
+    if (betas.length) entry.betas = betas
+    return entry
+  })
+  return own ? { build: own, releases } : { releases }
+}
+
+function gitHead(repo) {
+  try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
 }
 
 export function releaseFeed() {

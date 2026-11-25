@@ -25,6 +25,9 @@ const NOTES_ROOT = process.env.MIRA_RELEASE_NOTES_DIR || join(REPO, 'release-not
 const NOTES_DIR = join(NOTES_ROOT, 'releases')
 const PLAYER_DIR = join(NOTES_ROOT, 'player')
 const HISTORY = join(NOTES_ROOT, 'history.tsv')
+// Betas (ops/RELEASE.md): one row per beta shipped to beta.mira.cc, written by release.sh --beta.
+// A beta's version is used even if it is never promoted: it is never given to other bytes.
+const BETAS = join(NOTES_ROOT, 'betas.tsv')
 const GITHUB_REPO = process.env.MIRA_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://mira.cc/'
 /**
@@ -288,7 +291,8 @@ function recordedReleases() {
  */
 function knownVersions() {
   const tags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: REPO, encoding: 'utf8' }).split('\n')
-  const all = new Set([...history().map((r) => r.version), ...tags].filter(isVersion).map((v) => parseVersion(v).tag))
+  const betas = existsSync(BETAS) ? readFileSync(BETAS, 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('\t')[0]) : []
+  const all = new Set([...history().map((r) => r.version), ...tags, ...betas].filter(isVersion).map((v) => parseVersion(v).tag))
   return [...all].sort(compareVersions)
 }
 

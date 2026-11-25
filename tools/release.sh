@@ -10,7 +10,7 @@
 #                                           production is not touched and nothing is recorded
 #   tools/release.sh <n> "note" --beta      freeze, deploy the frozen copy UNEDITED to the staging
 #                                           Worker, check it there and at https://beta.mira.cc/,
-#                                           and record it in ../Syn3h-stable/betas.tsv. Production
+#                                           and record it in release-notes/betas.tsv. Production
 #                                           is not touched and no production tag is made.
 #   tools/release.sh <n> "note" --promote <frozen-id> --approved <version> --approval "<words>"
 #                                           take the frozen copy a beta shipped, byte for byte, to
@@ -108,10 +108,9 @@ if [ -n "$PROMOTE" ]; then
   _bj() { node -e 'const b=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(b[process.argv[2]]??""))' "$DEST/dist/build.json" "$1"; }
   [ "$(_bj id)" = "$PROMOTE_ID" ] || fail "$DEST/dist/build.json names $(_bj id), not $PROMOTE_ID"
   COMMIT_FULL="$(_bj commit)"; COMMIT="$(git rev-parse --short "$COMMIT_FULL" 2>/dev/null)" || fail "commit $COMMIT_FULL of $PROMOTE_ID is not in this repository"
-  awk -F '\t' -v id="$PROMOTE_ID" '$3 == id { found = 1 } END { exit !found }' ../Syn3h-stable/betas.tsv 2>/dev/null \
-    || fail "$PROMOTE_ID was never shipped as a beta (no line in ../Syn3h-stable/betas.tsv): only what the owner tested on beta can be promoted"
-  MILESTONE="$(git describe --exact-match --tags "$COMMIT_FULL" 2>/dev/null | grep -v '^v[0-9]' | grep -v '^release-' | head -1)"
-  [ -n "$MILESTONE" ] || MILESTONE="$(awk -F '\t' -v id="$PROMOTE_ID" '$3 == id { m = $4 } END { print m }' ../Syn3h-stable/betas.tsv)"
+  awk -F '\t' -v id="$PROMOTE_ID" '$5 == id { found = 1 } END { exit !found }' release-notes/betas.tsv 2>/dev/null \
+    || fail "$PROMOTE_ID was never shipped as a beta (no line in release-notes/betas.tsv): only what the owner tested on beta can be promoted"
+  MILESTONE="$(awk -F '\t' -v id="$PROMOTE_ID" '$5 == id { m = $2 } END { print m }' release-notes/betas.tsv)"
 else
   if ! MILESTONE="$(git describe --exact-match --tags HEAD 2>/dev/null)"; then
     [ -n "$DRY" ] || fail "HEAD is not on a tag: tag a green milestone first"
@@ -344,7 +343,12 @@ else
       cat "$LOG-beta.log"
     fi
     BWHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
-    [ -n "$STUB" ] || printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$BWHEN" "$ID" "$MILESTONE" "$COMMIT" "beta-for-release-$N" "$NOTE" >> ../Syn3h-stable/betas.tsv
+    # Recorded in the repository (commit it with the beta's record): the Updates feed lists betas
+    # from it, and release-notes.mjs counts its versions as used.
+    if [ -z "$STUB" ]; then
+      [ -f release-notes/betas.tsv ] || printf '# Every beta shipped to beta.mira.cc (ops/RELEASE.md), oldest first. Written by tools/release.sh --beta.\n# version\tmilestone tag\tcommit\tPacific time\tfrozen id\n' > release-notes/betas.tsv
+      printf '%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$MILESTONE" "$COMMIT" "$BWHEN" "$ID" >> release-notes/betas.tsv
+    fi
     echo
     echo "BETA OK: $CALVER ($MILESTONE $COMMIT), frozen as $ID, is live at $BETA_URL. Production was not touched."
     echo "Promote only on the owner's approval of $CALVER in their own words:"
