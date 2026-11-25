@@ -66,7 +66,7 @@
   /* The front picture is one element among the guide's, with air round it (the owner, 25 November
      2026: "smaller and more tasteful and show other contents below without scrolling"): 58 % of
      the column, less on a screen short enough that the next section would not show. */
-  --w: clamp(300px, (100dvh - 630px) * 16 / 9, 58cqi); --gap: clamp(6px, 1.4cqi, 12px);
+  --w: clamp(280px, (100dvh - 650px) * 16 / 9, 58cqi); --gap: clamp(6px, 1.4cqi, 12px);
   --turn: 35deg; --side-scale: 1; --dim: .42; --ease: cubic-bezier(.22, 1, .36, 1);
   position: relative; display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: visible;
   /* How far past the column the pictures may show either side: to the screen's edges in a lobby
