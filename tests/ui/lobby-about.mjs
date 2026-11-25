@@ -208,8 +208,9 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
    // At the top of the sheet: what must show without scrolling, inside the body and above its bottom fade.
    const shown=await ring.evaluate((r,below)=>{
     const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+28, bottom=b.bottom-44
+    // `part`: how much of the box from its top must show (a dot is drawn at its 40 px target's middle).
     const inView=(el,part=1)=>{const e=el.getBoundingClientRect();return e.top>=top-1&&e.top+e.height*part<=bottom+1}
-    const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'))}
+    const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'),0.6)}
     if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');out.card=!!card&&inView(card,0.3)}
     return out
    },below)

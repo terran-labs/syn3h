@@ -77,7 +77,14 @@
 /* A narrow column (a phone held upright): 72 % of it, so the neighbours still peek in. */
 @container welcome (max-width: 520px) { .welcome-body .welcome-ring { --w: 72cqi; } }
 /* The narrowest (a 320 px phone): smaller still, so the caption and dots show without scrolling. */
-@container welcome (max-width: 300px) { .welcome-body .welcome-ring { --w: 60cqi; } .welcome-ring-foot { gap: 8px; } .welcome-ring-caption strong { font-size: 15px; } }
+@container welcome (max-width: 300px) {
+  .welcome-body .welcome-ring { --w: 52cqi; }
+  .welcome-ring-stage { padding-bottom: 6px; }
+  .welcome-ring .welcome-ring-foot { gap: 6px; }
+  .welcome-ring .welcome-ring-caption strong { font-size: 14px; }
+  .mira-shell .welcome-body .welcome-ring .welcome-ring-dot.welcome-ring-dot { height: 40px; }
+  .welcome-ring .welcome-ring-dots { margin-top: 0; }
+}
 /* A short screen (a phone on its side): sized by the height, and kept inside the column. */
 @media (max-height: 500px) { .welcome-body .welcome-ring { --w: min(58cqi, (100dvh - 270px) * 16 / 9); --reach-left: 0px; --reach-right: 0px; } }
 .welcome-ring-stage { position: relative; width: 100%; padding: 2px 0 10px; }
