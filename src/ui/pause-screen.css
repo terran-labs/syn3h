@@ -7,7 +7,7 @@
    Buttons are the shared glass (.liquid-glass, shell.css); this file sets place and state. */
 
 /* ---- Everything else steps out. Opacity and visibility only: nothing is laid out again. ---- */
-.mira-shell.is-paused > :not(.shell-minimap, .pause-veil, .bottom-stack, .exit-confirm, .in-play-about, .wi-tooltip),
+.mira-shell.is-paused > :not(.shell-minimap, .pause-veil, .bottom-stack, .exit-confirm, .in-play-about, .report-sheet, .wi-tooltip),
 body:has(> .mira-shell.is-paused) > :is(.touch-controls, .mira-nametags, .daydream-pill),
 .mira-shell.is-paused .touch-controls {
   opacity: 0 !important; visibility: hidden; pointer-events: none;
@@ -73,6 +73,8 @@ html .mira-shell .pause-actions button {
   html .mira-shell .pause-actions button { height: 44px; min-height: 44px; padding: 0 14px; gap: 7px; font-size: 11px; letter-spacing: .1em; }
   .mira-shell .pause-actions .pause-long { display: none; }
   .mira-shell .pause-actions .pause-short { display: inline; }
+  /* Report a bug has no short word: a square icon button, so four fit a 390 px phone. */
+  html .mira-shell .pause-actions .pause-report { width: 44px; padding: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -112,7 +112,7 @@
 
 /* Glass on glass: inside a panel that already frosts what is behind it, a button keeps its rim
    and highlight but does not frost again (Apple's rule, and half the cost). */
-:is(.world-inspector .wi-glass, .world-inspector .rail-players, .in-play-about, .exit-confirm-card, .join-card) .liquid-glass { --glass-frost: none; --glass-body: rgb(255 255 255 / .04); --glass-body-hover: rgb(255 255 255 / .08); }
+:is(.world-inspector .wi-glass, .world-inspector .rail-players, .in-play-about, .report-sheet, .exit-confirm-card, .join-card) .liquid-glass { --glass-frost: none; --glass-body: rgb(255 255 255 / .04); --glass-body-hover: rgb(255 255 255 / .08); }
 /* Over the moving world each frosted button re-blurs what is behind it every frame. The thumb
    buttons and the menu row frost lightly; at the lowest graphics level, when the quality ladder
    is shedding, or when the player asks for less transparency or more contrast, nothing frosts
