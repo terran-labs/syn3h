@@ -147,10 +147,31 @@ describe('Updates grouped by day', () => {
     })] }
     const entries = planUpdates(parseFeed(body), null).days.flatMap(d => d.releases).flatMap(r => [r, ...r.betas])
     expect(entries).toHaveLength(6)
-    for (const r of entries) expect(r.href).toBe(`https://github.com/terran-labs/syn3h/releases/tag/v${r.release.version}`)
+    // Production links its GitHub release; a beta has none, so it links its own notes file.
+    for (const r of entries) {
+      expect(r.href).toBe(r.beta
+        ? `https://github.com/terran-labs/syn3h/blob/main/release-notes/releases/v${r.release.version}.md`
+        : `https://github.com/terran-labs/syn3h/releases/tag/v${r.release.version}`)
+    }
+    expect(entries.filter(r => r.beta).map(r => r.release.version)).toEqual(['26.11.2601'])
     expect(entries[0].changes).toEqual([
       { title: 'Water', href: 'https://github.com/terran-labs/syn3h/commit/abc1234' }, { title: 'Bad', href: null },
     ])
+  })
+
+  it('shows the build\'s own entry as a beta on beta hosts and as production once promoted', () => {
+    // Bug: the promoted bytes still calling the production release a beta on mira.cc, linking a
+    // notes file instead of its GitHub release; or a beta.mira.cc page passing a beta off as production.
+    const body = { build: '26.11.2602', releases: [rel('26.11.2602', '2026-11-26 10:00 PST', 'P', { channel: 'beta' }), ...feed.releases] }
+    const own = (host: string) => planUpdates(parseFeed(body, host), null).days[0].releases[0]
+    for (const host of ['mira.cc', 'www.mira.cc']) {
+      expect(own(host)).toMatchObject({ beta: false, href: 'https://github.com/terran-labs/syn3h/releases/tag/v26.11.2602' })
+    }
+    for (const host of ['beta.mira.cc', 'mira-staging.example.workers.dev']) {
+      expect(own(host)).toMatchObject({ beta: true, href: 'https://github.com/terran-labs/syn3h/blob/main/release-notes/releases/v26.11.2602.md' })
+    }
+    // Older entries are production on either host.
+    expect(planUpdates(parseFeed(body, 'beta.mira.cc'), null).days[1].releases.every(r => !r.beta)).toBe(true)
   })
 
   it('shows a plain line for an empty or malformed feed instead of a broken sheet', () => {

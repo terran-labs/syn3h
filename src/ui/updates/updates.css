@@ -17,24 +17,30 @@
    rail runs down the left with a node per day, so the history reads as a timeline: the day the
    player is on has a solid node. Every toggle is a real button with aria-expanded. */
 .mira-shell.exploration-ui :is(.updates-days, .update-releases) { list-style: none; margin: 0; padding: 0; }
-.mira-shell.exploration-ui .updates-days { position: relative; display: grid; gap: 6px; margin-top: 4px; }
-.mira-shell.exploration-ui .updates-days::before { content: ''; position: absolute; left: 7px; top: 22px; bottom: 22px; width: 1px; background: linear-gradient(180deg, var(--s3-line), var(--s3-line-quiet) 70%, transparent); }
+.mira-shell.exploration-ui .updates-days { position: relative; display: grid; gap: 12px; margin-top: 4px; }
+.mira-shell.exploration-ui .updates-days::before { content: ''; position: absolute; left: 7px; top: 28px; bottom: 28px; width: 1px; background: linear-gradient(180deg, var(--s3-line), var(--s3-line-quiet) 70%, transparent); }
 .mira-shell.exploration-ui .update-day { position: relative; padding-left: 30px; }
-.mira-shell.exploration-ui .update-day::before { content: ''; position: absolute; left: 3px; top: 21px; width: 7px; height: 7px; border: 1px solid var(--s3-line); border-radius: 50%; background: rgb(10 10 11 / .8); }
-.mira-shell.exploration-ui .update-day.is-playing::before { left: 2px; top: 20px; width: 9px; height: 9px; border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: 0 0 10px rgb(255 255 255 / .45); }
+.mira-shell.exploration-ui .update-day::before { content: ''; position: absolute; left: 3px; top: 25px; width: 7px; height: 7px; border: 1px solid var(--s3-line); border-radius: 50%; background: rgb(10 10 11 / .8); }
+.mira-shell.exploration-ui .update-day::after { content: ''; position: absolute; inset: 0 0 0 30px; border: 1px solid var(--s3-line-quiet); border-radius: 14px; pointer-events: none; }
+.mira-shell.exploration-ui .update-day:has(.update-day-toggle[aria-expanded="true"])::after { border-color: var(--s3-line); background: rgb(205 205 205 / .025); }
+.mira-shell.exploration-ui.exploration-ui .update-day-toggle { padding: 14px 16px; border-radius: 14px; }
+.mira-shell.exploration-ui .update-day .update-releases { padding: 0 4px 10px; }
+.mira-shell.exploration-ui .update-day.is-playing::before { left: 2px; top: 24px; width: 9px; height: 9px; border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: 0 0 10px rgb(255 255 255 / .45); }
 .mira-shell.exploration-ui .update-day-heading { margin: 0; font: inherit; }
-.mira-shell.exploration-ui :is(.update-day-toggle, .update-release-toggle) { display: grid; gap: 4px; width: 100%; min-height: 44px; margin: 0; padding: 10px 12px; border: 0; border-radius: 12px; background: none; box-shadow: none; color: inherit; font: inherit; text-align: left; text-shadow: inherit; letter-spacing: normal; text-transform: none; cursor: pointer; }
-.mira-shell.exploration-ui :is(.update-day-toggle, .update-release-toggle):hover { background: rgb(205 205 205 / .05); }
-.mira-shell.exploration-ui :is(.update-day-toggle, .update-release-toggle):focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 0; }
+/* Doubled class: the game's own button:not(.liquid-glass) pill (exploration.css) must not reach these. */
+.mira-shell.exploration-ui.exploration-ui :is(.update-day-toggle, .update-release-toggle) { display: grid; gap: 4px; width: 100%; min-height: 44px; margin: 0; padding: 10px 12px; border: 0; border-radius: 12px; background: none; box-shadow: none; color: inherit; font: inherit; text-align: left; text-shadow: inherit; letter-spacing: normal; text-transform: none; cursor: pointer; }
+.mira-shell.exploration-ui.exploration-ui :is(.update-day-toggle, .update-release-toggle):hover { border: 0; background: rgb(205 205 205 / .05); box-shadow: none; }
+.mira-shell.exploration-ui.exploration-ui :is(.update-day-toggle, .update-release-toggle):focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 0; }
 .mira-shell.exploration-ui :is(.update-day-line, .update-release-line) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
 .mira-shell.exploration-ui .update-day-date { font: 600 26px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; text-transform: uppercase; color: var(--s3-accent-2); }
 .mira-shell.exploration-ui .update-day-count { margin-left: auto; color: var(--s3-dim); font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
 .mira-shell.exploration-ui .update-day-line .accordion-arrow { color: var(--s3-dim); }
 .mira-shell.exploration-ui .update-day-summary { color: var(--s3-ink); font-size: 16px; line-height: 1.45; }
-.mira-shell.exploration-ui .update-day-toggle[aria-expanded="true"] .update-day-summary { color: var(--s3-dim); }
+/* Open, the day's releases carry their own headlines: the day's line would only repeat them. */
+.mira-shell.exploration-ui .update-day-toggle[aria-expanded="true"] .update-day-summary { display: none; }
 .mira-shell.exploration-ui .update-releases { display: grid; gap: 2px; padding: 2px 0 14px; }
 .mira-shell.exploration-ui .update-release { border: 0; background: none; }
-.mira-shell.exploration-ui .update-release-toggle { padding: 8px 12px; border-radius: 10px; }
+.mira-shell.exploration-ui.exploration-ui .update-release-toggle { padding: 8px 12px; border-radius: 10px; }
 .mira-shell.exploration-ui .update-release-line .accordion-arrow { color: var(--s3-dim); }
 .mira-shell.exploration-ui .update-version { color: #fff3df; font: 500 16px/1.2 'Barlow', sans-serif; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
 .mira-shell.exploration-ui .update-time { margin-left: auto; color: var(--s3-dim); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -118,3 +124,15 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
 
 /* .update-badge.is-beta: a beta inside a production release, quieter than New. */
 .mira-shell.exploration-ui .update-badge.is-beta { color: var(--s3-dim); border: 1px dashed var(--s3-line-quiet); }
+
+/* Phones: a narrower rail, so a 320 px screen keeps room for the version and its time. */
+@media (max-width: 600px) {
+  .mira-shell.exploration-ui .update-day { padding-left: 20px; }
+  .mira-shell.exploration-ui .update-day::after { left: 20px; }
+  .mira-shell.exploration-ui .updates-days::before { left: 5px; }
+  .mira-shell.exploration-ui .update-day::before { left: 1px; }
+  .mira-shell.exploration-ui .update-day.is-playing::before { left: 0; }
+  .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 22px; }
+  .mira-shell.exploration-ui .update-release .update-notes { padding-left: 34px; }
+  .mira-shell.exploration-ui .update-day-date { font-size: 24px; }
+}

@@ -92,16 +92,17 @@ function disclosure(button: HTMLButtonElement, open: boolean, fill: (into: HTMLE
 }
 
 /** One release row: version, time and headline; it opens to its bullets, betas, changes and GitHub link. */
-function releaseRow(r: ReleaseEntry, beta = false): HTMLLIElement {
+function releaseRow(r: ReleaseEntry): HTMLLIElement {
   const item = document.createElement('li')
-  item.className = `update-release${beta ? ' is-beta' : ''}`; item.dataset.version = r.release.version
+  item.className = `update-release${r.beta ? ' is-beta' : ''}`; item.dataset.version = r.release.version
   const button = document.createElement('button'); button.className = 'update-release-toggle'
   const line = document.createElement('span'); line.className = 'update-release-line'
   line.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
   line.append(text('span', `v${r.release.version}`, 'update-version'))
-  if (beta) line.append(text('span', 'Beta', 'update-badge is-beta'))
+  if (r.beta) line.append(text('span', 'Beta', 'update-badge is-beta'))
   if (r.playing) line.append(text('span', 'Playing', 'update-badge is-running'))
-  else if (r.isNew) line.append(text('span', 'New', 'update-badge is-new'))
+  // A beta inside a release was superseded by it: calling it New would be noise.
+  else if (r.isNew && !r.beta) line.append(text('span', 'New', 'update-badge is-new'))
   if (r.time) line.append(text('span', r.time, 'update-time'))
   button.append(line)
   if (r.release.summary) button.append(text('span', r.release.summary, 'update-summary'))
@@ -117,12 +118,12 @@ function releaseRow(r: ReleaseEntry, beta = false): HTMLLIElement {
     if (r.betas.length) {
       notes.append(text('h4', r.betas.length === 1 ? 'The beta before it' : `The ${r.betas.length} betas before it`))
       const list = document.createElement('ol'); list.className = 'update-releases update-betas'
-      for (const b of r.betas) list.append(releaseRow(b, true))
+      for (const b of r.betas) list.append(releaseRow(b))
       notes.append(list)
     }
     const full = link(r.href, `v${r.release.version} on GitHub`, 'update-full')
     full.insertAdjacentHTML('afterbegin', LEADS_ON)
-    full.setAttribute('aria-label', `Release notes for v${r.release.version}, on GitHub`)
+    full.setAttribute('aria-label', `${r.beta ? 'Beta notes' : 'Release notes'} for v${r.release.version}, on GitHub`)
     notes.append(full)
     inner.append(notes)
   })

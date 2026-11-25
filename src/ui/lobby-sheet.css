@@ -33,7 +33,7 @@
 /* Updates wears the display face the Welcome guide's headings use (Barlow Condensed 600, capitals,
    light tracking, the heading accent), with All releases on GitHub level with it, left of the X. */
 .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 190px; font: 600 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: var(--s3-accent-2); }
-.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { position: absolute; top: 32px; right: 48px; }
+.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { position: absolute; top: 32px; right: 56px; }
 @media (max-width: 600px), (max-height: 500px) {
   .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 64px; font-size: 28px; }
   .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { top: 24px; right: 60px; padding: 0 14px; }

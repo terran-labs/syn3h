@@ -39,7 +39,7 @@ let feed: Promise<Release[]> | undefined
 export function loadFeed(): Promise<Release[]> {
   feed ??= rootFetch(FEED_URL)
     .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() })
-    .then(parseFeed)
+    .then(body => parseFeed(body, location.hostname))
   feed.catch(() => { feed = undefined })
   return feed
 }

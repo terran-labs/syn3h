@@ -13,6 +13,11 @@
  * three are optional: today's feed has none of them and renders as days of releases. When they
  * arrive, each release gains a nested list of its betas and changes.
  *
+ * One feed serves both hosts. The feed is baked into the build and a beta's bytes are promoted
+ * unchanged, so the build's own version is listed with channel "beta" and named as `build`; the
+ * page decides by its hostname. On a beta host it is the beta; on mira.cc the same entry is the
+ * production release it was promoted to, with no beta label and its GitHub release link.
+ *
  * Everything here is pure so the invariants can be tested without a browser
  * (tests/ui/updates.test.ts); about.ts renders exactly what it returns.
  */
@@ -29,10 +34,30 @@ export interface Release {
   changes?: Change[]
 }
 
+/**
+ * The channel a page is served on, from its hostname alone. Copied from feat/beta-channel
+ * (shared/channel.ts, channelOf), which is not on main yet: when it lands, import it from there.
+ */
+export type Channel = 'beta' | 'production'
+export function channelOf(hostname: string): Channel {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '')
+  return host.startsWith('beta.') || host.endsWith('.workers.dev') ? 'beta' : 'production'
+}
+
 export const REPO_URL = 'https://github.com/terran-labs/syn3h'
 export const RELEASES_URL = `${REPO_URL}/releases`
 /** The GitHub release for one version. Built from the version, so a link never points at another release's tag. */
 export const releaseHref = (version: string): string => `${RELEASES_URL}/tag/v${bareVersion(version) ?? version}`
+/**
+ * A beta has no GitHub release (only production is published): it links its notes file. The
+ * feed's own link is used when it is a page of this repository that names this version, else the
+ * notes file's usual address.
+ */
+export function betaHref(version: string, url?: string): string {
+  const bare = bareVersion(version) ?? version
+  if (url && url.startsWith(`${REPO_URL}/`) && url.includes(`v${bare}`) && !/[\s"'<>]/.test(url)) return url
+  return `${REPO_URL}/blob/main/release-notes/releases/v${bare}.md`
+}
 const COMMIT = /^[0-9a-f]{7,40}$/i
 /** A change's page on GitHub: its pull request when it has one, else its commit, else nothing. */
 export function changeHref(change: Change): string | null {
@@ -56,33 +81,40 @@ function parseChanges(value: unknown): Change[] {
   })
 }
 
-function parseRelease(value: unknown, nested: boolean): Release | null {
+function parseRelease(value: unknown, nested: boolean, build: string | null, host: Channel): Release | null {
   if (typeof value !== 'object' || value === null) return null
   const r = value as Record<string, unknown>
   const version = bareVersion(r.version)
   if (!version) return null
   const release: Release = {
     version, date: str(r.date).trim(), summary: str(r.summary).trim(), digest: str(r.digest),
-    url: releaseHref(version),
+    url: str(r.url).trim(),
   }
-  if (r.channel === 'beta' || r.channel === 'production') release.channel = r.channel
+  if (nested) release.channel = 'beta'
+  // This build's own entry is whatever the host serving it says; the rest are as the feed says.
+  else if (version === build) release.channel = host
+  else if (r.channel === 'beta' || r.channel === 'production') release.channel = r.channel
   const changes = parseChanges(r.changes); if (changes.length) release.changes = changes
   // Betas nest one level only: a beta does not contain betas.
   if (!nested && Array.isArray(r.betas)) {
-    const betas = r.betas.map(b => parseRelease(b, true)).filter((b): b is Release => b !== null)
-      .map(b => ({ ...b, channel: 'beta' as const }))
+    const betas = r.betas.map(b => parseRelease(b, true, build, host)).filter((b): b is Release => b !== null)
       .sort((a, b) => compareVersions(b.version, a.version))
     if (betas.length) release.betas = betas
   }
   return release
 }
 
-/** The feed's body to releases, newest first. Anything malformed is dropped, never thrown. */
-export function parseFeed(body: unknown): Release[] {
-  const list = typeof body === 'object' && body !== null ? (body as { releases?: unknown }).releases : undefined
+/**
+ * The feed's body to releases, newest first, as seen from `hostname` (the page's own). Anything
+ * malformed is dropped, never thrown.
+ */
+export function parseFeed(body: unknown, hostname = ''): Release[] {
+  const feed = typeof body === 'object' && body !== null ? body as { releases?: unknown; build?: unknown } : {}
+  const list = feed.releases
   if (!Array.isArray(list)) return []
+  const build = bareVersion(feed.build), host = channelOf(hostname)
   const seen = new Set<string>()
-  return list.map(r => parseRelease(r, false))
+  return list.map(r => parseRelease(r, false, build, host))
     .filter((r): r is Release => r !== null && !seen.has(r.version) && (seen.add(r.version), true))
     .sort((a, b) => compareVersions(b.version, a.version))
 }
@@ -118,6 +150,8 @@ export interface ReleaseEntry {
   href: string
   playing: boolean
   isNew: boolean
+  /** A beta, labelled as one and linked to its notes file rather than a GitHub release. */
+  beta: boolean
   /** Starts open: only the newest release of the newest day. */
   open: boolean
   betas: ReleaseEntry[]
@@ -148,10 +182,11 @@ export function daySummary(releases: readonly Release[]): string {
 }
 
 function entry(release: Release, dayKey: string, running: string | null, open: boolean): ReleaseEntry {
+  const beta = release.channel === 'beta'
   return {
-    release, open,
+    release, open, beta,
     time: releaseTime(release.date, dayKey),
-    href: releaseHref(release.version),
+    href: beta ? betaHref(release.version, release.url) : releaseHref(release.version),
     playing: running !== null && release.version === running,
     isNew: running !== null && isNewer(release.version, running),
     betas: (release.betas ?? []).map(b => entry(b, versionDay(b.version)?.key ?? dayKey, running, false)),
