@@ -41,7 +41,7 @@ export function creatorKeyRow(signal: AbortSignal, { folded = true } = {}): HTML
     input.setAttribute('autocapitalize', 'off'); input.setAttribute('autocorrect', 'off')
     // Password managers would offer to save it, and some ignore autocomplete=off for passwords.
     input.setAttribute('data-1p-ignore', ''); input.setAttribute('data-lpignore', 'true')
-    input.setAttribute('aria-label', 'Creator key')
+    input.setAttribute('aria-label', 'Creator key'); input.placeholder = 'Paste your key'
     const submit = document.createElement('button'); submit.type = 'submit'; submit.className = 'creator-key-button'; submit.textContent = 'Sign in'
     form.addEventListener('submit', (event) => {
       event.preventDefault()
