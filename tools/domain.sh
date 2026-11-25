@@ -140,7 +140,10 @@ in_zone() {
   if [ "$WORKER" = syn3h-staging ]; then [ "$1" = "beta.$ZONE_NAME" ]; return; fi
   case "$1" in "$ZONE_NAME"|"www.$ZONE_NAME") return 0 ;; esac; return 1
 }
-need_host_in_zone() { in_zone "$1" || die "refusing host $1 for Worker $WORKER: only $ZONE_NAME and www.$ZONE_NAME on syn3h, only beta.$ZONE_NAME on syn3h-staging"; }
+need_host_in_zone() {
+  if [ "$WORKER" = syn3h-staging ]; then in_zone "$1" || die "refusing host $1: only beta.$ZONE_NAME on the staging Worker"
+  else in_zone "$1" || die "refusing host $1: only $ZONE_NAME and www.$ZONE_NAME"; fi
+}
 mira_only() { [ "$ZONE_NAME" = mira.cc ] || die "$cmd is for the mira.cc zone only"; }
 # The newest export of this zone; changing steps need one from the last two hours.
 fresh_export() {
