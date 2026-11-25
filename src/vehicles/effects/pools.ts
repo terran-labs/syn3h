@@ -16,7 +16,9 @@
  *     patch: brightest just ahead of the lamps, widening and fading down the road, soft at the
  *     sides. Nothing is loaded;
  *   - it adds light tinted by the colour of the ground under it (groundTone.ts groundColour, the
- *     colour the terrain itself is drawn from), so red sand glows red and dark rock stays dark,
+ *     colour the terrain itself is drawn from), plus the lamp's own warm white in its hot centre
+ *     (POOL_CORE), as a strongly lit patch of ground saturates toward the beam's colour. So the
+ *     core is pale, the edges red on red sand and dark rock stays dark,
  *     and the amount added does not depend on how much moon or dusk light is already there, as
  *     with a real lamp. (A first version multiplied the ground instead; at dusk the ground is
  *     darker than under the moon and the pools nearly vanished.) No depth or colour copy is
@@ -48,7 +50,7 @@ export const groundPools = defineParam({
 
 // The patch in the vehicle's frame: from NEAR metres behind the lamps to FAR ahead, widening from
 // NEAR_W to FAR_W either side. ACROSS by ALONG vertices: enough to follow rolling ground.
-export const POOL_NEAR = -0.6, POOL_FAR = 24, POOL_NEAR_W = 1.6, POOL_FAR_W = 9.5
+export const POOL_NEAR = -0.6, POOL_FAR = 20, POOL_NEAR_W = 1.5, POOL_FAR_W = 9
 const ACROSS = 7, ALONG = 12
 const VERTS = ACROSS * ALONG, INDICES = (ACROSS - 1) * (ALONG - 1) * 6
 /** Metres above the ground the patch is laid, against flicker with the terrain's own surface. */
@@ -59,7 +61,13 @@ const FADE_LOW = 3, FADE_HIGH = 12
 export const POOL_RANGE = 220
 const FADE_FAR = 40
 /** Light added at the pool's brightest point at strength 1, times the ground's colour. Tuned by frames. */
-export const POOL_PEAK = 12
+export const POOL_PEAK = 10
+/**
+ * The lamp's own colour added in the hot centre, as a share of POOL_PEAK: where a real beam is
+ * strong the lit ground saturates toward the beam's warm white; the edges keep the ground's
+ * colour. Applied to the pool's shape raised to POOL_CORE_POWER, so it stays in the core.
+ */
+export const POOL_CORE = 0.6, POOL_CORE_POWER = 2
 /** The beam's warm white, as the real spot lights use. */
 const BEAM = new T.Color(1, 0.9965517, 0.875)
 
@@ -183,12 +191,15 @@ export class GroundPools {
 function poolMaterial(): T.MeshBasicNodeMaterial {
   const material = new T.MeshBasicNodeMaterial()
   const place = attribute('poolPlace', 'vec2') as N, strength = attribute('poolStrength', 'float') as N, tint = attribute('poolTint', 'vec3') as N
-  // Across: a soft bell, no edge. Along: up over the first metre, then falling away down the
-  // road roughly as a beam spreads, to nothing at the far end.
+  // Across: a soft bell, no edge. Along: up over the first three metres, then falling away down
+  // the road roughly as a beam spreads, to nothing at the far end.
   const u = abs(place.x) as N
-  const across = pow(float(1).sub(u.mul(u)), 1.5) as N
-  const along = smoothstep(0, 0.04, place.y).mul(exp(place.y.mul(-4.5))).mul(float(1).sub(smoothstep(0.75, 1, place.y))) as N
-  material.colorNode = vec3(BEAM.r, BEAM.g, BEAM.b).mul(tint).mul(strength.mul(across).mul(along).mul(POOL_PEAK)) as N
+  const across = pow(float(1).sub(u.mul(u)), 2.5) as N
+  const along = smoothstep(0, 0.14, place.y).mul(exp(place.y.mul(-3.6))).mul(float(1).sub(smoothstep(0.7, 1, place.y))) as N
+  // The ground's colour across the whole pool, and the lamp's warm white in its hot centre.
+  const shape = across.mul(along) as N
+  const lamp = vec3(BEAM.r, BEAM.g, BEAM.b) as N
+  material.colorNode = lamp.mul(tint).mul(shape).add(lamp.mul(pow(shape, POOL_CORE_POWER).mul(POOL_CORE))).mul(strength.mul(POOL_PEAK)) as N
   material.transparent = true
   material.depthWrite = false
   material.fog = false
