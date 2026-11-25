@@ -213,14 +213,19 @@ export class FrameProbe {
   /** Bad frames in the last minute. */
   lastMinute(): number { const t = now(); while (this.badTimes.length && t - this.badTimes[0] > 60) this.badTimes.shift(); return this.badTimes.length }
 
-  /** For the on-screen counter. */
+  /**
+   * For the on-screen counter (ui/flashCounter.ts): four lines of at most 22 characters, whole on a
+   * 320 px phone with five-digit frame counts and three-digit counts. Rates, test counts and the
+   * 15 s notes are in the report.
+   */
   counterLines(): string {
     const c = this.counts
     const sceneBad = c['scene black'] + c['scene NaN'], outBad = c['output black'] + c['output clear']
-    const last = this.lastBad.slice(-2).map(b => `#${b.frame} ${b.what}${b.recent.length ? ` (${b.recent.at(-1)})` : ''}`).join('\n  ')
-    return `Black frames ${sceneBad + outBad} of ${this.probed}: scene ${sceneBad}, output ${outBad} (${this.lastMinute()}/min)\n` +
-      `Scene NaN ${c['scene NaN']}  clear ${c['output clear']}  values ${this.nonFiniteFrames}` +
-      `${this.testsAsked ? `\nTests ${this.testBad} of ${this.testsAsked}` : ''}${last ? `\nLast: ${last}` : ''}`
+    const last = this.lastBad.at(-1)
+    return `Black ${sceneBad + outBad} of ${this.probed}\n` +
+      `scene ${sceneBad}  output ${outBad}\n` +
+      `NaN ${c['scene NaN']}  clear ${c['output clear']}\n` +
+      `values ${this.nonFiniteFrames}${last ? `  #${last.frame}` : ''}`
   }
 
   /** For the copied report. */

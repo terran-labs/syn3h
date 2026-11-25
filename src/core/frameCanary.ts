@@ -156,10 +156,15 @@ export class FrameCanary {
   }
 
   /** For the on-screen counter: two short lines. */
+  /**
+   * For the on-screen counter: lines of at most 22 characters, whole on a 320 px phone. The rate
+   * and the 15 s notes are in the report.
+   */
   counterLines(): string {
-    const last = this.lastDropped.slice(-3).map(d => `#${d.frame}${d.recent.length ? ` (${d.recent.at(-1)})` : ''}`).join(', ')
+    const last = this.lastDropped.at(-1)
     // Test drop (ui/flashCounter.ts) withholds one: "Dropped" must rise by as many as were withheld.
-    return `Dropped ${this.dropped} of ${this.checked} (${this.lastMinute()}/min)${this.withheld ? `  test drops ${this.withheld}` : ''}\nLast dropped: ${last || '-'}`
+    const more = [this.withheld ? `test ${this.withheld}` : '', last ? `last #${last.frame}` : ''].filter(Boolean).join('  ')
+    return `Dropped ${this.dropped} of ${this.checked}${more ? `\n${more}` : ''}`
   }
 
   /** For the copied report. */
