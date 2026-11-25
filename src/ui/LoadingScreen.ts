@@ -46,7 +46,7 @@ export class LoadingScreen {
   private phase: string | undefined
   private label = ''
   private done = false
-  private readonly limit: ReturnType<typeof setTimeout>
+  private limit: ReturnType<typeof setTimeout>
   private readonly abort = new AbortController()
   constructor() {
     this.element.className = 'mira-loading'
@@ -58,6 +58,14 @@ export class LoadingScreen {
     meter()?.set(0.45); this.announce('Loading Mira')
     window.addEventListener('mira:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.limit = setTimeout(() => this.finish(), LIMIT_MS)
+    // The physics engine's download is being retried, or waits for Try again (physicsWasm.ts):
+    // the veil carries that message, so its time limit waits, and starts afresh once the engine
+    // has arrived and the rest of loading resumes.
+    window.addEventListener('mira:physics-retry', event => {
+      if (this.done) return
+      clearTimeout(this.limit)
+      if ((event as CustomEvent<{ state?: string }>).detail?.state === 'clear') this.limit = setTimeout(() => this.finish(), LIMIT_MS)
+    }, { signal: this.abort.signal })
     // A startup failure must be seen, never hidden behind the veil: lift at once on a script
     // error, a rejected promise, or the moment the page's failure message is shown.
     window.addEventListener('error', () => this.lift(), { signal: this.abort.signal })

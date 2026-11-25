@@ -212,6 +212,17 @@
          that ends sooner shows only the point of light. Their space is held throughout. */
       html[data-boot-late] .boot-status, html[data-boot-late] .boot-still { opacity: 1; }
       @media (prefers-reduced-motion: reduce) { .boot-status, .boot-still { transition: none; } }
+      /* The physics engine's download is being retried (src/core/physicsWasm.ts): the status
+         line says so, and the veil stays up while it does, so its failsafe is off. After the last
+         try the message replaces the numbers and a Try again button sits under it. It fades in; nothing slides. */
+      html[data-boot-retry] .boot-veil { animation: none; }
+      /* Given up: the seconds and megabytes no longer mean anything, and the longer message takes their place. */
+      html[data-boot-retry="failed"] .boot-still { visibility: hidden; }
+      .boot-retry { grid-row: 6; align-self: start; margin-top: 20px; padding: 10px 22px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--theme-text-primary) 40%, transparent); background: color-mix(in srgb, var(--theme-text-primary) 10%, transparent); color: var(--theme-text-primary); font: 500 16px/1.2 Barlow, "Avenir Next", "Segoe UI", system-ui, sans-serif; cursor: pointer; animation: boot-retry-in 0.4s ease both; }
+      .boot-retry:focus-visible { outline: 2px solid var(--theme-heading-accent); outline-offset: 3px; }
+      html[data-intro] .boot-retry { position: fixed; left: 50%; top: calc(var(--boot-under) + 5.6em); translate: -50% 0; margin: 0; }
+      @keyframes boot-retry-in { from { opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { .boot-retry { animation: none; } }
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
       /* ---- The continuous opening (?intro=, src/ui/galaxy/opening.ts). The veil is black
          space and one point of light at the very centre, where the lobby's sun is drawn at
