@@ -55,6 +55,7 @@ import {
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { logEvent, roomTag } from './log'
+import { KeyFailures, cleanKeyHash, cleanRole, isReservedName, keyMatches, parseReservedNames, stripBadgeLookalikes } from './creator'
 import { TERRAIN_PARAM_IDS } from '../src/world/terrain/settings'
 import { sunDayLength } from '../src/world/sky/dayParams'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
@@ -84,6 +85,10 @@ export interface RoomOptions {
   maxPlayers?: number
   /** Called after anything worth persisting changes (params, tag state, scores). */
   onPersist?: (snapshot: RoomSnapshot) => void
+  /** SHA-256 (hex) of the creator key, the CREATOR_KEY_SHA256 secret; unset turns the role off. */
+  creatorKeySha256?: string
+  /** Names only the creator may take, comma separated (CREATOR_RESERVED_NAMES); only while the hash is set. */
+  reservedNames?: string
 }
 
 /** What a Durable Object stores to survive hibernation. */
@@ -334,6 +339,10 @@ export class Room {
   private activeLeft = false
   /** Reset for idleness: the next hello brings its world, as into an empty room. */
   private vacant = false
+  /** See RoomOptions.creatorKeySha256 and server/creator.ts. */
+  private readonly creatorHash: string | null
+  private readonly reserved: string[]
+  private readonly keyFailures = new KeyFailures()
 
   constructor(name: string, opts: RoomOptions = {}) {
     this.name = name
@@ -341,6 +350,8 @@ export class Room {
     this.now = opts.now ?? Date.now
     this.maxPlayers = opts.maxPlayers ?? MAX_ROOM_PLAYERS
     this.onPersist = opts.onPersist
+    this.creatorHash = cleanKeyHash(opts.creatorKeySha256)
+    this.reserved = this.creatorHash ? parseReservedNames(opts.reservedNames) : []
     this.setDefaults()
     this.activeAt = this.now()
     this.startedAt = this.now()
@@ -741,7 +752,7 @@ export class Room {
         if (!entry || !isToken(entry.token) || !entry.info || typeof entry.info.id !== 'number') continue
         if (now - entry.at > REJOIN_GRACE * 1000 || this.byId(entry.info.id)) continue
         const player = this.newPlayer({
-          ...entry.info, score: this.scores[entry.info.id] ?? 0,
+          ...entry.info, role: cleanRole(entry.info.role), score: this.scores[entry.info.id] ?? 0,
           kind: cleanKind(entry.info.kind) ?? 'buggy', colors: cleanColors(entry.info.colors) ?? [...DEFAULT_COLORS],
         })
         player.token = entry.token
@@ -775,7 +786,7 @@ export class Room {
       return
     }
     const full: PlayerInfo = {
-      ...info, score: this.scores[info.id] ?? info.score ?? 0,
+      ...info, role: cleanRole(info.role), score: this.scores[info.id] ?? info.score ?? 0,
       kind: cleanKind(info.kind) ?? 'buggy', colors: cleanColors(info.colors) ?? [...DEFAULT_COLORS],
     }
     const player = this.newPlayer(full)
@@ -807,6 +818,8 @@ export class Room {
     const token = isToken(msg.resume) ? msg.resume : null
     const page = isToken(msg.page) ? msg.page : null
     const held = this.rejoinOn() ? this.heldFor(token) ?? this.quietFor(token, page) : undefined
+    // Proved afresh on every hello, a rejoin included: a held place does not pass the role on.
+    const role = this.roleFor(msg.creator)
     if (held) {
       const [key, player] = held
       this.pending.delete(peer)
@@ -822,6 +835,12 @@ export class Room {
       if (msg.play === false) player.info.play = false
       else delete player.info.play
       player.page = page
+      if (role !== player.info.role || !this.nameAllowed(player.info.name, role)) {
+        player.info.role = role
+        if (!role) delete player.info.role
+        player.info.name = this.uniqueName(this.allowedName(player.info.name, player.info.id, role), player)
+        this.broadcast({ type: 'profile', player: player.info }, peer)
+      }
       player.lastHeardAt = this.now()
       player.joinedAt = this.now()
       player.windowStart = this.now()
@@ -864,7 +883,8 @@ export class Room {
     const id = this.nextId++
     if (this.nextId > MAX_PLAYER_ID) this.nextId = 1
     const info: PlayerInfo = {
-      id, name: this.uniqueName(cleanName(msg.name, id)), slot, score: 0,
+      id, name: this.uniqueName(this.allowedName(cleanName(msg.name, id), id, role)), slot, score: 0,
+      ...(role ? { role } : {}),
       kind: cleanKind(msg.kind) ?? 'buggy',
       colors: cleanColors(msg.colors) ?? [...DEFAULT_COLORS],
       // Only a deliberate no is carried: absent means the bots may play.
@@ -1114,7 +1134,7 @@ export class Room {
    * host role, score and rejoin secret stay as they are.
    */
   private rename(player: Player, raw: unknown): string {
-    const cleaned = cleanName(raw, player.info.id)
+    const cleaned = this.allowedName(cleanName(raw, player.info.id), player.info.id, player.info.role)
     if (cleaned === player.info.name) return cleaned
     const now = this.now()
     if (player.renamedAt !== undefined && now - player.renamedAt < RENAME_INTERVAL_MS) {
@@ -1740,6 +1760,31 @@ export class Room {
     return false
   }
 
+  /**
+   * The role a hello's `creator` key proves, or undefined. A wrong, absent or malformed key
+   * reads as no key: the player joins as anyone does. See KeyFailures for the flood line.
+   */
+  private roleFor(key: unknown): PlayerInfo['role'] {
+    if (!this.creatorHash || key === undefined || key === null || key === '') return undefined
+    if (keyMatches(key, this.creatorHash)) return 'creator'
+    // Counts only, never the key.
+    if (this.keyFailures.fail(this.now())) logEvent('creator_key_flood', { room: this.tag })
+    return undefined
+  }
+
+  private nameAllowed(name: string, role: PlayerInfo['role']): boolean {
+    return role === 'creator' || !isReservedName(name, this.reserved)
+  }
+
+  /**
+   * The one place the reserved-name rule applies, at hello, rename and a rejoin: a player
+   * without the creator role asking for a reserved name, or a lookalike of one, gets the
+   * room's ordinary fallback name instead, never an error that would confirm the list.
+   */
+  private allowedName(cleaned: string, id: number, role: PlayerInfo['role']): string {
+    return this.nameAllowed(cleaned, role) ? cleaned : `Player ${id}`
+  }
+
   /** Two players may pick the same name; the later one gets a number so lists and events can
    * tell them apart: "Sam", "Sam 2", "Sam 3". */
   private uniqueName(name: string, self?: Player): string {
@@ -2051,7 +2096,8 @@ function isToken(raw: unknown): raw is string {
 }
 
 function cleanName(raw: unknown, id: number): string {
-  const s = typeof raw === 'string' ? raw.replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, MAX_NAME_LENGTH) : ''
+  // Nothing that could pass for the creator badge, and nothing invisible (server/creator.ts).
+  const s = typeof raw === 'string' ? stripBadgeLookalikes(raw.replace(/[\u0000-\u001f\u007f<>]/g, '')).trim().slice(0, MAX_NAME_LENGTH) : ''
   return s || `Player ${id}`
 }
 

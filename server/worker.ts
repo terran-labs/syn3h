@@ -69,6 +69,10 @@ interface Env {
   ASSETS: Fetcher
   /** Frozen versions in R2 (v/<version>/<path>); absent in local dev and tests that omit it. */
   FROZEN?: FrozenBucket
+  /** SHA-256 (hex) of the creator key, a wrangler secret; unset turns the creator role off. */
+  CREATOR_KEY_SHA256?: string
+  /** Comma-separated names only the creator may take (server/creator.ts); empty is fine. */
+  CREATOR_RESERVED_NAMES?: string
 }
 
 interface Attachment {
@@ -517,7 +521,10 @@ export class RoomDO {
 
   private ensureRoom(name: string): Room {
     if (this.room) return this.room
-    const room = new Room(name, { onPersist: (s) => void this.state.storage.put('room', s) })
+    const room = new Room(name, {
+      onPersist: (s) => void this.state.storage.put('room', s),
+      creatorKeySha256: this.env.CREATOR_KEY_SHA256, reservedNames: this.env.CREATOR_RESERVED_NAMES,
+    })
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as Attachment | null

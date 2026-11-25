@@ -43,3 +43,9 @@ redact_query_string = true
 
 [observability.logs]
 invocation_logs = false
+
+# Names only the creator may take (server/creator.ts), comma separated; empty reserves none.
+# Applies only while the CREATOR_KEY_SHA256 secret is set (`wrangler secret put`, see
+# tools/creator-key.mjs). Supplied by the owner.
+[vars]
+CREATOR_RESERVED_NAMES = ""

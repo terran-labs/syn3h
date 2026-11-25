@@ -91,7 +91,7 @@ http.on('upgrade', (req, socket, head) => {
 function attach(ws: WebSocket, name: string): void {
   let room = rooms.get(name)
   if (!room) {
-    room = new Room(name)
+    room = new Room(name, { creatorKeySha256: process.env.CREATOR_KEY_SHA256, reservedNames: process.env.CREATOR_RESERVED_NAMES })
     rooms.set(name, room)
   }
   const r = room
