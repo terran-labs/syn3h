@@ -324,7 +324,7 @@ export class Shell implements System {
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
     // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
-    // Players & session card's). The board stays, detached, for its join and leave messages.
+    // Players card's). The board stays, detached, for its join and leave messages.
     this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
@@ -385,12 +385,11 @@ export class Shell implements System {
     this.inspector.open = false
     clipSearchResults(this.inspector.element, signal)
     const railTop = this.inspector.element.querySelector('.wi-top')!
-    // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute bots">
+    players.innerHTML = `<div class="rail-player-body" data-search="players roster room invite welcome about how to play help connection diagnostics mute bots bot count">
       <div class="rail-universe" hidden></div>
       <div class="rail-session-bots">
-        <div class="rail-bot-heading"><label for="session-bot-count">Bot count</label><output for="session-bot-count"></output></div>
+        <div class="rail-bot-heading"><label for="session-bot-count">Bots</label><output for="session-bot-count"></output></div>
         <div class="rail-bot-controls">
           <button type="button" class="panel-action" data-step="-1" aria-label="Fewer bots">−</button>
           <input id="session-bot-count" type="range" aria-label="Requested bot count">
@@ -415,7 +414,7 @@ export class Shell implements System {
     const unsubscribeBots = params.onChange(id => { if (id === botCount.def.id) this.syncSessionBots() })
     signal.addEventListener('abort', unsubscribeBots)
     this.syncSessionBots()
-    this.sessionCard = this.inspector.addCard('players', 'Players & session', players, () => {
+    this.sessionCard = this.inspector.addCard('players', 'Players', players, () => {
       const people = this.playerCount, bots = this.sessionBotCount
       return people || bots ? `${people} ${people === 1 ? 'player' : 'players'}, ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''
     }, { after: 'game' })
@@ -1337,7 +1336,7 @@ export class Shell implements System {
   /**
    * One calm line about where the player is, with round pills, in the bottom stack (bottom-stack.css,
    * order 0: the top of the column, so nothing already there moves). It fades in, stays 20 seconds
-   * and goes; the Players & session card keeps the same actions (setUniverse).
+   * and goes; the Players card keeps the same actions (setUniverse).
    */
   showRoomNotice(text: string, actions: { label: string; run(): void }[]): void {
     const notice = this.roomNotice ??= document.createElement('aside')
@@ -1359,7 +1358,7 @@ export class Shell implements System {
     this.roomNoticeTimer = setTimeout(() => { notice.hidden = true }, 20000)
   }
   /**
-   * The Players & session card's room block. In the public room: Enter a parallel universe and
+   * The Players card's room block. In the public room: Enter a parallel universe and
    * what that is. In a parallel universe: that it is one, Copy link and Return to the main world.
    */
   setUniverse(state: { kind: 'public'; enter(): void } | { kind: 'parallel'; copy(): void; back(): void } | null): void {

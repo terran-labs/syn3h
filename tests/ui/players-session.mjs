@@ -69,6 +69,8 @@ try {
       await guest.waitForFunction(() => [...miraNet.players.values()].filter(p => p.bot).length === 4)
 
       if (!before) {
+        const header = host.locator(card).getByRole('button', { name: /^Players(?:\s|$)/ })
+        assert.equal(await header.locator('h3').textContent(), 'Players')
         await value(host, slider, 4); await value(guest, slider, 4); await value(guest, gameSlider, 4)
         await host.waitForFunction(selector =>
           document.querySelector(selector)?.textContent === '2 players, 4 bots', `${card} .wi-sum`)
@@ -151,19 +153,44 @@ try {
 
         const layout = await host.locator(card).evaluate(card => {
           const order = selector => Number(getComputedStyle(card.querySelector(selector)).order)
-          const controls = [...card.querySelectorAll('.rail-bot-controls > *')].map(el => {
-            const r = el.getBoundingClientRect()
-            return [r.width, r.height]
+          const heading = card.querySelector('.rail-bot-heading')
+          const words = [...heading.children].map(el => el.getBoundingClientRect())
+          const headingRect = heading.getBoundingClientRect()
+          const controlRow = card.querySelector('.rail-bot-controls')
+          const controlRect = controlRow.getBoundingClientRect()
+          const controls = [...controlRow.children].map(el => {
+            const r = el.getBoundingClientRect(), css = getComputedStyle(el)
+            return { width: r.width, height: r.height, centerY: (r.top + r.bottom) / 2,
+              tag: el.tagName, border: css.borderTopStyle, borderWidth: parseFloat(css.borderTopWidth),
+              background: css.backgroundColor, filter: css.backdropFilter }
           })
+          const sameLine = words[0].top < words[1].bottom && words[1].top < words[0].bottom
+          const fillsSecondLine = controlRect.top >= headingRect.bottom &&
+            Math.abs(controlRect.left - headingRect.left) <= 1 && Math.abs(controlRect.right - headingRect.right) <= 1
           const rows = [...card.querySelectorAll('.score-row')].map(row => {
             const name = row.children[0].getBoundingClientRect(), flags = row.children[1].getBoundingClientRect()
             return { width: name.width, clear: name.right <= flags.left, divider: getComputedStyle(row).borderBottomWidth }
           })
-          return { order: ['.score-row', '.rail-universe', '.rail-session-bots', '.rail-diagnostics', '.rail-session-actions'].map(order), controls, rows }
+          return { order: ['.score-row', '.rail-universe', '.rail-session-bots', '.rail-diagnostics', '.rail-session-actions'].map(order), controls, rows, sameLine, fillsSecondLine }
         })
         assert.ok(layout.order.every((n, i) => !i || n > layout.order[i - 1]))
-        assert.ok(layout.controls.every(([w,h]) => w >= 44 && h >= 44))
+        const minimum = touch ? 44 : 32
+        assert.equal(layout.sameLine, true, 'Bots and the counts share the first line')
+        assert.equal(layout.fillsSecondLine, true, 'the controls fill the second line')
+        assert.ok(layout.controls.every(control => control.width >= minimum && control.height >= minimum))
+        assert.ok(layout.controls.every(control => Math.abs(control.centerY - layout.controls[0].centerY) <= 1))
+        for (const control of [layout.controls[0], layout.controls[2]]) {
+          assert.equal(control.tag, 'BUTTON')
+          assert.ok(control.border === 'solid' && control.borderWidth >= 1)
+          assert.doesNotMatch(control.background, /^(transparent|rgba\([^)]*,\s*0\))$/)
+          assert.equal(control.filter, 'none')
+        }
         assert.ok(layout.rows.every(row => row.width > 0 && row.clear && row.divider === '0px'))
+        const body = host.locator(`${card} > .wi-body`)
+        const start = await body.evaluate(el => el.scrollTop)
+        await host.locator(`${card} .rail-session-bots`).scrollIntoViewIfNeeded()
+        await host.screenshot({ path: resolve(out, `${size}-bots.png`), scale: 'css' })
+        await body.evaluate((el, top) => { el.scrollTop = top }, start)
       }
 
       // A manual pause and a parked hidden tab take the same remote snapshot path.
