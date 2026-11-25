@@ -259,6 +259,7 @@ effect at once or after a reload). This table is written from the switch list in
 | `?post=base` | `base` | Only the base tier of the post chain (the look pass, as at Low): no sun shafts or other upper tier passes. | at once |
 | `?post=off` | `off` | No post chain: the scene is drawn straight to the canvas, with Flat interface glass. | at once |
 | `?lowrest=1` | `1` | Hold the remaining Medium differences at their Low values: water ripple size, fog bank samples, ground cover and tyre mark life. | at once |
+| `?twins=1` | `1` | Preview a private, link-shareable companion beside each public lobby planet. | after a reload |
 | `?gfx=N` | `0` to `5` | Pin the quality level for this visit, as choosing it by hand does: 0 Minimal, 1 Low, 2 Medium, 3 High, 4 Ultra, 5 Cinematic. Nothing is saved unless you change a setting. In play the card's level picker does the same. | after a reload |
 | `?shadowCascades=1` | `1` | One sun shadow cascade instead of the level's two or three. | after a reload |
 | `?shadowMap=512` | `512` | Shadow map size: Every sun shadow cascade 512 pixels square, whatever the level. | after a reload |

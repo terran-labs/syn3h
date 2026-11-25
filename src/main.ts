@@ -8,6 +8,8 @@ import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
 import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
 import { currentPlanet, currentWorldName, encodeWorld, randomSeed } from './world/planets'
+import { lobbyTwinsEnabled } from './core/twinPreview'
+import { privateTwinURL } from './ui/galaxy/privateTwinInvite'
 import { ParallelUniverses } from './ui/parallelUniverse'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
@@ -66,20 +68,22 @@ async function main(): Promise<void> {
   const lobbyAddress = new LobbyAddress(location, history)
   // A full room sends the player to a parallel universe of the world they were entering, and the
   // Players & session card offers one (ui/parallelUniverse.ts). Read at start: why this page is here.
+  // The loading veil (index.html) comes up at once, so the descent hands straight over to the
+  // same veil the next page opens with: one continuous entry, never a frozen frame meanwhile.
+  // Its 60-second failsafe animation has long finished for anyone who waited in the lobby and
+  // would keep it hidden (forwards fill), so it is cancelled first.
+  const navigateToUniverse = (url: URL) => {
+    const veil = document.querySelector<HTMLElement>('.boot-veil')
+    if (veil) veil.style.animation = 'none'
+    document.documentElement.dataset.boot = 'loading'
+    location.replace(url)
+  }
+
   const universes = new ParallelUniverses({
     room: () => shell.room || roomFromQuery(query),
     entryURL: () => lobbyAddress.playURL(),
     world: () => encodeWorld(),
-    // The loading veil (index.html) comes up at once, so the descent hands straight over to the
-    // same veil the next page opens with: one continuous entry, never a frozen frame meanwhile.
-    // Its 60-second failsafe animation has long finished for anyone who waited in the lobby and
-    // would keep it hidden (forwards fill), so it is cancelled first.
-    navigate: url => {
-      const veil = document.querySelector<HTMLElement>('.boot-veil')
-      if (veil) veil.style.animation = 'none'
-      document.documentElement.dataset.boot = 'loading'
-      location.replace(url)
-    },
+    navigate: navigateToUniverse,
     notice: (text, actions) => shell.showRoomNotice(text, actions),
     setUniverse: state => shell.setUniverse(state),
     copyLink: () => shell.copyRoomLink(),
@@ -158,6 +162,9 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
+  if (lobbyTwinsEnabled()) {
+    shell.onPrivateTwin = (recipe, world) => navigateToUniverse(privateTwinURL(recipe, world, room => universes.roomURL(room)))
+  }
   if (glass) shell.driveGlassFrame = glass.driveFrame
   let postCheckQueued = false
   const materialChanged = params.onChange((id) => {
