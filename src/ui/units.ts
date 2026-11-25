@@ -12,6 +12,7 @@
  * The simulation stays in metres and metres per second; only what is shown converts.
  */
 import { defineParam, params } from '../../shared/params'
+import { localStore } from '../core/safeStorage'
 
 /** Regions whose everyday units are imperial. */
 const IMPERIAL_REGIONS: ReadonlySet<string> = new Set(['US', 'LR', 'MM'])
@@ -83,4 +84,5 @@ function persist(): void {
     try { localStorage.setItem(KEY, imperial() ? 'imperial' : 'metric') } catch { /* Storage is optional. */ }
   })
 }
-if (typeof localStorage !== 'undefined') persist()
+// `typeof localStorage` would call its getter, which throws with storage blocked (safeStorage.ts).
+if (localStore()) persist()

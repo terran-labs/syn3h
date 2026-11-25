@@ -52,6 +52,7 @@ import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weath
 import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
 import { setDayClock } from './world/sky/dayCycle'
 import { screenEdgesLine } from './ui/screenEdges'
+import { sessionStore } from './core/safeStorage'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
@@ -61,7 +62,7 @@ async function main(): Promise<void> {
   // A link's world, else this tab's resumed session, else a fresh random planet. Automated
   // browsers (navigator.webdriver: the smoke tests, frame profiles and shot tools) keep the
   // old fixed seed 1, so their measurements compare from run to run.
-  const { saved } = applyStartWorld(query, sessionStorage, navigator.webdriver ? () => 1 : randomSeed)
+  const { saved } = applyStartWorld(query, sessionStore(), navigator.webdriver ? () => 1 : randomSeed)
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
   // A full room sends the player to a parallel universe of the world they were entering, and the
@@ -81,7 +82,9 @@ async function main(): Promise<void> {
     copyLink: () => shell.copyRoomLink(),
   })
   // Opened by a move: the veil stays up, saying why, until the game is on screen. Never the lobby between.
-  if (universes.arrived) holdVeil(moveVeilLine(universes.arrived), () => gameOnScreen())
+  // Also when the veil's inline script set the hold from a note this script now finds too old:
+  // a ready game must never stay behind the veil (index.html owns the hold as well).
+  if (universes.arrived || document.documentElement.hasAttribute('data-room-move')) holdVeil(universes.arrived ? moveVeilLine(universes.arrived) : null, () => gameOnScreen())
   const game = new Game(canvas)
   await game.init()
 

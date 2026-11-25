@@ -21,14 +21,18 @@ export function moveVeilLine(move: Pick<RoomMove, 'reason' | 'asked'>): string {
   }
 }
 /**
- * Keep the loading veil up (index.html, html[data-room-move]) with `text` on its status line until
- * `onScreen()` says the game is showing, the page's failure message shows, or 90 seconds pass.
+ * Keep the loading veil up (index.html, html[data-room-move]) with `text` on its status line (or
+ * the line it has, when null) until `onScreen()` says the game is showing or the page's failure
+ * message shows. Never released on a timer: a lobby appearing a minute into an entry the player
+ * did not cancel is worse than a line that says so. After 45 seconds the line becomes "This is
+ * taking a while." with a Reload, the same as the veil's own inline watch (index.html), which
+ * owns the hold on a page the move opened even if this script never arrives.
  */
-export function holdVeil(text: string, onScreen: () => boolean, doc: Document = document): void {
+export function holdVeil(text: string | null, onScreen: () => boolean, doc: Document = document): void {
   const root = doc.documentElement
   const veil = doc.querySelector<HTMLElement>('.boot-veil')
   const status = doc.querySelector<HTMLElement>('.boot-status')
-  if (status) status.textContent = text
+  if (status && text !== null) status.textContent = text
   root.dataset.bootLate = ''
   root.dataset.roomMove = ''
   // The veil's 60-second failsafe animation has long finished for anyone who waited in the lobby.
@@ -37,8 +41,14 @@ export function holdVeil(text: string, onScreen: () => boolean, doc: Document = 
   const timer = setInterval(() => {
     const fatal = doc.getElementById('fatal')
     const failed = !!fatal && fatal.style.display !== '' && fatal.style.display !== 'none'
-    if (onScreen() || failed || Date.now() - started > 90_000) { clearInterval(timer); delete root.dataset.roomMove }
-  }, 100)
+    if (onScreen() || failed) { clearInterval(timer); delete root.dataset.roomMove; return }
+    if (Date.now() - started > 45_000 && status && !doc.getElementById('move-reload')) {
+      status.textContent = 'This is taking a while.'
+      const reload = Object.assign(doc.createElement('button'), { id: 'move-reload', type: 'button', className: 'boot-retry', textContent: 'Reload' })
+      reload.addEventListener('click', () => location.reload())
+      status.parentElement?.append(reload)
+    }
+  }, 200)
 }
 /** The game is on screen: in play, past the descent, and not waiting behind the tap that lets sound start. */
 export const gameOnScreen = (doc: Document = document): boolean => {

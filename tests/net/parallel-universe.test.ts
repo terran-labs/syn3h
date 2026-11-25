@@ -150,6 +150,24 @@ describe('a parallel universe', () => {
     expect(q.navigations).toHaveLength(0)
   })
 
+  it('with the storage getter itself throwing, the start reads nothing and a full room still means local play', async () => {
+    vi.unstubAllGlobals()
+    const getter = Object.getOwnPropertyDescriptor(globalThis, 'sessionStorage')
+    Object.defineProperty(globalThis, 'sessionStorage', { configurable: true, get() { throw new Error('SecurityError: the operation is insecure') } })
+    try {
+      const { sessionStore } = await import('../../src/core/safeStorage')
+      const { prepareResume } = await import('../../src/core/resume')
+      expect(sessionStore()).toBeNull()
+      expect(prepareResume(new URLSearchParams(''))).toBeNull()
+      const p = page('https://mira.cc/')
+      expect(p.u.onJoinStatus(ROOM_FULL_STATUS)).toBe(true)
+      expect(p.navigations).toHaveLength(0)
+      expect(p.notices.map(n => n.text)).toEqual(["This world is full, so you're exploring on your own with bots."])
+    } finally {
+      if (getter) Object.defineProperty(globalThis, 'sessionStorage', getter); else delete (globalThis as { sessionStorage?: unknown }).sessionStorage
+    }
+  })
+
   it('leaves any other join status to be shown as it is, and an old note does not outlive its moment', () => {
     expect(page('https://mira.cc/').u.onJoinStatus('This game continued in another tab.')).toBe(false)
     store.set('mira.roomMove', JSON.stringify({ reason: 'full', asked: 'lobby', hops: 1, at: Date.now() - 10 * 60_000 }))

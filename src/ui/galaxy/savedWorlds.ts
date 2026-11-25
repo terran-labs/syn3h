@@ -2,6 +2,7 @@ import { sanitize, type ParamDef, type ParamValue } from '../../../shared/params
 import { RECIPE_IDS, recipeIdForLook, type RecipeId } from '../../../shared/recipes'
 import { exportWorld, parseWorld, type WorldJson } from '../inspector/model'
 import { worldName } from '../../world/worldName'
+import { NO_STORAGE, localStore } from '../../core/safeStorage'
 
 export const SAVED_WORLDS_KEY = 'mira.savedWorlds.v1'
 export const SAVED_WORLDS_MAX = 12
@@ -54,7 +55,7 @@ export function savedWorldPlan(entry: SavedWorld, defs: readonly ParamDef[]): Re
 }
 
 export class SavedWorldStore {
-  constructor(private readonly defs: () => readonly ParamDef[], private readonly storage: () => Pick<Storage, 'getItem' | 'setItem'> = () => localStorage) {}
+  constructor(private readonly defs: () => readonly ParamDef[], private readonly storage: () => Pick<Storage, 'getItem' | 'setItem'> = () => localStore() ?? NO_STORAGE) {}
   read(): SavedLibrary { return readSavedWorlds(this.storage().getItem(SAVED_WORLDS_KEY), this.defs()) }
   save(values: Record<string, ParamValue>): { entry: SavedWorld; duplicate: boolean } {
     const library = this.read(), defs = this.defs()

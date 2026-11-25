@@ -448,7 +448,25 @@
               var line = { full: "This world is full. Opening a parallel universe of it.", chosen: "Opening a parallel universe of this planet.",
                 returning: main ? "Trying the main world." : "Trying that world again.",
                 "still-full": main ? "The main world is still full. Back to your parallel universe." : "That world is still full. Back to your parallel universe." }[move.reason];
-              if (line) { s.textContent = line; document.documentElement.dataset.roomMove = ""; document.documentElement.dataset.bootLate = ""; }
+              if (line) {
+                var root = document.documentElement, since = Date.now();
+                s.textContent = line; root.dataset.roomMove = ""; root.dataset.bootLate = "";
+                // What sets the hold owns its end, whether or not the game's script ever arrives or
+                // still finds the note fresh: the hold goes the moment the game is on screen or the
+                // page's failure shows; after 45 s the line says so plainly and offers a reload.
+                var watch = setInterval(function () {
+                  var shell = document.querySelector(".mira-shell"), fatal = document.getElementById("fatal");
+                  var playing = shell && shell.classList.contains("is-playing") && !shell.classList.contains("is-descending") && root.dataset.boot !== "ready";
+                  if (playing || (fatal && fatal.style.display && fatal.style.display !== "none")) { delete root.dataset.roomMove; clearInterval(watch); return; }
+                  if (Date.now() - since > 45000 && !document.getElementById("move-reload")) {
+                    s.textContent = "This is taking a while.";
+                    var reload = document.createElement("button");
+                    reload.id = "move-reload"; reload.type = "button"; reload.className = "boot-retry"; reload.textContent = "Reload";
+                    reload.addEventListener("click", function () { location.reload(); });
+                    s.parentNode.appendChild(reload);
+                  }
+                }, 200);
+              }
             }
           } catch (error) {}
           var root = document.documentElement;
