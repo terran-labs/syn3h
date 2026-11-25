@@ -361,27 +361,25 @@ html[data-glass-material] .mira-shell.exploration-ui button.panel-action:focus-v
   visibility: hidden;
 }
 
-/* Liquid's icons and small-control labels (the owner's Liquid look at Tint 25 is a clear face, so
-   the ink carries its own falloff there, as the gear names do: a soft shadow under white ink, no
-   plate). Icons on the panel rail and the notice, and the labels of the rail's own small
-   controls; ordinary text inside the cards is governed by the face. Eased when the style
-   changes, like everything else. Measured 22 November 2026: Pause 2.2:1 and Close panels 3.0:1
-   without it over Alpine noon. */
-:is(.mira-shell > .world-inspector, .drive-notices) svg { transition: filter .22s ease; }
-:is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .mira-shell > .world-inspector > .panels-close, .drive-notices button) { transition: text-shadow .22s ease, filter .22s ease; }
-html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector, .drive-notices) svg {
+/* Free-standing rail and notice graphics still carry their own contrast. */
+html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector, .drive-notices)
+svg:not(:where(button *, summary *, .rail-search-icon, .s3-switch-field *)) {
+  transition: filter .22s ease;
   filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
 }
-/* A control the shader draws turns its own text-shadow off (shader-surface.css, !important);
-   this falloff is the exception at Liquid, so it is !important too, on the label and its spans. */
-html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .mira-shell > .world-inspector > .panels-close, .drive-notices button),
-html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > button, .mira-shell > .world-inspector > .panels-close, .drive-notices button) :is(span, kbd) {
-  text-shadow: 0 0 1px rgb(0 0 0 / .95), 0 0 2px rgb(0 0 0 / .85), 0 0 4px rgb(0 0 0 / .7), 0 0 8px rgb(0 0 0 / .45), 0 0 14px rgb(0 0 0 / .3) !important;
-}
-/* Close panels' chevrons keep a light glow on phones (phone-panels.css); at Liquid they take the
-   same dark falloff as the other icons. */
-html[data-glass-material="liquid"] .mira-shell.exploration-ui > .world-inspector > .panels-close .nav-chevrons {
-  filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
+
+/* The glass face carries the ink contrast. Clear filters on the control and its ink:
+   a shadow on the whole SVG still paints even when the path has no filter. */
+html:is([data-glass-material="liquid"], [data-glass-material="flat"]) .mira-shell :is(
+  button:is(.liquid-glass, .wi-glass, .inspector-toggle, .panels-close),
+  :is(.liquid-glass, .wi-glass, .lobby-sheet, .in-play-about, .exit-confirm-card, .join-card)
+    :is(button, summary, .s3-switch-field, .wi-row.is-switch),
+  .rail-command > :is(.wi-search, .rail-search-icon)
+) {
+  &, & *, &::before, &::after, & *::before, & *::after, &::placeholder {
+    text-shadow: none !important;
+    filter: none !important;
+  }
 }
 
 /* Liquid inside a scrolling region (src/liquid-glass/scrolling.ts). The shader draws a glass face
