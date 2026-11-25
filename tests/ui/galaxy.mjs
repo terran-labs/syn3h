@@ -205,17 +205,25 @@ try {
     await page.evaluate(() => { window.__pin = setInterval(() => { window.mira.shell.stopAttract(); window.mira.params.set('gfx.level', 0) }, 200) })
     // Every map painted first: each one arriving is a reason to draw.
     await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
-    // Once everything has settled (the resting tilt, the name's fade in, the last map), the
-    // low-end lobby stops drawing. Wait for that state, up to 20 s: a lobby that never stops is
-    // the bug (a low-end phone's battery), so it fails below, with the frames it drew.
-    const g = () => page.evaluate(() => { const g = window.mira.shell.galaxy; return { live: g?.live, frames: g?.frames, idle: g?.idle } })
-    for (let i = 0, last = -1; i < 20; i++) { const now = (await g()).frames; if (now === last) break; last = now; await page.waitForTimeout(1000) }
-    const a = await g(); await page.waitForTimeout(1500); const b = await g()
-    assert.equal(b.live, true, 'level 0 keeps the galaxy')
-    assert.equal(b.frames, a.frames, `held still it drew ${b.frames - a.frames} frames while idle`)
-    assert.ok(b.idle > a.idle, 'and its loop is idling, not stopped')
+    // Count renderer decisions. A busy machine can go a whole second without delivering
+    // a frame, and a map upload or presence refresh legitimately interrupts an idle window.
+    const idleWindow = await page.evaluate(() => new Promise(resolve => {
+      const galaxy = window.mira.shell.galaxy
+      let frames = galaxy.frames, idle = galaxy.idle, since = performance.now()
+      const deadline = since + 60_000
+      const sample = now => {
+        if (galaxy.frames !== frames) { frames = galaxy.frames; idle = galaxy.idle; since = now }
+        if (galaxy.live && galaxy.idle - idle >= 5 && now - since >= 1500) {
+          resolve({ frames, settled: true })
+        } else if (now >= deadline) {
+          resolve({ frames, settled: false })
+        } else requestAnimationFrame(sample)
+      }
+      requestAnimationFrame(sample)
+    }))
+    assert.ok(idleWindow.settled, 'the live Minimal lobby skips drawing for a sustained interval while its loop runs')
     await page.mouse.move(195, 140); await page.mouse.down(); await page.mouse.move(330, 170, { steps: 8 }); await page.mouse.up()
-    const c = await g(); assert.ok(c.frames > b.frames, 'a drag draws')
+    await page.waitForFunction(frames => window.mira.shell.galaxy.frames > frames, idleWindow.frames)
     await page.screenshot({ path: `${out}/still-swung.png` })
     // Held still or not, a tap is the whole drop, drawn as it goes.
     const target = await reachableWorld(page, 'caption', 'desert')
