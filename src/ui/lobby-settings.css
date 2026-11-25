@@ -149,12 +149,22 @@ html .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-b
   .mira-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot { font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px; }
 }
 
+/* A phone held upright: the stack stands in the middle of the bottom edge (the owner, 25 November
+   2026: "The settings and welcome should also be centered"), clear of the version at the left. */
+@media (max-width: 600px) and (orientation: portrait) {
+  /* Centred, unless that would reach the version (about 115 px wide at the left): on a 320 px
+     phone it stands just right of it instead. */
+  .lobby-gear-dock:not(.is-beside-sheet) { right: auto; left: max(calc(50% - 64px), 124px); }
+}
+
 /* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one shows as
    pressed (.is-current, glass.css), the others switch to theirs. A phone held upright has no room
    beside it: a row of three under it. */
 dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
 @media (max-width: 600px) and (orientation: portrait) {
-  dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  /* Centred under the sheet, each as wide as a third of the row would be (the owner, 25 November
+     2026: "centered rather than biased to the left"; there were three, Updates has since gone). */
+  dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet { left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); width: auto; grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: calc((100% - 12px) / 3); justify-content: center; gap: 6px; }
   .mira-shell.exploration-ui dialog.lobby-sheet .lobby-gear-dock.is-beside-sheet .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
 }
 
