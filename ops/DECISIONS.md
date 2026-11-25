@@ -30,7 +30,7 @@ when the bug it served is closed. Each is read once at start, changes nothing wh
 and is named in the copied Diagnostics report. A new device-specific gate gets a switch to
 turn it on and off. The set on 23 November: ?webgl=1, ?gfx=N, ?diag=1, ?blank=1,
 ?shadows=0, ?shadows=1, ?shading=0, ?post=base|off, ?samples=1, ?lowrest=1, ?freeze=1, ?ui=flat, ?gpuTrace=1,
-?frameCanary=1, ?frameProbe=1, ?canvasBackdrop=1, ?presentHold=1, ?canvasAlpha=opaque, ?shadowCascades=1, ?shadowMap=512|1024|2048, ?shadowColor=0, ?shadowFilter=hard, ?shadowFade=0.
+?frameCanary=1, ?frameProbe=1, ?canvasBackdrop=1, ?presentHold=1, ?canvasAlpha=opaque, ?presentLate=1, ?frameCap=30, ?shadowUpdate=once|2, ?shadowCascades=1, ?shadowMap=512|1024|2048, ?shadowColor=0, ?shadowFilter=hard, ?shadowFade=0.
 They are also rows in Performance, Diagnostics, Field switches (src/core/fieldSwitches.ts).
 The rule is in AGENTS.md.
 
