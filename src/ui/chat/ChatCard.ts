@@ -64,13 +64,11 @@ export const CHAT_KEY = 'KeyY'
 export { CHAT_NAME_CONTRAST, CHAT_NAME_SURFACE, contrastRatio, legibleTint } from '../playerMarks'
 
 /**
- * The card's summary, at the right of its header: how many lines wait unread, or "All read"
- * (the owner, 22 November 2026: "it should simply show 0, 1, 2, etc., unread on the right.
- * Rather than 0 unread, it should simply say all read"). A line is read once the card is open
- * with the panels showing and the log scrolled to its end (readIfSeen).
+ * The card's summary shows the unread count while lines wait. A line is read once the card
+ * is open with the panels showing and the log scrolled to its end (readIfSeen).
  */
 export function chatSummary(unread: number): string {
-  return unread > 0 ? `${unread > 99 ? '99+' : unread} unread` : 'All read'
+  return unread > 0 ? `${unread > 99 ? '99+' : unread} unread` : ''
 }
 
 const timeOf = (wall: number) => new Date(wall).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
