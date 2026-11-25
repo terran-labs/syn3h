@@ -506,12 +506,13 @@ async function main(): Promise<void> {
       muteForAll: (id, muted) => connection.muteForEveryone(id, muted),
       eject: (id, stop) => { connection.eject(id, stop.id); window.setTimeout(() => connection.requestBanishes(), 500) },
       botTraits: id => {
-        const traits = connection.players.get(id)?.traits
-        if (!traits) return null
-        const values = { boldness: 0.5, curiosity: 0.5, sociability: 0.5, mischief: 0.5, patience: 0.5, ...traits }
-        return { values, overridden: Object.keys(connection.botTraits.get(id) ?? {}) as (keyof typeof values)[] }
+        const bot = connection.players.get(id)
+        if (!bot?.traits) return null
+        const values = { boldness: 0.5, curiosity: 0.5, sociability: 0.5, mischief: 0.5, patience: 0.5, ...bot.traits }
+        return { values, nature: bot.nature, overridden: Object.keys(connection.botTraits.get(id) ?? {}) as (keyof typeof values)[] }
       },
-      setBotTrait: (id, trait, value) => { if (value !== null) connection.setBotTraits(id, { [trait]: value }) },
+      // null drops the override: the bot returns to its own nature.
+      setBotTrait: (id, trait, value) => connection.setBotTraits(id, { [trait]: value }),
     })
     connection.requestBanishes()
     // One store for "Show my location": the net client's, which the room hears.
