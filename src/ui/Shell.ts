@@ -932,6 +932,8 @@ export class Shell implements System {
   private dropping = false
   /** True while a descent into a world or an ascent out of one is running. */
   get transitioning(): boolean { return this.dropping || this.savedEntering }
+  /** A saved world is being entered (enterSavedWorld): it opens in a private room of its own. */
+  get enteringSavedWorld(): boolean { return this.savedEntering }
   openMenu(panel = 'index'): void {
     if (!this.started) return
     this.closeAbout()

@@ -7,13 +7,15 @@ import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
 import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
-import { currentPlanet, currentWorldName, encodeWorld, randomSeed } from './world/planets'
+import { applyPlanet, currentPlanet, currentWorldName, encodeWorld, randomSeed } from './world/planets'
+import { canonicalNameSeed, canonicalSeed, joinRoom } from './core/publicWorlds'
+import { parallelRoomName } from './net/parallel'
 import { ParallelUniverses, gameOnScreen, holdVeil, moveVeilLine } from './ui/parallelUniverse'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint, setGlassForVisit } from './ui/glassMaterial'
 import { glassStyle } from './ui/inspector/params'
-import { params, worldSeed } from '../shared/params'
+import { params, worldNameSeed, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { botsKeepCount } from './bots/params'
 import { ChaseCamera } from './core/ChaseCamera'
@@ -33,7 +35,7 @@ import { ChatCard } from './ui/chat/ChatCard'
 import { HostBanter } from './bots/banter/HostBanter'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
-import { roomFromQuery } from './core/roomAddress'
+import { isDefaultRoom, roomFromQuery } from './core/roomAddress'
 import { botIdentity, generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
@@ -68,7 +70,8 @@ async function main(): Promise<void> {
   // A full room sends the player to a parallel universe of the world they were entering, and the
   // Players & session card offers one (ui/parallelUniverse.ts). Read at start: why this page is here.
   const universes = new ParallelUniverses({
-    room: () => shell.room || roomFromQuery(query),
+    // The room actually joined (a planet's public room, a universe), once joined; until then, the one asked for.
+    room: () => joinedRoom ?? (shell.room || roomFromQuery(query)),
     entryURL: () => lobbyAddress.playURL(),
     world: () => encodeWorld(),
     // The loading veil comes up at once with the move's line, so the descent hands straight over
@@ -305,6 +308,8 @@ async function main(): Promise<void> {
   ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
   let netStatus: string[] = []
   let joined = false
+  /** The room this page joined (core/publicWorlds.ts joinRoom), once it has. */
+  let joinedRoom: string | undefined
   /**
    * Change the player's vehicle where they are, without a reload: the one entry point for the
    * in-play vehicle selector.
@@ -341,7 +346,11 @@ async function main(): Promise<void> {
   }
   const join = () => {
     // Also restore after returning from an already joined galaxy menu.
-    lobbyAddress.showPlay(shell.room || roomFromQuery(query))
+    let asked = shell.room || roomFromQuery(query)
+    // A saved world is the player's own: it opens in a parallel universe of itself (net/parallel.ts),
+    // never a planet's public room, whose canonical world would replace it.
+    if (!joined && isDefaultRoom(asked) && shell.enteringSavedWorld) asked = parallelRoomName()
+    lobbyAddress.showPlay(joinedRoom ?? asked)
     if (joined) return
     const player = slot.current
     // The lobby may have changed the vehicle after this one spawned. Rebuilding every system
@@ -363,6 +372,14 @@ async function main(): Promise<void> {
       return
     }
     joined = true
+    // A public join goes to this planet's own public room, which starts as the planet's canonical
+    // world (core/publicWorlds.ts); an occupied room's own world still replaces it on welcome.
+    const target = joinRoom(asked, currentPlanet().id)
+    joinedRoom = target.room
+    if (target.recipe) {
+      const seed = canonicalSeed(target.recipe), nameSeed = canonicalNameSeed(target.recipe)
+      if (currentPlanet().id !== target.recipe || worldSeed.value !== seed || worldNameSeed.value !== nameSeed) applyPlanet(target.recipe, seed, { nameSeed, source: 'preset' })
+    }
     const name = shell.playerName
     player.name = name
     player.setColors?.(shell.bodyColor, shell.accentColor)
@@ -381,7 +398,7 @@ async function main(): Promise<void> {
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name,
-      room: shell.room || roomFromQuery(query),
+      room: target.room,
       // A full room: on to a parallel universe (or, failing every room, the local play
       // networking has already started). Any other status is shown as it is.
       onJoinStatus: message => { if (!universes.onJoinStatus(message)) shell.showRoomNotice(message, []) },
@@ -443,7 +460,7 @@ async function main(): Promise<void> {
     Object.assign(window, { miraChat: { net: connection, panel: chat, banter } })
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }), 'Session resume')
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: target.room, saved, network: connection, entrySearch: lobbyAddress.playURL().search }), 'Session resume')
   }
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.

@@ -14,7 +14,7 @@
  * Its storage goes when its last player leaves (the room server's own reset), so a parallel
  * universe ends when everyone has left; its link then opens a fresh, empty universe of the planet.
  */
-import { DEFAULT_ROOM, canonicalRoom } from '../core/roomAddress'
+import { DEFAULT_ROOM, canonicalRoom, isDefaultRoom } from '../core/roomAddress'
 
 /** "p-" and 22 base-36 characters: about 113 random bits, within the server's 32-character names. */
 const NAME_CHARS = 22
@@ -94,7 +94,7 @@ export function onRefused(arrived: RoomMove | null, room: string, now = Date.now
 export function arrivalLine(arrived: RoomMove | null): string | null {
   switch (arrived?.reason) {
     case 'full': return "This world is full, so you're in a parallel universe of it. Invite friends with your link."
-    case 'still-full': return arrived.asked === DEFAULT_ROOM ? "The main world is still full, so you're back in your parallel universe." : "That world is still full, so you're back in your parallel universe."
+    case 'still-full': return isDefaultRoom(arrived.asked) ? "The main world is still full, so you're back in your parallel universe." : "That world is still full, so you're back in your parallel universe."
     case 'chosen': return "You're in a parallel universe of this planet. Only people with your link can join."
     default: return null
   }
