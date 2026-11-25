@@ -124,6 +124,9 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'gfx.fogBanks': [0, 1, 2, 2, 2, 2],
   // Headlight cones in mist (src/vehicles/effects/cones.ts): off at Minimal.
   'light.headlightCones': [0, D, D, D, D, D],
+  // Other vehicles' headlights on the ground (src/vehicles/effects/pools.ts): off at Minimal. Measured
+  // within noise from Low to Cinematic, WebGPU and WebGL 2, desktop and phone (24 November 2026).
+  'light.groundPools': [0, D, D, D, D, D],
   'post.bloom': [0, 0, 0, D, D, D],
   'post.heat': [0, 0, 0, D, D, D],
   'post.temporal': [false, false, false, false, true, true],
