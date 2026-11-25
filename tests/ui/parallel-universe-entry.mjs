@@ -7,6 +7,18 @@
 // the Players & session button into a universe, Try the main world again while it is still full
 // (back to the same universe), and Return to the main world once a seat is free.
 //   MIRA_URL=http://127.0.0.1:8795/ node tests/ui/parallel-universe-entry.mjs [shot dir] [lobby wait ms]
+//   THROTTLE=6 slows each page's CPU that many times (CDP), as a phone preparing a world is slow:
+//   the review's failure showed the lobby while the destination prepared its world for 9 s.
+//   PATHS=refused runs only the refused newcomer (the path most of a crowd takes); MOTIONS=reduce
+//   one motion setting.
+// What it proves and what it does not (25 November 2026): it passes on the fix, at both motion
+// settings after a 65 s lobby wait. It also passed against a build with the veil hold disabled,
+// unthrottled and with a 65 s wait: in this headless rig the destination prepares its world while
+// its own loading veil is still up, so the review's failure (veil gone after 1.4 s, then 9 s of
+// world preparation with the lobby showing) did not occur here. Until a run shows it failing
+// without the hold, it is a weaker guard: it catches a lobby that shows on this machine, not
+// every timing a phone can produce. The review's own reproduction on a phone-sized profile is the
+// decisive test of the fix.
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
@@ -19,6 +31,9 @@ const lobbyWait = Number(process.argv[3] ?? 65000)
 if (out) mkdirSync(out, { recursive: true })
 const ws = base.replace(/^http/, 'ws').replace(/\/$/, '') + '/ws'
 const CAP = 16
+const THROTTLE = Number(process.env.THROTTLE ?? 1)
+const ONLY = process.env.PATHS ? new Set(process.env.PATHS.split(',')) : null
+const run = name => !ONLY || ONLY.has(name)
 
 /** Scripted players: a hello and nothing else (a room counts connections, not traffic). */
 function fill(n) {
@@ -46,7 +61,8 @@ const sampler = () => {
     const moving = document.documentElement.hasAttribute('data-room-move') || sessionStorage.getItem('check.dest') === location.href
     const veil = document.querySelector('.boot-veil'), vs = veil && getComputedStyle(veil)
     const covered = !!vs && vs.display !== 'none' && vs.visibility !== 'hidden' && Number(vs.opacity) >= 0.99
-    const lobby = [...document.querySelectorAll('.galaxy-label')].some(visible)
+    // The lobby: its planets or its own buttons (Settings, Welcome), not under the veil.
+    const lobby = [...document.querySelectorAll('.galaxy-label, .galaxy-ui button')].some(visible)
     if (moving && lobby && !covered) console.log(`CHECK lobby-visible ${location.search.slice(0, 40)} veil=${vs ? vs.opacity : 'none'}`)
     if (moving && covered) console.log(`CHECK veil ${document.querySelector('.boot-status')?.textContent ?? ''}`)
     requestAnimationFrame(tick)
@@ -63,6 +79,7 @@ async function phone(motion) {
   const page = await context.newPage(), seen = { lobby: [], veil: new Set(), driving: 0 }
   page.on('console', m => { const t = m.text(); if (!t.startsWith('CHECK ')) return; if (t.startsWith('CHECK lobby')) seen.lobby.push(t); else if (t.startsWith('CHECK veil')) seen.veil.add(t.slice(11)); else seen.driving++ })
   await page.addInitScript(sampler)
+  if (THROTTLE > 1) { const cdp = await context.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE }); page.on('framenavigated', f => { if (f === page.mainFrame()) cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE }).catch(() => {}) }) }
   return { context, page, seen }
 }
 const arm = page => page.evaluate(() => sessionStorage.setItem('check.armed', '1'))
@@ -79,10 +96,12 @@ function judge(name, seen, wantLine) {
 }
 
 try {
-  for (const motion of ['no-preference', 'reduce']) {
+  for (const motion of (process.env.MOTIONS ?? 'no-preference,reduce').split(',')) {
     const tag = motion === 'reduce' ? 'reduced motion' : 'motion'
+    let context, page, seen
     // The menu button: in the public room with a seat, into a universe of this planet.
-    let { context, page, seen } = await phone(motion)
+    if (run('menu')) {
+    ;({ context, page, seen } = await phone(motion))
     await page.goto(base + '?autoplay=1'); await driving(page)
     await page.evaluate(() => document.querySelector('.inspector-toggle')?.click())
     await arm(page)
@@ -90,10 +109,11 @@ try {
     await driving(page); judge(`${tag}, menu into a universe`, seen, 'Opening a parallel universe of this planet.')
     assert.match(await room(page) ?? '', /^p-/, 'in a universe')
     await context.close()
-
-    // A refused newcomer after a long wait in the lobby. (The menu player's seat in the public room
-    // is held for 30 s after it left: wait that out first, so the scripted players fill it exactly.)
+    // (The menu player's seat in the public room is held for 30 s after it left.)
     await new Promise(r => setTimeout(r, 32000))
+    }
+
+    // A refused newcomer after a long wait in the lobby.
     const crowd = await fill(CAP)
     ;({ context, page, seen } = await phone(motion))
     await page.goto(base); await page.waitForSelector('.galaxy-label', { state: 'visible', timeout: 120000 })
@@ -105,6 +125,7 @@ try {
     assert.match(universe ?? '', /^p-/, 'the refused newcomer is in a universe')
     if (out) await page.screenshot({ path: `${out}/${motion}-refused.png` })
 
+    if (run('still-full')) {
     // Try the main world again while it is still full: back to the same universe.
     await page.evaluate(() => document.querySelector('.inspector-toggle')?.click())
     await page.waitForFunction(() => !!document.querySelector('.rail-universe button'), null, { timeout: 30000 })
@@ -112,6 +133,8 @@ try {
     await page.waitForFunction(u => new URL(location.href).searchParams.get('room') === u && window.miraNet?.welcomed === true, universe, { timeout: 180000 })
     await driving(page); judge(`${tag}, main world still full`, seen, 'The main world is still full. Back to your parallel universe.')
 
+    }
+    if (run('return')) {
     // A seat frees (and its 30 s hold ends): Return reaches the main world.
     crowd[0].close(); await page.waitForTimeout(33000)
     await page.evaluate(() => document.querySelector('.inspector-toggle')?.click())
@@ -119,6 +142,7 @@ try {
     await universeButton(page, 'Return to the main world')
     await page.waitForFunction(() => !new URL(location.href).searchParams.has('room') && window.miraNet?.welcomed === true, null, { timeout: 180000 })
     await driving(page); judge(`${tag}, return to the main world`, seen, 'Trying the main world.')
+    }
     await context.close()
     for (const s of crowd) s.close()
     await new Promise(r => setTimeout(r, 32000)) // the held seats of the scripted players lapse
