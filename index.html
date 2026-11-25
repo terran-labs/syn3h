@@ -444,7 +444,7 @@
           try {
             var move = JSON.parse(sessionStorage.getItem("mira.roomMove") || "null");
             if (move && typeof move.reason === "string" && Date.now() - move.at < 120000) {
-              var main = move.asked === "lobby";
+              var main = /^(lobby|public-[a-z0-9]+)$/.test(String(move.asked));
               var line = { full: "This world is full. Opening a parallel universe of it.", chosen: "Opening a parallel universe of this planet.",
                 returning: main ? "Trying the main world." : "Trying that world again.",
                 "still-full": main ? "The main world is still full. Back to your parallel universe." : "That world is still full. Back to your parallel universe." }[move.reason];

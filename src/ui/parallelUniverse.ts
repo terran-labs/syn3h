@@ -7,12 +7,14 @@
 import { DEFAULT_ROOM, canonicalRoom, isDefaultRoom, writeRoom } from '../core/roomAddress'
 import { arrivalLine, isParallelRoom, onRefused, parallelRoomName, putMove, storageWorks, takeMove, type RoomMove } from '../net/parallel'
 import { ROOM_FULL_STATUS } from '../net'
+import { recipeOfWorld } from '../core/publicWorlds'
 
 export interface NoticeAction { label: string; run(): void }
 
 /** What the loading veil says during a move (net/parallel.ts RoomMove): the main world only when it is the one asked for. */
 export function moveVeilLine(move: Pick<RoomMove, 'reason' | 'asked'>): string {
-  const main = move.asked === DEFAULT_ROOM
+  // Any public room, "lobby" or a planet's own (core/publicWorlds.ts), is the main world.
+  const main = isDefaultRoom(move.asked)
   switch (move.reason) {
     case 'full': return 'This world is full. Opening a parallel universe of it.'
     case 'chosen': return 'Opening a parallel universe of this planet.'
@@ -32,7 +34,8 @@ export function holdVeil(text: string | null, onScreen: () => boolean, doc: Docu
   const root = doc.documentElement
   const veil = doc.querySelector<HTMLElement>('.boot-veil')
   const status = doc.querySelector<HTMLElement>('.boot-status')
-  if (status && text !== null) status.textContent = text
+  // Once the veil has said it is taking a while (index.html's own watch), that warning stays.
+  if (status && text !== null && !doc.getElementById('move-reload')) status.textContent = text
   root.dataset.bootLate = ''
   root.dataset.roomMove = ''
   // The veil's 60-second failsafe animation has long finished for anyone who waited in the lobby.
@@ -80,8 +83,10 @@ export class ParallelUniverses {
   roomURL(room: string): URL {
     const url = this.d.entryURL()
     writeRoom(url, room)
-    url.searchParams.set('world', this.d.world())
-    url.searchParams.delete('planet'); url.searchParams.delete('seed')
+    url.searchParams.delete('world'); url.searchParams.delete('planet'); url.searchParams.delete('seed')
+    // A public room by its planet alone (core/publicWorlds.ts): a seed would open a universe of it.
+    if (isDefaultRoom(room)) { const planet = recipeOfWorld(this.d.world()); if (planet) url.searchParams.set('planet', planet) }
+    else url.searchParams.set('world', this.d.world())
     url.searchParams.set('autoplay', '1')
     return url
   }
@@ -115,7 +120,7 @@ export class ParallelUniverses {
     const line = arrivalLine(this.arrived)
     if (!line) return
     const actions: NoticeAction[] = [{ label: 'Copy link', run: () => this.d.copyLink() }]
-    if (this.arrived?.reason === 'full') actions.push({ label: this.arrived.asked === DEFAULT_ROOM ? 'Try the main world again' : 'Try that room again', run: () => this.tryAgain(this.arrived!.asked) })
+    if (this.arrived?.reason === 'full') actions.push({ label: isDefaultRoom(this.arrived.asked) ? 'Try the main world again' : 'Try that room again', run: () => this.tryAgain(this.arrived!.asked) })
     this.d.notice(line, actions)
   }
 

@@ -14,6 +14,7 @@ import { params, worldSeed } from '../../shared/params'
 import { applyPlanet, decodeWorld, randomSeed } from '../world/planets'
 import { prepareResume, type ResumeSnapshot } from './resume'
 import { sessionStore } from './safeStorage'
+import { canonicalNameSeed, canonicalSeed, publicRecipeOf } from './publicWorlds'
 
 export type StartSource = 'link' | 'resume' | 'fresh'
 
@@ -37,5 +38,9 @@ export function applyStartWorld(
   // A reload keeps the world it was on: the session in this tab outranks the fresh draw.
   const saved = prepareResume(query, storage)
   if (saved) source = 'resume'
+  // A reload in a planet's public room: the clean address names no planet, the saved room does
+  // (core/publicWorlds.ts). Its canonical world; the room's own world still comes with welcome.
+  const recipe = publicRecipeOf(saved?.room)
+  if (recipe) applyPlanet(recipe, canonicalSeed(recipe), { nameSeed: canonicalNameSeed(recipe), source: 'preset' })
   return { saved, source }
 }

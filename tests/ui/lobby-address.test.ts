@@ -41,7 +41,7 @@ describe('lobby address presentation', () => {
     b.address.showLobby(); b.address.showPlay('lobby')
     expect(b.location.href).toBe('https://mira.cc/?name=Pilot')
     expect(b.address.playURL().searchParams.has('room')).toBe(false)
-    expect(b.address.inviteURL('lobby', 'volcanic.1')).toBe('https://mira.cc/?world=volcanic.1')
+    expect(b.address.inviteURL('lobby', 'volcanic.1')).toBe('https://mira.cc/?planet=volcanic')
     for (const write of b.writes) expect(new URL(write).searchParams.has('room')).toBe(false)
   })
   it('keeps flags and the pinned version in play, and never brings room=lobby back with them', () => {
@@ -50,7 +50,7 @@ describe('lobby address presentation', () => {
     expect(b.location.href).toBe('https://mira.cc/')
     b.address.showPlay('lobby')
     expect(b.location.href).toBe('https://mira.cc/?v=26.11.1605&wordmark=7&intro=2&gfx=low&webgl=&diag=&autoplay=1')
-    expect(b.address.inviteURL('lobby', 'volcanic.1')).toBe('https://mira.cc/?v=26.11.1605&world=volcanic.1')
+    expect(b.address.inviteURL('lobby', 'volcanic.1')).toBe('https://mira.cc/?v=26.11.1605&planet=volcanic')
   })
   it('hides the world the public room already holds, but keeps it for reloads the game makes', () => {
     const b = browser('https://mira.cc/?world=volcanic.1&seed=4')

@@ -18,7 +18,7 @@ export interface ResumeSnapshot {
   p: number[]; q: number[]; v: number[]; w: number[]
   wingsOpen: boolean; special: boolean; cameraMode: number; timeOfDay: number
 }
-import { canonicalRoom, roomFromQuery } from './roomAddress'
+import { canonicalRoom, isDefaultRoom, roomFromQuery } from './roomAddress'
 import { sessionStore } from './safeStorage'
 export { canonicalRoom }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
@@ -30,7 +30,8 @@ export function parseResume(raw: string | null, room?: string, seed?: number, no
   try {
     const s = JSON.parse(raw || 'null') as ResumeSnapshot
     if (!s || s.version !== 1 || !finite(s.savedAt) || now < s.savedAt || now - s.savedAt >= RESUME_MAX_AGE) return null
-    if (typeof s.room !== 'string' || canonicalRoom(s.room) !== s.room || (room !== undefined && canonicalRoom(room) !== s.room)) return null
+    // Public rooms are one place in an address (no ?room=): a saved planet's public room matches.
+    if (typeof s.room !== 'string' || canonicalRoom(s.room) !== s.room || (room !== undefined && canonicalRoom(room) !== s.room && !(isDefaultRoom(room) && isDefaultRoom(s.room)))) return null
     if (!Number.isInteger(s.seed) || s.seed < 1 || s.seed > 999999 || (seed !== undefined && s.seed !== seed)) return null
     if (!['buggy', 'buggy-syn3h', 'buggy-classic', 'jet', 'hovercraft', 'tank'].includes(s.kind)) return null
     if (!s.colors || !color(s.colors.body) || !color(s.colors.accent)) return null
