@@ -15,8 +15,8 @@ export function reportSheetHtml(): string {
     <button type="button" class="panel-action report-save">Save picture</button>
     <label class="report-label" for="report-what">What happened? <span>Optional</span></label>
     <input id="report-what" class="report-what" type="text" maxlength="${SENTENCE_LIMIT}" autocomplete="off" enterkeyhint="done" placeholder="My buggy fell through the hill">
-    <label class="report-label" for="report-text">What will be posted</label>
-    <textarea id="report-text" class="report-text" rows="4" readonly></textarea>
+    <p class="report-label" id="report-text-label">What will be posted</p>
+    <pre id="report-text" class="report-text" tabindex="0" role="region" aria-labelledby="report-text-label"></pre>
     <p class="report-how"></p>
     <div class="report-actions"><button type="button" class="panel-action report-discord">Post in Discord</button><button type="button" class="panel-action report-github">Open a GitHub issue</button></div>
     <p class="report-status" role="status" aria-live="polite"></p>

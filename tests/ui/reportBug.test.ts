@@ -1,25 +1,38 @@
 // Invariants of Report a bug (src/ui/report). Each names the bug a player would hit.
 import { describe, expect, it } from 'vitest'
-import { DISCORD_LIMIT, GITHUB_URL_LIMIT, discordMessage, githubIssueUrl, sanitizeReport } from '../../src/ui/report/reportText'
+import { DISCORD_BUDGET, DISCORD_LIMIT, GITHUB_URL_LIMIT, discordMessage, displayVehicles, githubIssueUrl, sanitizeReport } from '../../src/ui/report/reportText'
 import { reportSheetHtml } from '../../src/ui/report/sheetHtml'
 
 const ROOM = 'Secret-Garage', NAME = 'Quillfeather', CHAT = 'meet me behind the volcano at nine'
 /** A worst case: a real report's shape, 400 long lines, with the room, name and chat planted in it. */
 const report = [
   'Mira diagnostics v2', 'Version: v26.11.2405', 'Browser: Chrome 142', 'OS: macOS (as reported by the browser)', 'Device class: Desktop',
-  'Screen: 1960 × 1300 CSS px; DPR 2', 'Renderer: WebGPU; reason: default', 'World: Zansaeth, biome Badlands', 'Play: buggy, 12 bots (buggy 6, jet 6)',
+  'Screen: 1960 × 1300 CSS px; DPR 2', 'Renderer: WebGPU; reason: default', 'World: Zansaeth, biome Badlands', 'Play: buggy-syn3h, 12 bots (buggy 2, buggy-syn3h 4, jet 6)',
   `Room connection: connected to wss://mira.cc/room?room=${ROOM}&name=${NAME}#x, drops 0`,
   `Address https://mira.cc/?room=${ROOM}&world=abc123 last chat "${CHAT}" from ${NAME}`,
   '```', ...Array.from({ length: 400 }, (_, i) => `Long frame ${i}: ` + 'x'.repeat(180)),
 ].join('\n')
-const clean = sanitizeReport(report, { room: ROOM, names: [NAME, "Ada"], chat: [CHAT] })
+const clean = displayVehicles(sanitizeReport(report, { room: ROOM, names: [NAME, "Ada"], chat: [CHAT] }), { 'buggy-syn3h': 'Buggy', jet: 'Jet' })
 const longest = 'z'.repeat(1000)
 
 describe('report a bug', () => {
+  it('names vehicles as players see them, never by internal id or the old product name', () => {
+    for (const out of [discordMessage({ sentence: '', report: clean }), new URL(githubIssueUrl({ sentence: '', report: clean })).searchParams.get('body')!]) {
+      expect(out).not.toMatch(/syn3h/i)
+      expect(out).toContain('Play: Buggy, 12 bots (Buggy 6, Jet 6)')
+    }
+  })
+  it('marks a beta build as beta, so a beta bug is not chased in production', () => {
+    expect(discordMessage({ sentence: '', report: clean, host: 'beta.mira.cc' })).toContain('Mira v26.11.2405 (beta)')
+    expect(discordMessage({ sentence: '', report: clean, host: 'mira.cc' })).not.toContain('(beta)')
+  })
   it('keeps the Discord message under the limit, or Discord refuses the paste', () => {
     for (const sentence of ['', 'my buggy fell through the ground', longest]) {
       const message = discordMessage({ sentence, report: clean })
       expect(message.length).toBeLessThan(DISCORD_LIMIT)
+      // A short post reads at a glance in the channel; the long timings stay for GitHub.
+      expect(message.length).toBeLessThanOrEqual(DISCORD_BUDGET)
+      expect(message).not.toContain('Long frame')
       expect(message).toContain('Version: v26.11.2405')
       // An unbalanced fence would swallow the rest of the channel's formatting.
       expect(message.split('```').length % 2).toBe(1)

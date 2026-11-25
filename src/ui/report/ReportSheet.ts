@@ -15,7 +15,8 @@
 import './report-sheet.css'
 import { deliverShot, downloadShot, shareShot, shareableShot } from '../screenshot'
 import { DISCORD_BUG_CHANNEL, DISCORD_INVITE } from './links'
-import { discordMessage, githubIssueUrl, sanitizeReport, type ReportSecrets } from './reportText'
+import { PLAY_VEHICLES } from '../VehicleChoice'
+import { discordMessage, displayVehicles, githubIssueUrl, sanitizeReport, type ReportSecrets } from './reportText'
 import { reportSheetHtml } from './sheetHtml'
 
 export interface ReportSources {
@@ -35,6 +36,9 @@ export interface ReportSources {
 
 /** "the Mira Discord", or its bug channel once the owner names one (links.ts). */
 const where = DISCORD_BUG_CHANNEL ? `#${DISCORD_BUG_CHANNEL} in the Mira Discord` : 'the Mira Discord'
+
+/** Each vehicle kind's display name, as the vehicle picker shows it ("Buggy", not "buggy-syn3h"). */
+const VEHICLE_NAMES: Readonly<Record<string, string>> = Object.fromEntries(PLAY_VEHICLES.map(vehicle => [vehicle.id, vehicle.label]))
 
 /** Chat lines and names on the page right now (src/ui/chat/ChatCard.ts), for sanitizeReport. */
 export function chatOnPage(root: ParentNode = document): Pick<ReportSecrets, 'chat' | 'names'> {
@@ -73,7 +77,8 @@ export class ReportSheet {
 
   get isOpen(): boolean { return this.element.open }
   private get what(): HTMLInputElement { return this.element.querySelector('.report-what')! }
-  private get text(): HTMLTextAreaElement { return this.element.querySelector('.report-text')! }
+  /** The exact message, read only: text, not a field, so the touch rule that enlarges fields (index.html) leaves it at the sheet's size. */
+  private get text(): HTMLElement { return this.element.querySelector('.report-text')! }
   private say(text: string): void { this.element.querySelector('.report-status')!.textContent = text }
 
   /** Open over the pause screen, capturing the view as it is now. */
@@ -82,7 +87,7 @@ export class ReportSheet {
     const generation = ++this.generation
     this.opener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
     this.release(); this.saved = false; this.what.value = ''; this.say('')
-    this.report = sanitizeReport(this.sources.report() ?? 'Diagnostics were not ready.', this.sources.secrets())
+    this.report = displayVehicles(sanitizeReport(this.sources.report() ?? 'Diagnostics were not ready.', this.sources.secrets()), VEHICLE_NAMES)
     const touch = this.sources.touch()
     this.element.querySelector('.report-how')!.textContent = touch
       ? `Save the picture, then Post in Discord copies the message and opens ${where}: paste it there and attach the picture.`
@@ -90,6 +95,8 @@ export class ReportSheet {
     this.element.classList.add('is-capturing')
     this.render()
     this.element.showModal()
+    // Everything else on screen fades out while the sheet is open (report-sheet.css).
+    this.element.parentElement?.classList.add('is-reporting')
     this.element.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })
     const blob = await this.sources.capture()
     if (generation !== this.generation || !this.isOpen) return
@@ -104,6 +111,7 @@ export class ReportSheet {
     if (!this.element.open && !this.opener) return
     this.generation++
     if (this.element.open) this.element.close()
+    this.element.parentElement?.classList.remove('is-reporting')
     this.release()
     const opener = this.opener; this.opener = undefined
     this.sources.closed()
@@ -116,8 +124,8 @@ export class ReportSheet {
     this.element.querySelector<HTMLImageElement>('.report-thumb')?.removeAttribute('src')
   }
 
-  private input() { return { sentence: this.what.value, report: this.report } }
-  private render(): void { this.text.value = discordMessage(this.input()) }
+  private input() { return { sentence: this.what.value, report: this.report, host: location.hostname } }
+  private render(): void { this.text.textContent = discordMessage(this.input()) }
 
   /** The share sheet on a touch screen (the Screenshot button's deliverShot), a download elsewhere. */
   private async savePicture(): Promise<void> {
@@ -132,13 +140,13 @@ export class ReportSheet {
   /** Copy the message, save the picture on a desktop, open the invite: all inside this one press. */
   private postInDiscord(): void {
     const message = discordMessage(this.input())
-    this.text.value = message
+    this.text.textContent = message
     const copied = navigator.clipboard?.writeText(message) ?? Promise.reject(new Error('No clipboard'))
     if (!this.sources.touch() && this.blob && !this.saved) { downloadShot(this.blob, this.sources.fileName()); this.saved = true }
     window.open(DISCORD_INVITE, '_blank', 'noopener,noreferrer')
     copied.then(
       () => this.say(`Message copied. Paste it in ${where}${this.blob ? ' and attach the picture' : ''}.`),
-      () => { this.text.focus(); this.text.select(); this.say('Copy the message above, then paste it in Discord.') })
+      () => { this.text.focus(); const range = document.createRange(); range.selectNodeContents(this.text); getSelection()?.removeAllRanges(); getSelection()?.addRange(range); this.say('Copy the message above, then paste it in Discord.') })
   }
 
   /** A new GitHub issue with the title and body filled in; the picture is dragged in by hand. */

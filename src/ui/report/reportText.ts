@@ -10,9 +10,14 @@
  */
 import { GITHUB_REPO } from './links'
 
-/** Discord refuses a message over 2,000 characters; keep a margin for the player's own edits. */
+/** Discord refuses a message over 2,000 characters. */
 export const DISCORD_LIMIT = 2000
-export const DISCORD_BUDGET = 1900
+/**
+ * A post in a community channel should read at a glance (Foreman, 25 November 2026: about 900):
+ * the player's line, build, device, renderer, world, vehicle and connection. No startup timings;
+ * the GitHub issue keeps the fuller report.
+ */
+export const DISCORD_BUDGET = 900
 /**
  * GitHub documents no number, only "414 URI Too Long". A visitor who is not signed in is sent
  * to the login page with this whole address encoded again in return_to, so the cap is half the
@@ -102,34 +107,69 @@ export function compactReport(report: string, fits: (text: string) => boolean): 
 export interface ReportInput {
   /** What the player typed, raw. */
   sentence: string
-  /** The cleaned diagnostics report (sanitizeReport). */
+  /** The cleaned diagnostics report (sanitizeReport, then displayVehicles). */
   report: string
+  /** The page's hostname, for the channel: a beta host adds "(beta)" after the version. */
+  host?: string
 }
 
-/** "Mira v26.11.2405 · Zansaeth (badlands) · buggy · Chrome 142 on macOS". */
-function contextLine(report: string): string {
+/**
+ * The same rule as shared/channel.ts channelOf on feat/beta-channel (beta.mira.cc and any
+ * workers.dev deployment are beta). Replace with an import of channelOf once that is on main.
+ */
+export function isBetaHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase().replace(/\.$/, '')
+  return host.startsWith('beta.') || host.endsWith('.workers.dev')
+}
+
+/**
+ * The Play line with display names, not internal kinds: "Play: buggy-syn3h, 3 bots (buggy-syn3h
+ * 2, jet 1)" becomes "Play: Buggy, 3 bots (Buggy 2, Jet 1)". Kinds with one name are merged.
+ * A kind missing from `names` keeps its id; 'buggy-syn3h' also carries the product's old name,
+ * so the buggy family always reads "Buggy".
+ */
+export function displayVehicles(report: string, names: Readonly<Record<string, string>>): string {
+  const name = (kind: string) => names[kind] ?? (/^buggy(-|$)/.test(kind) ? 'Buggy' : kind)
+  return report.split('\n').map(line => {
+    const play = /^Play: ([^,]+), (\d+) bots(?: \((.*)\))?$/.exec(line)
+    if (!play) return line
+    const counts = new Map<string, number>()
+    for (const part of (play[3] ?? '').split(', ').filter(Boolean)) {
+      const at = part.lastIndexOf(' '), kind = name(part.slice(0, at)), n = Number(part.slice(at + 1)) || 0
+      counts.set(kind, (counts.get(kind) ?? 0) + n)
+    }
+    const fleet = [...counts].map(([kind, n]) => `${kind} ${n}`).join(', ')
+    return `Play: ${name(play[1].trim())}, ${play[2]} bots${fleet ? ` (${fleet})` : ''}`
+  }).join('\n')
+}
+
+/** "Mira v26.11.2405 (beta) · Zansaeth (Badlands) · Buggy · Chrome 142 on macOS". */
+function contextLine(report: string, host = ''): string {
   const world = reportField(report, 'World').replace(/, biome /, ' (').replace(/^(.*\(.*)$/, '$1)')
   const vehicle = reportField(report, 'Play').split(',')[0]
   const browser = reportField(report, 'Browser'), os = reportField(report, 'OS').replace(/ \(as reported by the browser\)$/, '')
   const device = [browser, os].filter(Boolean).join(' on ')
-  return [`Mira ${reportField(report, 'Version') || '(version unknown)'}`, world, vehicle, device].filter(Boolean).join(' · ')
+  const beta = host && isBetaHost(host) ? ' (beta)' : ''
+  return [`Mira ${reportField(report, 'Version') || '(version unknown)'}${beta}`, world, vehicle, device].filter(Boolean).join(' · ')
 }
 
 /** The message for Discord, under DISCORD_BUDGET characters whatever the report holds. */
-export function discordMessage({ sentence, report }: ReportInput): string {
+export function discordMessage({ sentence, report, host }: ReportInput): string {
   const said = oneLine(sentence)
-  const head = `**Bug report:** ${said || '(no description)'}\n${contextLine(report)}\n`
+  const head = `**Bug report:** ${said || '(no description)'}\n${contextLine(report, host)}\n`
   const wrap = (body: string) => body ? head + '```text\n' + body + '\n```' : head.trimEnd()
-  return wrap(compactReport(report, body => wrap(body).length <= DISCORD_BUDGET))
+  // Only the lines that say which build, device and place: the timings stay for GitHub.
+  const essentials = report.split('\n').filter(line => FIRST.some(prefix => line.startsWith(prefix))).join('\n')
+  return wrap(compactReport(essentials, body => wrap(body).length <= DISCORD_BUDGET).replace('\n' + TRIMMED, ''))
 }
 
 /** A new issue on GitHub with title and body filled in, the whole address within GITHUB_URL_LIMIT. */
-export function githubIssueUrl({ sentence, report }: ReportInput, repo: string = GITHUB_REPO): string {
+export function githubIssueUrl({ sentence, report, host }: ReportInput, repo: string = GITHUB_REPO): string {
   const said = oneLine(sentence)
   const title = said ? `Bug: ${said.length > 90 ? said.slice(0, 89).trimEnd() + '…' : said}` : `Bug report from Mira ${reportField(report, 'Version') || ''}`.trim()
   const body = (diagnostics: string) => [
     '**What happened**', said || '(no description)', '',
-    contextLine(report), '',
+    contextLine(report, host), '',
     '**Screenshot**', '<!-- Drag the downloaded screenshot here. -->', '',
     ...(diagnostics ? ['<details><summary>Diagnostics</summary>', '', '```text', diagnostics, '```', '</details>'] : []),
   ].join('\n')
