@@ -266,9 +266,12 @@ try {
   await capture(host, 'desktop-private')
 
   step = 'same browser reopens its own private twin'
-  const differentPreview = new URL(lobbyURL(3))
-  differentPreview.searchParams.set('world', `${privateTarget.recipe}.${world === `${privateTarget.recipe}.12345` ? 12346 : 12345}`)
-  await openLobby(host, differentPreview.href)
+  await openLobby(host, lobbyURL(3))
+  const previewCode = await host.evaluate(recipe => {
+    const preview = window.mira.shell.galaxyWorlds.find(planet => planet.id === recipe)
+    return `${recipe}.${preview.seed}${preview.nameSeed ? `~world.nameSeed=${preview.nameSeed}` : ''}`
+  }, privateTarget.recipe)
+  assert.notEqual(previewCode, world, 'the new lobby preview differs from the saved invite world')
   await (await controls(host, privateTarget.recipe, true, ['private'])).private.click()
   const reused = await joined(host, hostWelcomes, 2, step)
   assert.equal(reused.room, privateWelcome.room, 'same browser gets a welcome in the original room')
