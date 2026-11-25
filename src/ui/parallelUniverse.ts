@@ -7,6 +7,7 @@
 import { DEFAULT_ROOM, canonicalRoom, isDefaultRoom, writeRoom } from '../core/roomAddress'
 import { arrivalLine, isParallelRoom, onRefused, parallelRoomName, putMove, storageWorks, takeMove, type RoomMove } from '../net/parallel'
 import { ROOM_FULL_STATUS } from '../net'
+import { recipeOfWorld } from '../core/publicWorlds'
 
 export interface NoticeAction { label: string; run(): void }
 
@@ -82,8 +83,10 @@ export class ParallelUniverses {
   roomURL(room: string): URL {
     const url = this.d.entryURL()
     writeRoom(url, room)
-    url.searchParams.set('world', this.d.world())
-    url.searchParams.delete('planet'); url.searchParams.delete('seed')
+    url.searchParams.delete('world'); url.searchParams.delete('planet'); url.searchParams.delete('seed')
+    // A public room by its planet alone (core/publicWorlds.ts): a seed would open a universe of it.
+    if (isDefaultRoom(room)) { const planet = recipeOfWorld(this.d.world()); if (planet) url.searchParams.set('planet', planet) }
+    else url.searchParams.set('world', this.d.world())
     url.searchParams.set('autoplay', '1')
     return url
   }

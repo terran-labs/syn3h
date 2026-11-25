@@ -8,7 +8,7 @@ import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
 import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
 import { applyPlanet, currentPlanet, currentWorldName, encodeWorld, randomSeed } from './world/planets'
-import { canonicalNameSeed, canonicalSeed, joinRoom } from './core/publicWorlds'
+import { canonicalNameSeed, canonicalSeed, joinRoom, namesItsOwnWorld } from './core/publicWorlds'
 import { parallelRoomName } from './net/parallel'
 import { ParallelUniverses, gameOnScreen, holdVeil, moveVeilLine } from './ui/parallelUniverse'
 import { PageLifecycle } from './core/lifecycle'
@@ -350,6 +350,9 @@ async function main(): Promise<void> {
     // A saved world is the player's own: it opens in a parallel universe of itself (net/parallel.ts),
     // never a planet's public room, whose canonical world would replace it.
     if (!joined && isDefaultRoom(asked) && shell.enteringSavedWorld) asked = parallelRoomName()
+    // So does a link that names its world by seed with no room (a link shared before planets had
+    // public worlds): it still shows the world it names.
+    if (!joined && isDefaultRoom(asked) && namesItsOwnWorld(query, worldSeed.value)) asked = parallelRoomName()
     lobbyAddress.showPlay(joinedRoom ?? asked)
     if (joined) return
     const player = slot.current

@@ -1,4 +1,5 @@
 import { isDefaultRoom, writeRoom } from '../core/roomAddress'
+import { recipeOfWorld } from '../core/publicWorlds'
 
 /**
  * The address bar. Keeps what the page was opened with (the entry URL, needed to resume or
@@ -96,6 +97,9 @@ export function inviteAddress(entry: URL, room: string, world?: string): string 
   const version = entry.searchParams.get('v')
   if (version !== null) url.searchParams.set('v', version)
   writeRoom(url, room)
-  if (world) url.searchParams.set('world', world)
+  // A public room is its planet's canonical world (core/publicWorlds.ts): the link names the planet
+  // only, so a seed in it would open a parallel universe of that seed instead.
+  if (world && isDefaultRoom(room)) { const planet = recipeOfWorld(world); if (planet) url.searchParams.set('planet', planet) }
+  else if (world) url.searchParams.set('world', world)
   return url.href
 }

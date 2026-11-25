@@ -6,7 +6,7 @@
  * public planet sending someone to a universe of another planet, or not back to its own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { canonicalNameSeed, canonicalSeed, joinRoom, publicRecipeOf, publicRoomFor } from '../../src/core/publicWorlds'
+import { canonicalNameSeed, canonicalSeed, joinRoom, namesItsOwnWorld, publicRecipeOf, publicRoomFor } from '../../src/core/publicWorlds'
 import { canonicalRoom, isDefaultRoom, roomFromQuery, roomLabel, writeRoom } from '../../src/core/roomAddress'
 import { inviteAddress, visiblePlayURL } from '../../src/ui/LobbyAddress'
 import { parseResume } from '../../src/core/resume'
@@ -51,12 +51,27 @@ describe('a planet\'s public world', () => {
     expect(writeRoom(new URL('https://mira.cc/?gfx=2'), room).searchParams.has('room')).toBe(false)
     const invite = new URL(inviteAddress(new URL('https://mira.cc/?v=26.11.2405&room=public-alpine'), room, 'alpine.123'))
     expect(invite.searchParams.has('room')).toBe(false); expect(invite.href).not.toContain('public-')
+    // A public invite names the planet, never a seed: a seed would open a universe of it.
+    expect(invite.searchParams.get('planet')).toBe('alpine'); expect(invite.searchParams.has('world')).toBe(false)
+    // A private room's invite still carries its world, so an empty room rebuilds it.
+    expect(new URL(inviteAddress(new URL('https://mira.cc/'), 'friends', 'alpine.123')).searchParams.get('world')).toBe('alpine.123')
     const bar = visiblePlayURL(new URL('https://mira.cc/?room=public-alpine&world=alpine.123&gfx=2'))
     expect(bar.href).not.toContain('public-'); expect(bar.searchParams.get('gfx')).toBe('2')
     // Private rooms keep theirs: that is what makes them joinable.
     expect(writeRoom(new URL('https://mira.cc/'), 'friends').searchParams.get('room')).toBe('friends')
     expect(publicRecipeOf('public-alpine')).toBe('alpine'); expect(publicRecipeOf('friends')).toBeNull()
     expect(canonicalRoom('public-alpine')).toBe('public-alpine')
+  })
+})
+
+describe('a link shared before planets had public worlds', () => {
+  it('still shows the world its seed names: a seeded link with no room opens a universe of it, a planet alone its public world', () => {
+    expect(namesItsOwnWorld(new URLSearchParams('seed=777'), 777)).toBe(true)
+    expect(namesItsOwnWorld(new URLSearchParams('world=alpine.777~world.nameSeed%3D5'), 777)).toBe(true)
+    expect(namesItsOwnWorld(new URLSearchParams('planet=alpine'), 777)).toBe(false)
+    expect(namesItsOwnWorld(new URLSearchParams(''), 777)).toBe(false)
+    // Once the visitor has chosen another world in the lobby, the link no longer decides.
+    expect(namesItsOwnWorld(new URLSearchParams('seed=777'), 4242)).toBe(false)
   })
 })
 
@@ -113,6 +128,8 @@ describe('a full public planet', () => {
     inside.notices[0].actions[1].run()
     const back = inside.navigations[0]
     expect(back.searchParams.has('room')).toBe(false)
+    // By its planet alone: a seed here would open a universe of it instead.
+    expect(back.searchParams.get('planet')).toBe('alpine'); expect(back.searchParams.has('world')).toBe(false)
     // That address joins Alpine's public room again, not "lobby" and not another planet's.
     expect(asJoined(back)).toBe('public-alpine')
     const main = page(back.href, asJoined); main.u.onWelcome()

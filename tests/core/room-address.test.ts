@@ -6,7 +6,8 @@ import { inviteUrl } from '../../src/ui/InviteView'
 it('writes the public room as no parameter and any other room by name', () => {
   for (const room of ['lobby', 'Lobby', ' lobby ', '']) expect(writeRoom(new URL('https://mira.cc/?room=x&v=1'), room).href).toBe('https://mira.cc/?v=1')
   expect(writeRoom(new URL('https://mira.cc/'), 'party').href).toBe('https://mira.cc/?room=party')
-  expect(inviteUrl('https://mira.cc', 'lobby', 'volcanic.1')).toBe('https://mira.cc/?world=volcanic.1')
+  // A public invite names the planet only: its public world is canonical (core/publicWorlds.ts).
+  expect(inviteUrl('https://mira.cc', 'lobby', 'volcanic.1')).toBe('https://mira.cc/?planet=volcanic')
   expect(inviteUrl('https://mira.cc', 'party')).toBe('https://mira.cc/?room=party')
 })
 

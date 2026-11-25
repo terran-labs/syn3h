@@ -17,6 +17,7 @@
  * join "lobby".
  */
 import { isDefaultRoom } from './roomAddress'
+import { linkSeed } from './resume'
 
 export const PUBLIC_PREFIX = 'public-'
 
@@ -45,6 +46,20 @@ export const canonicalNameSeed = (recipe: string): number => 1 + (hash(`mira.pub
  * one's. `recipe` is that planet, whose canonical world the join applies first; null for a
  * private room, which keeps whatever world the page has.
  */
+/** The planet a world code names ("alpine.123~..."), or null. */
+export const recipeOfWorld = (code: string | null | undefined): string | null => /^([a-z0-9]+)\./.exec((code ?? '').trim().toLowerCase())?.[1] ?? null
+
+/**
+ * A link that names a world by its seed (?seed=, ?world=) with no room, while the world in hand is
+ * still that seed: links shared before planets had public worlds of their own named their seed
+ * that way, so such a link opens its world in a fresh parallel universe (net/parallel.ts), never a
+ * planet's canonical public world. A planet alone (?planet=alpine) is its public world.
+ */
+export function namesItsOwnWorld(query: URLSearchParams, currentSeed: number): boolean {
+  const seed = linkSeed(query)
+  return seed !== null && seed === currentSeed
+}
+
 export function joinRoom(asked: string, currentRecipe: string): { room: string; recipe: string | null } {
   if (!isDefaultRoom(asked)) return { room: asked, recipe: null }
   const recipe = publicRecipeOf(asked) ?? currentRecipe
