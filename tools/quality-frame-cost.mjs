@@ -22,7 +22,7 @@ try {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`http://127.0.0.1:${app.server.address().port}/?planet=alpine&seed=4&autoplay=1&vehicle=buggy&daydream=0&room=bench-${backend}${backend === 'webgl' ? '&webgl=1' : ''}`)
-    await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.shell.transitioning && window.syn3hNet?.isHost, null, { timeout: 90000 })
+    await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.shell.transitioning && window.miraNet?.isHost, null, { timeout: 90000 })
     assert.equal(await page.evaluate(() => window.syn3h.game.backend), backend)
     await page.evaluate(() => {
       const { params, game } = window.syn3h
