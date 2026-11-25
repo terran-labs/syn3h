@@ -89,10 +89,7 @@ import { RaceBridge, type RaceBots, type RacePresentation } from './races'
 import { RemoteArrivals } from './arrivals'
 import { TintTransition, type TintPair } from '../vehicles/tints'
 import { onRescue } from '../core/rescueLog'
-import { creatorKey } from '../core/creatorKey'
-
-/** `{ creator }` when this device holds the creator key; read at every hello, so signing out applies at the next join. */
-const withCreatorKey = (): { creator?: string } => { const key = creatorKey(); return key ? { creator: key } : {} }
+import { helloCreatorField } from '../core/creatorKey'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -552,7 +549,7 @@ export class NetClient implements System {
         // "Bots may play with me": only a no is sent; an older room ignores the field.
         ...(playWithMe.value ? {} : { play: false }),
         // The creator key, if this device holds one: the room grants the creator role for it.
-        ...withCreatorKey(),
+        ...helloCreatorField(),
       })
       this.dropReport = null
     }

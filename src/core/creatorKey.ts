@@ -41,7 +41,7 @@ export function adoptCreatorKeyFromAddress(loc: Pick<Location, 'href'> = locatio
   if (!taken) return
   // The address is cleaned first, whatever happens to the key.
   try { hist.replaceState(hist.state, '', taken.href) } catch { /* a sandboxed frame: nothing to clean */ }
-  if (taken.key) try { localStore()?.setItem(CREATOR_KEY_STORAGE, taken.key) } catch { /* storage full or blocked */ }
+  if (taken.key) storeCreatorKey(taken.key)
 }
 
 /** The key this device holds, or null. */
@@ -54,9 +54,33 @@ export function creatorKey(): string | null {
   }
 }
 
+/** Fired on window when the key is stored or forgotten, so every Creator key row redraws. */
+export const CREATOR_KEY_EVENT = 'mira:creator-key'
+const changed = () => { try { globalThis.dispatchEvent?.(new Event(CREATOR_KEY_EVENT)) } catch { /* no window */ } }
+
+/**
+ * Settings' "Creator key" field: store a pasted key exactly as the link does. False when it is
+ * not shaped like a key (a format anyone can read in the source, so this confirms no guess) or
+ * storage refuses it. Whether it is the RIGHT key only the room knows, at the next join.
+ */
+export function storeCreatorKey(raw: string): boolean {
+  const key = raw.trim()
+  if (!KEY_PATTERN.test(key)) return false
+  try { localStore()?.setItem(CREATOR_KEY_STORAGE, key) } catch { return false }
+  changed()
+  return creatorKey() === key
+}
+
 /** Settings' "Sign out of creator on this device". The badge goes at the next join. */
 export function forgetCreatorKey(): void {
   try { localStore()?.removeItem(CREATOR_KEY_STORAGE) } catch { /* nothing stored */ }
+  changed()
+}
+
+/** The hello's `creator` field: present only when this device holds a key; read at every hello. */
+export function helloCreatorField(): { creator?: string } {
+  const key = creatorKey()
+  return key ? { creator: key } : {}
 }
 
 if (typeof location !== 'undefined' && typeof history !== 'undefined') adoptCreatorKeyFromAddress()

@@ -87,3 +87,13 @@ html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehic
   html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-picker > .wi-vehicle-option { flex-direction: column; gap: 3px; padding: 0 4px; font-size: 12.5px; }
   html .mira-shell.exploration-ui .world-inspector .wi-cards .wi-vehicle .wi-vehicle-option svg { width: 22px; height: 12px; }
 }
+/* The Creator key row (creatorKeyRow.ts): last in the Me card and in the lobby's Settings,
+   quiet until opened. The field is a password field; 16px so iOS does not zoom on focus. */
+.mira-shell .world-inspector .creator-key-row { flex-direction: column; align-items: stretch; gap: 4px; margin-top: 6px; }
+.mira-shell .world-inspector .creator-key-fold > summary { cursor: pointer; list-style: none; font: 500 12px/1.6 'Barlow', sans-serif; letter-spacing: .06em; color: rgb(226 226 226 / .55); }
+.mira-shell .world-inspector .creator-key-fold > summary::-webkit-details-marker { display: none; }
+.mira-shell .world-inspector .creator-key-form { flex-wrap: nowrap; align-items: center; margin-top: 4px; }
+.mira-shell .world-inspector .creator-key-input { flex: 1 1 auto; min-width: 0; height: 34px; padding: 0 12px; box-sizing: border-box; font: 400 16px/1 'Barlow', sans-serif; color: var(--s3-ink, #efefef); background: rgb(4 14 24 / .4); border: 1px solid var(--s3-line-quiet, rgb(211 211 211 / .15)); border-radius: 999px; }
+.mira-shell .world-inspector .creator-key-input:focus { outline: none; border-color: var(--s3-accent, #c2c2c2); }
+.mira-shell .world-inspector .creator-key-note { margin: 0; font: 400 12px/1.35 'Barlow', sans-serif; color: rgb(226 226 226 / .72); }
+.mira-shell .world-inspector .creator-key-note:empty { display: none; }

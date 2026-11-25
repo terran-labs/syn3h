@@ -3,7 +3,7 @@
  * stored, and gone from the address bar before anything can share the address.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { adoptCreatorKeyFromAddress, creatorKey, CREATOR_KEY_STORAGE, forgetCreatorKey, takeCreatorKey } from '../../src/core/creatorKey'
+import { adoptCreatorKeyFromAddress, creatorKey, CREATOR_KEY_STORAGE, forgetCreatorKey, helloCreatorField, storeCreatorKey, takeCreatorKey } from '../../src/core/creatorKey'
 import { inviteAddress } from '../../src/ui/LobbyAddress'
 import { linkWithSwitches } from '../../src/core/fieldSwitches'
 import { creatorMarkShape } from '../../src/ui/brand/creatorMarkPath'
@@ -46,6 +46,18 @@ describe('creator key on a device', () => {
     expect(loc.href).toBe('https://mira.cc/')
     expect(creatorKey()).toBeNull()
     expect(takeCreatorKey('https://mira.cc/?creator=x')).toBeNull()
+  })
+
+  // Bug: a key pasted into Settings is not stored, or the next hello does not carry it.
+  it('stores a pasted key and the next hello carries it', () => {
+    expect(helloCreatorField()).toEqual({})
+    expect(storeCreatorKey(`  ${KEY}\n`)).toBe(true)
+    expect(creatorKey()).toBe(KEY)
+    expect(helloCreatorField()).toEqual({ creator: KEY })
+    // Something not shaped like a key is refused and stores nothing.
+    forgetCreatorKey()
+    expect(storeCreatorKey('hunter2')).toBe(false)
+    expect(helloCreatorField()).toEqual({})
   })
 
   // Bug: signing out leaves the key behind, so the next join is still the creator.
