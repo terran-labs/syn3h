@@ -226,7 +226,10 @@ body { --map-top: calc(var(--edge-touch-bottom) + 160px * .885); }
 .performance-blank-frames small { color: #bfbfbf; font-size: 11px; font-variant-numeric: tabular-nums; }
 .mira-shell.exploration-ui .performance-recommendation { position: fixed; left: 50%; top: 100px; transform: translateX(-50%); max-width: min(340px,calc(100vw - 32px)); padding: 10px 14px; background: rgb(18 18 18 / .96); border: 1px solid var(--s3-line); border-radius: 3px; pointer-events: auto; z-index: 40; font-size: 13px; }
 .performance-recommendation p { margin: 0 0 8px; }
-.performance-recommendation button + button { margin-left: 8px; }
+.performance-offer-actions { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; }
+.performance-offer-actions > button:not([hidden]) { display: inline-flex; justify-content: center; align-items: center; gap: 6px; }
+.performance-offer-actions svg { flex: none; width: 16px; height: 16px; }
+.performance-offer-actions [data-direction="up"] svg { transform: scaleY(-1); }
 @media (pointer: coarse) { .mira-shell.exploration-ui .performance-controls select { font-size: 16px; } }
 @media (max-height: 500px) { .mira-shell.exploration-ui .performance-panel { max-height: 35%; min-height: 60px; } .mira-shell.exploration-ui .performance-recommendation { top: 12px; left: 16px; transform: none; max-width: 280px; } }
 .mira-shell.exploration-ui .performance-panel header button { width: 28px; height: 26px; min-height: 26px; padding: 0; font-size: 18px; }

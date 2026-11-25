@@ -13,8 +13,11 @@ const number = (value: number | undefined, digits = 1) => value !== undefined &&
 
 /** The level row and Auto drive these; they never appear as rows of their own. */
 const LEVEL_IDS = ['gfx.quality', 'gfx.auto', 'gfx.level']
-/** Two chevrons, drawn as one stroked path: pointing down for a lower level, up for a higher one. */
-const CHEVRONS = (up: boolean) => `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="${up ? 'M3 8l5-4 5 4M3 13l5-4 5 4' : 'M3 3l5 4 5-4M3 8l5 4 5-4'}"/></svg>`
+const qualityGlyph = (path: string) => `<svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="${path}"/></svg>`
+/** The two stepper glyphs are mirror images about the centre of their view box. */
+const CHEVRONS = (up: boolean) => qualityGlyph(up ? 'M3 7.5l5-4 5 4M3 12.5l5-4 5 4' : 'M3 3.5l5 4 5-4M3 8.5l5 4 5-4')
+const KEEP_GLYPH = qualityGlyph('M3 8.5l3 3 7-7')
+const SWITCH_GLYPH = qualityGlyph('M8 3.5v9m-4-4 4 4 4-4')
 
 /** The drawing buffer for a window of CSS size width by height at a pixel ratio, as the renderer sizes it. */
 export function renderSize(width: number, height: number, pixelRatio: number): [number, number] {
@@ -102,7 +105,13 @@ export class PerformancePanel {
     this.diagnostics = this.element.querySelector('details')!
     this.recommendation.className = 'performance-recommendation liquid-glass'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
-    this.recommendation.innerHTML = '<p></p><button type="button" class="panel-action" data-performance="ignore">Ignore</button><button type="button" class="panel-action" data-performance="bots" hidden>Fewer bots</button><button type="button" class="panel-action" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
+    this.recommendation.innerHTML = `<p></p>
+      <div class="performance-offer-actions">
+        <button type="button" class="panel-action" data-performance="ignore">${KEEP_GLYPH}<span>Ignore</span></button>
+        <button type="button" class="panel-action" data-performance="bots" hidden>Fewer bots</button>
+        <button type="button" class="panel-action" data-performance="lower">${SWITCH_GLYPH}<span>Lower level</span></button>
+      </div>
+      <small class="performance-unlock" hidden>Esc for options</small>`
     ;(noticeStack ?? parent).append(this.recommendation)
     if (noticeStack) {
       this.recommendationSize = new ResizeObserver(([entry]) => {
@@ -323,7 +332,7 @@ export class PerformancePanel {
     const offer = this.snapshot?.recommendation
     for (const button of this.recommendation.querySelectorAll<HTMLButtonElement>('button')) {
       const kind = button.dataset.performance
-      // Fewer bots only when bots are on offer; a lower level only when there is one.
+      // Show the bot and quality actions only when the offer has those choices.
       button.hidden = this.captured || (kind === 'bots' && !(offer?.fewerBots && offer.bots)) || (kind === 'lower' && !!offer && offer.targetLevel === offer.level)
     }
     this.recommendation.querySelector<HTMLElement>('.performance-unlock')!.hidden = !this.captured
@@ -450,8 +459,10 @@ export class PerformancePanel {
         ? `Running slow at ${this.levelName(offer.level)} with ${company} (${number(offer.observedFps, 0)} fps). Try fewer bots, or ${this.levelName(offer.targetLevel)} with the current bots?`
         : bots ? `Running slow with ${company} (${number(offer.observedFps, 0)} fps). Try fewer bots?`
         : `Running slow at ${this.levelName(offer.level)} (${number(offer.observedFps, 0)} fps). Switch to ${this.levelName(offer.targetLevel)}?`
-      this.recommendation.querySelector<HTMLButtonElement>('[data-performance=lower]')!.textContent = bots && lower ? `${this.levelName(offer.targetLevel)}, same bots` : `Switch to ${this.levelName(offer.targetLevel)}`
-      this.recommendation.querySelector('[data-performance=ignore]')!.textContent = `Keep ${this.levelName(offer.level)}`
+      const switchLevel = this.recommendation.querySelector<HTMLButtonElement>('[data-performance=lower]')!
+      switchLevel.dataset.direction = offer.targetLevel > offer.level ? 'up' : 'down'
+      switchLevel.querySelector('span')!.textContent = bots && lower ? `${this.levelName(offer.targetLevel)}, same bots` : `Switch to ${this.levelName(offer.targetLevel)}`
+      this.recommendation.querySelector('[data-performance=ignore] span')!.textContent = `Keep ${this.levelName(offer.level)}`
     }
     this.renderStatus()
     if (!snapshot.visible) return
