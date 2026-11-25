@@ -7,7 +7,7 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import { CLOSE_BUSY, MAX_ROOM_PLAYERS, type PlayerInfo } from '../shared/protocol'
-import { ASSIGN_SLOW_MS, ASSIGN_TIMEOUT_MS, type AssignRequest, isPublicRoom, OFF_CACHE_MS, PUBLIC_BASE, PUBLIC_ROOM_HEADER, RoomRegistry, type RegistryEntry } from './registry'
+import { ASSIGN_PATIENCE_MS, ASSIGN_SLOW_MS, type AssignRequest, FLAG_TRUST_MS, isPublicRoom, OFF_CACHE_MS, PUBLIC_BASE, PUBLIC_ROOM_HEADER, RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
@@ -140,45 +140,61 @@ export default {
   },
 }
 
-// ASSIGN_TIMEOUT_MS and OFF_CACHE_MS live in server/registry.ts: a Worker's entry module may
-// export only handlers and functions (workerd refuses to start on an exported number).
-let offUntil = 0
+// The constants used here live in server/registry.ts: a Worker's entry module may export
+// only handlers and functions (workerd refuses to start on an exported number).
+
+/** The runtime flag as this isolate last heard it from the registry, and when (ms). */
+let flag: { on: boolean; at: number } | null = null
 /** Tests run many deployments in one isolate. */
-export function forgetOverflowCache(): void { offUntil = 0 }
+export function forgetOverflowCache(): void { flag = null }
 
 /**
- * The public room this arrival should join (server/registry.ts PublicSeats), "lobby" when the
- * registry says overflow is off, or null when it gave no usable answer within
- * ASSIGN_TIMEOUT_MS (slow, failing or nonsense). Null is not sent to "lobby" blind: under a
- * blast that would be a crowd at a full room. The client is closed with CLOSE_BUSY instead.
+ * The public room this arrival should join (server/registry.ts PublicSeats), or null for
+ * "close as busy". Policy, in order:
+ *  - Overflow off, as last heard within OFF_CACHE_MS: "lobby" without asking, except for a
+ *    returning overflow player (prefer), who asks: off drains, it does not cut over.
+ *  - The registry's valid answer is used whenever it comes first, even after
+ *    ASSIGN_PATIENCE_MS (logged as "late"): that constant is patience, not a deadline.
+ *  - No usable answer (the timer won, an error, nonsense): a returning player goes to their
+ *    room (the room decides); otherwise busy if overflow was on as last heard within
+ *    FLAG_TRUST_MS, else "lobby" as today (fail open: an unreachable registry must not bounce
+ *    anyone while the flag is off or unknown).
  */
 async function assignPublic(env: Env, prefer: string | null, full: string | null): Promise<string | null> {
-  if (Date.now() < offUntil) return PUBLIC_BASE
+  const returning = isPublicRoom(prefer) && prefer !== PUBLIC_BASE ? prefer : null
+  if (flag && !flag.on && Date.now() - flag.at < OFF_CACHE_MS && !returning) return PUBLIC_BASE
   let timer: ReturnType<typeof setTimeout> | undefined
   const started = Date.now()
   let outcome = 'ok'
+  let seat: string | null = null
   try {
     const body: AssignRequest = { prefer, full, cap: MAX_ROOM_PLAYERS }
     const asked = env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID))
       .fetch(new Request('https://registry/assign', { method: 'POST', body: JSON.stringify(body) }))
       .then(async (r) => {
-        if (r.headers.get('x-overflow') === 'off') offUntil = Date.now() + OFF_CACHE_MS
+        const said = r.headers.get('x-overflow')
+        if (said === 'on' || said === 'off') flag = { on: said === 'on', at: Date.now() }
         return r.ok ? r.text() : null
       })
-    const late = new Promise<null>((resolve) => { timer = setTimeout(() => { outcome = 'timeout'; resolve(null) }, ASSIGN_TIMEOUT_MS) })
-    const seat = await Promise.race([asked, late])
-    if (isPublicRoom(seat)) return seat
+    const patience = new Promise<null>((resolve) => { timer = setTimeout(() => { outcome = 'timeout'; resolve(null) }, ASSIGN_PATIENCE_MS) })
+    const answer = await Promise.race([asked, patience])
+    if (isPublicRoom(answer)) {
+      if (Date.now() - started > ASSIGN_PATIENCE_MS) outcome = 'late'
+      return (seat = answer)
+    }
     if (outcome === 'ok') outcome = 'nonsense'
-    return null
   } catch (error) {
     outcome = 'error'
     logError('error', error, { where: 'assign' })
-    return null
   } finally {
     clearTimeout(timer)
     const ms = Date.now() - started
     if (outcome !== 'ok' || ms > ASSIGN_SLOW_MS) logEvent('assign_slow', { ms, outcome })
   }
+  if (seat) return seat
+  if (returning) return returning
+  const on = flag !== null && flag.on && Date.now() - flag.at < FLAG_TRUST_MS
+  return on ? null : PUBLIC_BASE
 }
 
 /**
@@ -467,11 +483,13 @@ export class RoomDO {
     this.overflowReady ??= this.state.storage.get<boolean>('overflow').then(on => on === true)
     const registry = await this.registryReady
     if (path === '/assign' && req.method === 'POST') {
-      // Overflow off (the default): every public arrival goes to "lobby", nothing is reserved.
-      if (!(await this.overflowReady)) return new Response(PUBLIC_BASE, { headers: { 'x-overflow': 'off' } })
+      // Overflow off (the default): draining. New arrivals go to "lobby" and nothing is
+      // reserved; a returning player still goes back to an overflow room that exists.
+      const open = await this.overflowReady
       const body = (await req.json().catch(() => null)) as Partial<AssignRequest> | null
       const cap = typeof body?.cap === 'number' && Number.isInteger(body.cap) && body.cap > 0 ? body.cap : MAX_ROOM_PLAYERS
-      return new Response(registry.assign({ prefer: body?.prefer ?? null, full: body?.full ?? null, cap }, Date.now()))
+      const seat = registry.assign({ prefer: body?.prefer ?? null, full: body?.full ?? null, cap, open }, Date.now())
+      return new Response(seat, { headers: { 'x-overflow': open ? 'on' : 'off' } })
     }
     if (path === '/overflow') {
       if (req.method === 'POST') {

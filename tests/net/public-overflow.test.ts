@@ -13,7 +13,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  ASSIGN_TIMEOUT_MS, ASSIGN_TTL_MS, FULL_HINT_MS, FULL_HINT_SLACK, HELD_TTL_MS, isPublicRoom, MAX_PUBLIC_ROOMS,
+  ASSIGN_PATIENCE_MS, ASSIGN_TTL_MS, FLAG_TRUST_MS, FULL_HINT_MS, FULL_HINT_SLACK, HELD_TTL_MS, isPublicRoom, MAX_PUBLIC_ROOMS,
   OFF_CACHE_MS, PUBLIC_ROOM_HEADER, publicRooms, RESERVE_MS, RoomRegistry,
 } from '../../server/registry'
 import { roomName } from '../../server/util'
@@ -182,6 +182,27 @@ describe('public seat assignment', () => {
     expect(JSON.parse(refusal('lobby#2'))).toEqual({ type: 'error', message: 'room is full', room: 'lobby#2' })
   })
 
+  it('does not recreate a forgotten overflow room for one returning player', () => {
+    const r = new RoomRegistry()
+    r.report('lobby', 3, 0)
+    expect(r.assign({ cap: CAP, prefer: 'lobby#5' }, 1)).toBe('lobby')
+  })
+
+  it('switched off, drains: new arrivals go to lobby, returning players keep their overflow room', () => {
+    const r = new RoomRegistry()
+    r.report('lobby', CAP, 0)
+    r.report('lobby#2', 9, 0)
+    // New arrivals: lobby, as before overflow existed, even though it is full.
+    expect(r.assign({ cap: CAP, open: false }, 1)).toBe('lobby')
+    // Returning to a room that still exists: kept. To one that has gone: lobby.
+    expect(r.assign({ cap: CAP, open: false, prefer: 'lobby#2' }, 2)).toBe('lobby#2')
+    expect(r.assign({ cap: CAP, open: false, prefer: 'lobby#3' }, 3)).toBe('lobby')
+    // Draining reserves nothing: switched on again, lobby#2 has exactly its 7 free seats.
+    const next = Array.from({ length: 8 }, (_, i) => r.assign({ cap: CAP }, 4 + i))
+    expect(next.slice(0, 7).every((x) => x === 'lobby#2')).toBe(true)
+    expect(next[7]).toBe('lobby#3')
+  })
+
   it('overflow names cannot be typed: no ?room= value becomes one', () => {
     for (const room of publicRooms().slice(1)) {
       expect(room).toContain('#')
@@ -346,6 +367,7 @@ describe('public overflow in the Worker', () => {
     const registry = registryObject(store)
     const { env, reached } = environment('runtime', registry)
     await report(registry, 'lobby', 4)
+    await report(registry, 'lobby#2', 9)
     await worker.fetch(join('room=lobby&assign=1&prefer=lobby%232'), env as never)
     expect(reached.at(-1)!.room).toBe('lobby#2')
     // Both full, then every object restarts (a new registry object over the same storage).
@@ -356,23 +378,83 @@ describe('public overflow in the Worker', () => {
     expect(restarted.reached.map((r) => r.room)).toEqual(['lobby#2'])
   })
 
-  it('closes a new client as busy (to retry once) when the registry is slow, failing or nonsensical', async () => {
+  it('switched off, the Worker drains: a returning overflow player keeps their room while lobby is full', async () => {
+    const store: Store = new Map<string, unknown>([['overflow', false]])
+    const registry = registryObject(store)
+    const { env, reached, calls } = environment('runtime', registry)
+    await report(registry, 'lobby', CAP)
+    await report(registry, 'lobby#2', 9)
+    await worker.fetch(join('room=lobby&assign=1'), env as never) // warms the "off" cache
+    expect(reached.at(-1)!.room).toBe('lobby')
+    const asked = calls()
+    // A new arrival with the cache warm: lobby, no question asked.
+    await worker.fetch(join('room=lobby&assign=1'), env as never)
+    expect(calls()).toBe(asked)
+    // A returning overflow player still asks, and goes back to their room.
+    await worker.fetch(join('room=lobby&assign=1&prefer=lobby%232'), env as never)
+    expect(calls()).toBe(asked + 1)
+    expect(reached.at(-1)!.room).toBe('lobby#2')
+  })
+
+  it('fails open to lobby when the registry is unreachable and the flag is off or unknown', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const down = environment('runtime', { fetch: async () => { throw new Error('registry down') } })
+    await worker.fetch(join('room=lobby&assign=1'), down.env as never)
+    // A returning player goes back to their room: the room decides.
+    await worker.fetch(join('room=lobby&assign=1&prefer=lobby%232'), down.env as never)
+    expect(down.reached.map((r) => r.room)).toEqual(['lobby', 'lobby#2'])
+  })
+
+  it('closes a new client as busy (to retry once) when overflow is on and the registry fails', async () => {
     const closed = stubSockets()
     vi.spyOn(console, 'error').mockImplementation(() => {})
     vi.spyOn(console, 'log').mockImplementation(() => {})
-    vi.useFakeTimers()
-    const slow = environment('runtime', { fetch: () => new Promise<Response>(() => {}) })
-    const pending = worker.fetch(join('room=lobby&assign=1'), slow.env as never)
-    await vi.advanceTimersByTimeAsync(ASSIGN_TIMEOUT_MS)
+    // The isolate has heard "on" from a working registry, which then goes wrong three ways.
+    const real = registryObject(new Map<string, unknown>([['overflow', true]]))
+    let mode: 'real' | 'slow' | 'failing' | 'nonsense' = 'real'
+    const { env, reached } = environment('runtime', {
+      fetch: (req) => mode === 'real' ? real.fetch(req)
+        : mode === 'slow' ? new Promise<Response>(() => {})
+        : mode === 'failing' ? Promise.reject(new Error('registry down'))
+        : Promise.resolve(new Response('../etc', { headers: { 'x-overflow': 'on' } })),
+    })
+    await worker.fetch(join('room=lobby&assign=1'), env as never)
+    expect(reached.map((r) => r.room)).toEqual(['lobby'])
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    mode = 'slow'
+    const pending = worker.fetch(join('room=lobby&assign=1'), env as never)
+    await vi.advanceTimersByTimeAsync(ASSIGN_PATIENCE_MS)
     await pending
     vi.useRealTimers()
-    const failing = environment('runtime', { fetch: async () => { throw new Error('registry down') } })
-    await worker.fetch(join('room=lobby&assign=1'), failing.env as never)
-    const nonsense = environment('runtime', { fetch: async () => new Response('../etc') })
-    await worker.fetch(join('room=lobby&assign=1'), nonsense.env as never)
-    // Nobody was sent to a room blind; each was told "busy" and closed with CLOSE_BUSY.
-    expect([...slow.reached, ...failing.reached, ...nonsense.reached]).toEqual([])
+    mode = 'failing'
+    await worker.fetch(join('room=lobby&assign=1'), env as never)
+    mode = 'nonsense'
+    await worker.fetch(join('room=lobby&assign=1'), env as never)
+    // Nobody more was sent to a room blind; each was told "busy" and closed with CLOSE_BUSY.
+    expect(reached).toHaveLength(1)
     expect(closed.map((c) => c.code)).toEqual([CLOSE_BUSY, CLOSE_BUSY, CLOSE_BUSY])
     expect(closed.every((c) => JSON.parse(c.sent[0]).type === 'error')).toBe(true)
+    expect(FLAG_TRUST_MS).toBeGreaterThan(ASSIGN_PATIENCE_MS)
   })
+
+  it('uses a valid seat that arrives after the patience period (a late timer), and logs it as late', async () => {
+    const lines: string[] = []
+    vi.spyOn(console, 'log').mockImplementation((line: string) => { lines.push(line) })
+    const real = registryObject(new Map<string, unknown>([['overflow', true]]))
+    let clock = 1_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    let slow = false
+    const { env, reached } = environment('runtime', {
+      // When slow, the answer is valid but comes 1.7 s on the clock, before the (delayed) timer.
+      fetch: async (req) => { if (slow) clock += 1700; return real.fetch(req) },
+    })
+    for (let i = 0; i < CAP; i++) await worker.fetch(join('room=lobby&assign=1'), env as never)
+    slow = true
+    await worker.fetch(join('room=lobby&assign=1'), env as never)
+    expect(reached.map((r) => r.room).at(-1)).toBe('lobby#2')
+    expect(reached).toHaveLength(CAP + 1)
+    expect(lines.filter((l) => l.includes('"assign_slow"') && l.includes('"outcome":"late"'))).toHaveLength(1)
+  })
+
 })

@@ -179,11 +179,16 @@ export const FULL_HINT_MS = 5_000
 /** ... and only for a room reported within this many seats of the cap. */
 export const FULL_HINT_SLACK = 4
 /**
- * How long a public arrival waits for the registry, ms. A client that asked for assignment
- * and gets no answer in time is closed with CLOSE_BUSY and retries once; it is never sent to
- * "lobby" blind, which under a blast would be a crowd at a full room.
+ * How long a public arrival is willing to wait for the registry, ms. Best effort, not a
+ * deadline: a timer and the registry's answer race, and under load a timer can fire late, so
+ * a valid seat that arrives first is used even after this long (a seat beats a bounce; the
+ * log says "late"). If the timer wins, an arrival with overflow known to be on is closed with
+ * CLOSE_BUSY and retries once, never sent to "lobby" blind, which under a blast would be a
+ * crowd at a full room. With overflow off or unknown, it fails open to today's "lobby".
  */
-export const ASSIGN_TIMEOUT_MS = 1000
+export const ASSIGN_PATIENCE_MS = 1000
+/** An isolate trusts the last flag the registry told it (on: busy on failure) this long, ms. */
+export const FLAG_TRUST_MS = 60_000
 /** An assignment slower than this is logged (assign_slow), ms. */
 export const ASSIGN_SLOW_MS = 250
 /**
@@ -202,6 +207,12 @@ export interface AssignRequest {
   cap: number
   /** Family of public rooms, default PUBLIC_BASE. */
   base?: string
+  /**
+   * False while overflow is switched off: draining. No new arrival is assigned anywhere but
+   * the base room, yet a returning player still goes back to an overflow room that exists,
+   * so people already there keep their seats. Default true.
+   */
+  open?: boolean
 }
 
 /** The public room names of a base, in fill order. */
@@ -264,9 +275,13 @@ class PublicSeats {
       return room
     }
     const full = isPublicRoom(request.full, base) ? request.full : null
+    // Coming back to a room that still exists (has reported recently; counts survive a
+    // restart in storage): the room decides (its cap, the player's secret). A room that has
+    // emptied and been forgotten is not recreated for one player: a fresh assignment instead.
+    const prefer = isPublicRoom(request.prefer, base) && request.prefer !== full && (request.prefer === base || entry(request.prefer)) ? request.prefer : null
+    if (request.open === false) return prefer ?? base
     if (full && reported(full) >= cap - FULL_HINT_SLACK) this.refused.set(full, now + FULL_HINT_MS)
-    // Coming back: the room decides (its cap, the player's secret). See the comment above.
-    if (isPublicRoom(request.prefer, base) && request.prefer !== full) return take(request.prefer)
+    if (prefer) return take(prefer)
     for (const room of publicRooms(base)) {
       if (room !== full && !refused(room) && occupied(room) < cap) return take(room)
     }
