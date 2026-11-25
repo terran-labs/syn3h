@@ -20,8 +20,7 @@ function observe(planet: UniversePlanet, now: number, changes: Partial<UniverseR
     observedAt: now,
     connectedHumans: 0,
     held: 0,
-    reservations: 0,
-    emptySince: planet.createdAt,
+    emptySince: planet.report ? planet.report.emptySince ?? now : planet.createdAt,
     ...changes,
   }, now)
 }
@@ -52,7 +51,7 @@ describe('universe lifecycle', () => {
     const saturated = volcano(4, now)
     expect(decideUniverseLifecycle(snapshot(volcano(3, now)), now)).toBeNull()
     expect(decideUniverseLifecycle(snapshot(observe(volcano(0, now), now, {
-      connectedHumans: 3, held: 6, reservations: 3,
+      connectedHumans: 3, held: 6,
     })), now)).toBeNull()
     expect(decideUniverseLifecycle(snapshot(saturated, observe(spare(), now, { connectedHumans: 3 })), now)).toBeNull()
     expect(decideUniverseLifecycle(snapshot(saturated, spare()), now)).toBeNull()
@@ -60,7 +59,7 @@ describe('universe lifecycle', () => {
       .toEqual({ type: 'create', biome: 'volcanic', kind: 'overflow' })
   })
 
-  it('enforces the global cap and chooses eligible biomes independently of array order', () => {
+  it('can grow past twelve planets and chooses eligible biomes independently of array order', () => {
     const now = defaults.creationCooldownMs
     const desert = observe(planet('desert'), now, { connectedHumans: 4 })
     const world = snapshot(volcano(4, now), desert)
@@ -69,7 +68,7 @@ describe('universe lifecycle', () => {
     const full = snapshot(volcano(4, now), desert, ...['a', 'b', 'c'].map(id =>
       observe(spare(id), now, { connectedHumans: 4 })))
     expect(full.planets).toHaveLength(12)
-    expect(decideUniverseLifecycle(full, now)).toBeNull()
+    expect(decideUniverseLifecycle(full, now)).toEqual({ type: 'create', biome: 'volcanic', kind: 'overflow' })
   })
 
   it('allows growth at exactly ten seconds and remembers a deleted creation per biome', () => {
@@ -94,8 +93,8 @@ describe('universe lifecycle', () => {
     expect(decideUniverseLifecycle(snapshot(volcano(2, oldEnough), eligible), oldEnough)?.type).toBe('drain')
   })
 
-  it('protects held places and reservations and restarts the empty interval after occupancy', () => {
-    for (const occupancy of [{ held: 1 }, { reservations: 1 }, { connectedHumans: 1 }]) {
+  it('protects held places and restarts the empty interval after occupancy', () => {
+    for (const occupancy of [{ held: 1 }, { connectedHumans: 1 }]) {
       const occupied = observe(spare(), oldEnough, occupancy)
       expect(decideUniverseLifecycle(snapshot(volcano(2, oldEnough), occupied), oldEnough)).toBeNull()
       const recent = observe(occupied, oldEnough + 1, { emptySince: oldEnough + 1 })
@@ -103,6 +102,30 @@ describe('universe lifecycle', () => {
       expect(decideUniverseLifecycle(snapshot(volcano(2, before), observe(recent, before)), before)).toBeNull()
       const at = before + 1
       expect(decideUniverseLifecycle(snapshot(volcano(2, at), observe(recent, at)), at)?.type).toBe('drain')
+    }
+  })
+
+  it('protects allocator reservations even when the latest room report says empty', () => {
+    const expires = oldEnough + 10_000
+    const candidate = { ...spare(), lastReservationExpiresAt: expires }
+    const decisionAt = (now: number) =>
+      decideUniverseLifecycle(snapshot(volcano(2, now), observe(candidate, now)), now)
+    expect(decisionAt(oldEnough)).toBeNull()
+    expect(decisionAt(expires + defaults.minimumEmptyMs - 1)).toBeNull()
+    expect(decisionAt(expires + defaults.minimumEmptyMs)?.type).toBe('drain')
+    expect(decideUniverseLifecycle(snapshot({ ...volcano(3, oldEnough), lastReservationExpiresAt: expires }), oldEnough))
+      .toBeNull()
+  })
+
+  it('reaches the same decision from duplicated and reordered reports', () => {
+    const empty = spare()
+    const now = oldEnough + defaults.minimumEmptyMs
+    const before = observe(empty, oldEnough - 1, { connectedHumans: 1 }).report!
+    const after = observe(empty, now, { sequence: 2, emptySince: oldEnough }).report!
+    for (const reports of [[before, after], [after, before, after], [before, before, after, after]]) {
+      const result = reports.reduce((p, r) => recordUniverseRoomReport(p, r, now), empty)
+      expect(result.report).toEqual(after)
+      expect(decideUniverseLifecycle(snapshot(volcano(2, now), result), now)?.type).toBe('drain')
     }
   })
 
@@ -126,7 +149,7 @@ describe('universe lifecycle', () => {
     expect(decision(draining)).toBeNull()
     expect(decision(observe(draining, oldEnough + 1))).toBeNull()
     expect(decision(observe(draining, oldEnough + 1, { drain: { ...request.drain, requestedAt: oldEnough - 1 } }))).toBeNull()
-    expect(decision(observe(draining, oldEnough + 1, { reservations: 1, drain: request.drain }))?.type)
+    expect(decision({ ...observe(draining, oldEnough + 1, { drain: request.drain }), lastReservationExpiresAt: oldEnough + 10_000 })?.type)
       .toBe('cancel-drain')
     const confirmed = observe(draining, oldEnough + 1, { drain: request.drain })
     expect(decision(confirmed, oldEnough + 1 + defaults.reportFreshnessMs)).toBeNull()

@@ -1,7 +1,6 @@
 import { RECIPE_IDS, type RecipeId } from './recipes'
 
 export interface UniverseLifecycleDefaults {
-  readonly planetCap: number
   readonly seatsPerPlanet: number
   readonly growthFraction: number
   readonly creationCooldownMs: number
@@ -10,9 +9,8 @@ export interface UniverseLifecycleDefaults {
   readonly reportFreshnessMs: number
 }
 
-// Server policy defaults. These are neither world parameters nor rig parameters.
+// Server policy defaults. These are outside both the world and client parameter sets.
 export const UNIVERSE_LIFECYCLE_DEFAULTS: UniverseLifecycleDefaults = Object.freeze({
-  planetCap: 12,
   seatsPerPlanet: 12,
   growthFraction: 0.25,
   creationCooldownMs: 10_000,
@@ -33,8 +31,7 @@ export interface UniverseRoomReport {
   readonly observedAt: number
   readonly connectedHumans: number
   readonly held: number
-  readonly reservations: number
-  /** The room's continuous interval with no humans, held places, or reservations. */
+  /** The room's continuous interval with no connected humans or held places. */
   readonly emptySince: number | null
   /** Echo only after the room has closed admission for this drain and checked occupancy. */
   readonly drain?: UniverseDrain
@@ -47,6 +44,9 @@ export interface UniversePlanet {
   readonly biome: RecipeId
   readonly kind: 'anchor' | 'overflow'
   readonly createdAt: number
+  /** Latest expiry of any allocator grant. Keep this watermark after expiry so the
+   * continuous empty interval cannot include time a reservation protected the planet. */
+  readonly lastReservationExpiresAt?: number
   readonly report?: UniverseRoomReport
   /** Persist the last drain attempt even when it is cancelled. */
   readonly lastDrainAttempt?: number
@@ -69,7 +69,7 @@ const policy = UNIVERSE_LIFECYCLE_DEFAULTS
 const growthThreshold = policy.seatsPerPlanet * policy.growthFraction
 
 function isEmpty(report: UniverseRoomReport): boolean {
-  return report.connectedHumans === 0 && report.held === 0 && report.reservations === 0
+  return report.connectedHumans === 0 && report.held === 0
 }
 
 function validCount(value: number): boolean {
@@ -82,14 +82,14 @@ export function recordUniverseRoomReport(planet: UniversePlanet, report: Univers
   if (report.generation !== planet.generation || !validCount(report.sequence)
     || (previous && (report.sequence <= previous.sequence || report.observedAt < previous.observedAt))
     || !Number.isFinite(report.observedAt) || report.observedAt < planet.createdAt || report.observedAt > now
-    || !validCount(report.connectedHumans) || !validCount(report.held) || !validCount(report.reservations)) return planet
+    || !validCount(report.connectedHumans) || !validCount(report.held)) return planet
 
   let emptySince = report.emptySince
   if (!isEmpty(report) || emptySince === null || !Number.isFinite(emptySince) || emptySince > report.observedAt) {
     emptySince = null
   } else {
-    const earliest = previous && !isEmpty(previous) ? previous.observedAt : previous?.emptySince
-    emptySince = Math.max(planet.createdAt, emptySince, earliest ?? planet.createdAt)
+    // The room observes the empty interval even if delivery skips intermediate reports.
+    emptySince = Math.max(planet.createdAt, emptySince)
   }
   return { ...planet, report: { ...report, emptySince } }
 }
@@ -103,7 +103,7 @@ function freshReport(planet: UniversePlanet, now: number): UniverseRoomReport | 
 function retirementReady(planet: UniversePlanet, report: UniverseRoomReport, now: number): boolean {
   return isEmpty(report) && report.emptySince !== null
     && now - planet.createdAt >= policy.minimumLifetimeMs
-    && now - report.emptySince >= policy.minimumEmptyMs
+    && now - Math.max(report.emptySince, planet.lastReservationExpiresAt ?? planet.createdAt) >= policy.minimumEmptyMs
 }
 
 function needsSpare(planet: UniversePlanet, active: readonly UniversePlanet[], now: number): boolean {
@@ -133,11 +133,8 @@ function confirmsDrain(report: UniverseRoomReport, drain: UniverseDrain): boolea
  */
 export function decideUniverseLifecycle(snapshot: UniverseSnapshot, now: number): UniverseAction | null {
   const { planets } = snapshot
-  const hasCapacity = planets.length < policy.planetCap
-  if (hasCapacity) {
-    const missing = RECIPE_IDS.find(biome => !planets.some(planet => planet.kind === 'anchor' && planet.biome === biome))
-    if (missing) return { type: 'create', biome: missing, kind: 'anchor' }
-  }
+  const missing = RECIPE_IDS.find(biome => !planets.some(planet => planet.kind === 'anchor' && planet.biome === biome))
+  if (missing) return { type: 'create', biome: missing, kind: 'anchor' }
 
   const active = planets.filter(planet => !planet.drain)
   const overflow = planets.filter(planet => planet.kind === 'overflow').sort((a, b) =>
@@ -147,7 +144,7 @@ export function decideUniverseLifecycle(snapshot: UniverseSnapshot, now: number)
     const { id, generation, drain } = planet
     if (!drain) continue
     const report = freshReport(planet, now)
-    if (needsSpare(planet, active, now) || (report && !isEmpty(report))) {
+    if ((planet.lastReservationExpiresAt ?? -Infinity) > now || needsSpare(planet, active, now) || (report && !isEmpty(report))) {
       return { type: 'cancel-drain', id, generation, drain }
     }
     if (report && retirementReady(planet, report, now) && confirmsDrain(report, drain)) {
@@ -166,7 +163,6 @@ export function decideUniverseLifecycle(snapshot: UniverseSnapshot, now: number)
     }
   }
 
-  if (!hasCapacity) return null
   for (const biome of RECIPE_IDS) {
     const sameBiome = planets.filter(planet => planet.biome === biome)
     const latestCreation = Math.max(snapshot.lastCreatedAt[biome] ?? -Infinity, ...sameBiome.map(planet => planet.createdAt))
