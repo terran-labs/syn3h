@@ -4,7 +4,8 @@
 // own. What must stay true, at a phone upright and on its side, a laptop and a large desktop:
 // - paused, with the build notice: every shown item of the strip is clear of every other;
 // - in play, with the build notice and the slow-frames offer: likewise, and none
-//   covers a thumb control.
+//   covers a thumb control;
+// - Help and incoming Chat can both be read before and after a vehicle change.
 // Every state measured is made the way the game makes it (its new-build event, a recommendation in
 // its performance history, Shell.requestPause) and measured only once it holds and has stopped
 // moving for several frames (steady), never after a fixed wait: a loaded machine is slower, not wrong.
@@ -17,7 +18,7 @@ import { mkdirSync } from 'node:fs'
 const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const out = process.argv[2]
 if (out) mkdirSync(out, { recursive: true })
-const SIZES = [[390, 844, true], [844, 390, true], [1280, 800, false], [1960, 1300, false]]
+const SIZES = [[390, 844, true], [844, 390, true], [1280, 800, false], [1700, 1100, false]]
 
 /** The strip's shown items and the controls they must not cover, as boxes. */
 const layout = () => {
@@ -25,7 +26,9 @@ const layout = () => {
   const shown = el => { const s = getComputedStyle(el); const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none' && Number(s.opacity) > 0 }
   const items = [...document.querySelectorAll('.bottom-stack > *')].filter(shown).map(el => ({ name: el.id || el.className.split(' ')[0], ...box(el) }))
   const controls = [...document.querySelectorAll('.touch-controls button, .shell-minimap')].filter(shown).map(el => ({ name: el.className.split(' ')[0], ...box(el) }))
-  return { items, controls }
+  const help = document.querySelector('.spawn-help')
+  const chat = [...document.querySelectorAll('.chat-strip .chat-line')].filter(shown).map(box)
+  return { items, controls, help: help && shown(help) ? box(help) : null, chat }
 }
 /**
  * Wait until `ready` holds and the strip, the controls and their opacity and visibility have
@@ -36,7 +39,7 @@ const STEADY_FRAMES = 6
 const steady = (page, ready, what) => page.waitForFunction(([ready, frames]) => {
   const w = window
   const look = el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return [r.left, r.top, r.width, r.height, s.opacity, s.visibility, s.display].map(v => typeof v === 'number' ? Math.round(v) : v).join() }
-  const now = [...document.querySelectorAll('.bottom-stack > *, .touch-controls button, .shell-minimap')].map(look).join('|')
+  const now = [...document.querySelectorAll('.bottom-stack > *, .touch-controls button, .shell-minimap, .spawn-help, .chat-strip .chat-line')].map(look).join('|')
   if (!new Function(`return (${ready})()`)()) { w.__steady = 0; w.__look = null; return false }
   w.__steady = now === w.__look ? (w.__steady ?? 0) + 1 : 0; w.__look = now
   return w.__steady >= frames
@@ -48,12 +51,39 @@ try {
   for (const [width, height, touch] of SIZES) {
     const tag = `${width}x${height}`
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: touch, isMobile: touch })
+    // The overlay is opt-in on touch-first devices.
+    await context.addInitScript(() => localStorage.setItem('mira.chat.overlay', '1'))
     const page = await context.newPage()
     const errors = []; page.on('pageerror', error => errors.push(String(error.message).slice(0, 300)))
-    await page.goto(`${base}?autoplay=1&room=bottom-stack-${tag}-${Date.now()}`)
+    await page.goto(`${base}?autoplay=1&vehicle=buggy&room=bottom-stack-${tag}-${Date.now()}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
+    await page.locator('.entry-warm-progress').waitFor({ state: 'hidden', timeout: 120000 })
+    await page.waitForFunction(() => window.miraChat, null, { timeout: 30000 })
+    for (const kind of ['buggy', touch ? 'jet' : 'hovercraft']) {
+      const line = `Welcome to Mira. Take your time exploring the islands and see what’s beyond the ridge. (${kind})`
+      await page.evaluate(({ kind, line }) => {
+        if (window.mira.player.kind !== kind && window.mira.swapVehicle(kind)?.kind !== kind) {
+          throw new Error(`Could not switch to ${kind}`)
+        }
+        window.mira.shell.showHelp(false)
+        window.miraChat.net.chat.receive({ type: 'chat', from: 42, text: line, t: 0 })
+      }, { kind, line })
+      await steady(page, () => {
+        const help = document.querySelector('.spawn-help')
+        const line = document.querySelector('.chat-strip .chat-line:last-child')
+        return !help.hidden && help.checkVisibility({ visibilityProperty: true }) && line && Number(getComputedStyle(line).opacity) === 1
+      }, `${tag} ${kind} with Help and Chat`)
+      const hud = await page.evaluate(layout)
+      if (out) await page.screenshot({ path: `${out}/${tag}-${kind}-help-chat.png` })
+      assert.ok(hud.help && hud.chat.length, `${tag} ${kind}: Help and Chat are both visible`)
+      for (const bubble of hud.chat) {
+        assert.ok(!clash(hud.help, bubble), `${tag} ${kind}: Chat covers Help ${JSON.stringify([bubble, hud.help])}`)
+        for (const control of hud.controls) assert.ok(!clash(bubble, control), `${tag} ${kind}: Chat covers ${control.name}`)
+      }
+    }
+    await page.evaluate(() => window.mira.swapVehicle('buggy'))
     // A new build arrives (the dev server's own event and button, tools/manual-reload.mjs).
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('mira:new-build')))
     await page.waitForFunction(() => document.querySelector('.bottom-stack > #mira-build-notice'), null, { timeout: 5000 })
