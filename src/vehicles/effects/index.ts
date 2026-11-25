@@ -1,6 +1,7 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import {headlightScale} from './headlights'
 import {type ConeHaze,MAX_CONES,beamFactorFor,coneShapeFor,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {GroundPools,groundPools,type PoolSource} from './pools'
 import {hazeNow} from '../../world/weather/fog'
 import {activeFogBanks} from '../../world/weather/fogBanks'
 /** The beam's colour (the spot lights', effects/index.ts). */
@@ -14,7 +15,7 @@ import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
 import {DEFAULT_TREAD,DUSTS,TREADS} from './treads'
-import {markRatio,surfaceTone} from './groundTone'
+import {groundColour,markRatio,surfaceTone} from './groundTone'
 import {MARK_END_FADE,tyreMarkFadeIn,tyreMarkLife,tyreMarkSoftness,tyreMarkStrength} from './markParams'
 import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
@@ -59,7 +60,7 @@ class EffectWorld implements System {
   redSparks!:ParticleBatch
   readonly lamps=new T.InstancedMesh(new T.SphereGeometry(.09,8,6),new T.MeshBasicMaterial({color:0xffffff}),512)
   clock=0
-  readonly stats={vehicles:0,particles:0,marks:0,emitted:0,updateMs:0,peakUpdateMs:0,batches:7}
+  readonly stats={vehicles:0,particles:0,marks:0,emitted:0,updateMs:0,peakUpdateMs:0,batches:7,pools:0}
   constructor(readonly game:Game){
     // Every sprite and the tyre mark are generated in the shader (sprites.ts); nothing is loaded.
     this.marks=new RibbonBatch(1024,tyreMarkAlpha,false,MARK_END_FADE);this.trails=new RibbonBatch(256,undefined,true)
@@ -86,8 +87,22 @@ class EffectWorld implements System {
       this.cones.instanceMatrix.needsUpdate=true;if(this.cones.instanceColor)this.cones.instanceColor.needsUpdate=true
     }
     game.scene.add(this.cones)
+    game.scene.add(this.pools.mesh)
   }
   readonly cones:T.InstancedMesh
+  /** Other vehicles' headlights on the ground (pools.ts): one mesh, laid each frame in update. */
+  readonly pools=new GroundPools()
+  /** The ground, for laying the pools; set when a vehicle attaches. */
+  terrain:Terrain|null=null
+  private readonly poolSources:PoolSource[]=[]
+  /** The surface a pool lies on: the ground, or the water over it. */
+  private readonly poolHeight=(x:number,z:number)=>{const t=this.terrain!;return Math.max(t.heightAt(x,z),t.liquidHeightAt?.(x,z)??-Infinity)}
+  /** The colour a pool's light takes: the ground's own (groundTone.ts), or a dim grey on water. */
+  private readonly poolTint=(x:number,z:number,out:{r:number;g:number;b:number})=>{
+    const t=this.terrain!
+    if((t.liquidHeightAt?.(x,z)??-Infinity)>t.heightAt(x,z)){out.r=out.g=out.b=.12;return}
+    const c=groundColour(t.lookIndex?.()??0,(t.surfaceAt?.(x,z)??'dust') as SurfaceKind);out.r=c[0];out.g=c[1];out.b=c[2]
+  }
   private readonly coneHaze:ConeHaze
   private readonly coneHazeState={density:0,height:40,sea:0}
   private readonly coneEye=new T.Vector3()
@@ -144,11 +159,18 @@ class EffectWorld implements System {
     this.marks.strength.value=tyreMarkStrength.value;this.marks.softness.value=tyreMarkSoftness.value;this.marks.fadeIn.value=tyreMarkFadeIn.value
     this.marks.expire();this.trails.expire()
     for(const e of this.vehicles.values())e.update(dt)
+    // Other vehicles' headlights on the ground, from dusk to dawn as the real spot lights.
+    const sources=this.poolSources;sources.length=0
+    const night=clamp((.08-this.sunY())/.18,0,1)*Number(groundPools.value)
+    if(night>0)for(const e of this.vehicles.values()){const pool=e.poolSource(night);if(pool)sources.push(pool)}
+    const terrain=this.terrain
+    if(terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint)
+    this.stats.pools=this.pools.drawn
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
   }
-  dispose(){this.unwarm?.();this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();this.cones.removeFromParent();this.cones.geometry.dispose();(this.cones.material as T.Material).dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
+  dispose(){this.unwarm?.();this.pools.dispose();this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();this.cones.removeFromParent();this.cones.geometry.dispose();(this.cones.material as T.Material).dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w, 'Vehicle effects');w.registerWarm()}return w}
 
@@ -221,6 +243,7 @@ class VehicleEffects {
     // Hovercraft points are for the generated Lowwing body (hovergen h4-low), from its lead: lamps
     // on the nose bar at (+/-.6,.215,-2.03) and the stern bars at (+/-.6,.35,1.7).
     const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:hover?.6:.584,front=jet?3.2756:hover?2.03:1.775
+    this.pool={object:vehicle.object,lampY:jet?-.423:hover?.215:.036,lampZ:-front,strength:0}
     for(const sign of [-1,1]){
       const head=new T.Object3D();head.position.set(sign*width,jet?-.423:hover?.215:.036,-front);this.root.add(head);this.lampPoints.push(head)
       const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,hover?.35:.12,jet?2.7:1.7);this.root.add(tail);this.lampPoints.push(tail)
@@ -258,6 +281,18 @@ class VehicleEffects {
   }
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
+  /** This vehicle's lamps and their strength on the ground (pools.ts), reused each frame. */
+  private readonly pool:{object:T.Object3D;lampY:number;lampZ:number;strength:number}
+  /**
+   * Other vehicles only: your own vehicle has real spot lights. Strength as the beam in mist
+   * (writeCones): the buggy's headlight setting, the kind's beam factor, and `night`, which
+   * already carries the dusk-to-dawn ramp and the player's light.groundPools.
+   */
+  poolSource(night:number):PoolSource|null{
+    if(this.local||this.vehicle.zorbed)return null
+    this.pool.strength=night*(this.buggy?headlightScale().beam:1)*beamFactorFor(this.vehicle.kind)
+    return this.pool
+  }
   writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
     // Each kind's beam has its own shape (cones.ts CONE_SHAPES). Every buggy draws one; a
     // hovercraft or jet always for the player's own vehicle, and for bots and other players from
@@ -478,6 +513,7 @@ export function hideUnusedLamps(batch:T.InstancedMesh,index:number):void {
 export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,options:{local:boolean;spots?:T.SpotLight[]}):()=>void{
   const world=worldFor(game)
   if(world.vehicles.has(vehicle))throw new Error('Vehicle effects already attached')
+  world.terrain=terrain
   const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.retain()
   let disposed=false
   return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.cones.count=Math.min(MAX_CONES,world.vehicles.size*2);world.release()}
