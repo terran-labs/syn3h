@@ -181,3 +181,14 @@ details[open] > summary .accordion-arrow, [aria-expanded="true"] .accordion-arro
   fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 @media (prefers-reduced-motion: reduce) { .accordion-arrow { transition: none; } }
+
+/* ---- Figures that change in place (the owner, 25 November 2026: the World header's name
+   "shouldn't skip left and right as the time changes") ---- */
+/* Tabular figures: every digit one width, in the same Barlow (all five bundled cuts carry the
+   tnum feature), so a ticking clock, count or timer never moves the text beside it. The card
+   headers' values (the World clock, player, bot and unread counts), the Performance card's
+   level, resolution and diagnostics, and the game-mode timers and scores. The focus readouts
+   (speed, altitude, clock) and the counter box already had fixed-width figures. */
+.mira-shell .world-inspector .wi-sum,
+.mira-shell .world-inspector :is(.wi-level-of, .wi-res-size, .performance-history, .performance-long-frames, .performance-diagnostics dl),
+.mira-shell :is(.match-hud, .match-announcement, .race-hud) { font-variant-numeric: tabular-nums; }
