@@ -259,6 +259,8 @@ try {
   await flat.goto(`${base}?room=galaxy-flat-${Date.now()}`, { waitUntil: 'load' }); await ready(flat)
   assert.equal(await flat.evaluate(() => document.querySelector('.mira-shell').classList.contains('galaxy-flat')), true)
   assert.equal(await flat.locator('.planet-card').count(), 0)
+  // Every world must be reachable, including those in the same column as the Settings dock.
+  for (const choice of await flat.locator('.galaxy-label[data-world]').all()) await choice.click({ trial: true })
   await flat.screenshot({ path: `${out}/flat.png` })
   await flat.locator('.galaxy-label[data-world=desert]').click()
   await flat.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-playing'), null, { timeout: 20000 })

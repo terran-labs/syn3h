@@ -437,7 +437,7 @@
 .mira-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
-.galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
+.galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-block: auto; align-self: center; pointer-events: auto; overflow: visible; }
 .mira-shell.galaxy-flat button.galaxy-label:not(#galaxy-caption) { position: static; translate: none; transform: none; }
 .galaxy-open button.galaxy-label:not(#galaxy-caption):not(.is-suppressed) { pointer-events: auto; cursor: pointer; }
 .mira-shell button.galaxy-label:not(#galaxy-caption).is-suppressed { opacity: 0; transition: none; }
