@@ -79,6 +79,7 @@ import { tapToBegin } from './TapToBegin'
 import { fillHelpLine, renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import { mountScrollBoundaryFades } from './scrollBoundaryFade'
 import './label-plate.css'
 import { isVehicleAvailable } from '../vehicles/available'
 import { zorbSpeed } from '../vehicles/zorb'
@@ -516,6 +517,7 @@ export class Shell implements System {
     document.addEventListener('pointerlockerror', () => this.syncPanels(), { signal })
     const unsubscribeInterface = params.onChange(id => { if (id === interfaceMode.def.id) this.syncPanels() })
     signal.addEventListener('abort', () => { unsubscribeInterface(); this.interfaceVeil.dispose() })
+    mountScrollBoundaryFades(this.element, signal)
     this.glass(signal)
     installTooltips(signal)
     trackFocusModality(signal)

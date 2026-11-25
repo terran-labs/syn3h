@@ -168,10 +168,3 @@ html[data-gfx="0"] .mira-shell[data-glass] .wi-glass { -webkit-backdrop-filter: 
    (Inspector.liquidFold). Absent, not disabled, at Frost or Flat. */
 .mira-shell .world-inspector .wi-group.wi-liquid-group.is-absent { display: none; }
 .mira-shell .world-inspector .wi-group.wi-subgroup { margin: 0; }
-
-/* A card held shorter than its content (Inspector.fit): its body fades out over its last 28 px
-   while there is more below, so a row cut at the edge reads as "scroll for more". */
-.mira-shell .world-inspector .wi-card.is-clipped:not(.is-at-end) > .wi-body {
-  -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
-}
