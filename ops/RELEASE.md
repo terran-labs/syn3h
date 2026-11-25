@@ -64,7 +64,7 @@ No rebuild between beta and production: the bytes the owner approved are the byt
 
 ## Addresses
 
-- Production: https://mira.cc/ (Worker `syn3h`).
+- Production: https://mira.cc/ (Worker `syn3h`). <!-- rename-keep: the Worker name -->
 - Beta: https://beta.mira.cc/ (Worker `syn3h-staging`, its own rooms; Custom Domain attached on
   25 November 2026 with `MIRA_DOMAIN_WORKER=syn3h-staging tools/domain.sh attach beta.mira.cc
   --owner-approved --zone mira.cc`; rollback from the zone export

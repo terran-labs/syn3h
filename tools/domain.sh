@@ -40,10 +40,10 @@ cd "$(dirname "$0")/.."
 . tools/smoke-run.sh
 REPO="$(pwd)"
 API=https://api.cloudflare.com/client/v4
-# The Worker a host is attached to: production (syn3h) unless MIRA_DOMAIN_WORKER names the staging
+# The Worker a host is attached to: production (syn3h) unless MIRA_DOMAIN_WORKER names the staging # rename-keep
 # Worker, which serves beta.mira.cc with its own rooms (ops/RELEASE.md, beta channel, 25 Nov 2026).
-WORKER="${MIRA_DOMAIN_WORKER:-syn3h}"
-case "$WORKER" in syn3h|syn3h-staging) ;; *) echo "domain.sh: MIRA_DOMAIN_WORKER must be syn3h or syn3h-staging" >&2; exit 2 ;; esac
+WORKER="${MIRA_DOMAIN_WORKER:-syn3h}" # rename-keep: the Worker names
+case "$WORKER" in syn3h|syn3h-staging) ;; *) echo "domain.sh: MIRA_DOMAIN_WORKER must be syn3h or syn3h-staging" >&2; exit 2 ;; esac # rename-keep
 ZONES="syn3h.com mira.cc"
 # Never a Custom Domain: it would serve the game on a second origin (its own storage and invites).
 REDIRECT_ONLY=www.mira.cc
