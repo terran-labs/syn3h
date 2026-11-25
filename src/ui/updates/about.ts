@@ -1,7 +1,7 @@
 /**
- * The in-play guide's two tabs, About (the Welcome guide, src/ui/welcome/welcome.ts, mounted
- * into the About pane by Shell.ts) and Updates (recent releases and their notes). The lobby
- * gives each its own sheet (LobbySheet.ts), without tabs.
+ * The in-play guide's two views, Welcome (the guide, src/ui/welcome/welcome.ts, mounted into the
+ * About pane by Shell.ts) and Updates (recent releases and their notes), one at a time. The lobby
+ * gives each its own sheet (LobbySheet.ts).
  * Updates fetches the release feed the first time it is opened.
  */
 import { ACCORDION_ARROW, LEADS_ON } from '../accordionArrow'
@@ -10,16 +10,14 @@ import { renderMarkdown, safeHref } from './markdown'
 import { isNewer } from './version'
 import './updates.css'
 
-let uid = 0
-/** The HTML for one About: tabs, the About pane and an empty Updates pane. */
+/**
+ * The HTML for the in-play guide's two views, Welcome and Updates, one shown at a time. No tabs
+ * (the owner, 25 November 2026: "Eliminate the Welcome and Updates tabs"): the Welcome button
+ * opens Welcome, and the update banner opens Updates (Shell.openAbout).
+ */
 export function aboutHtml(): string {
-  const id = `about-${++uid}`
-  return `<div class="about-tabs" role="tablist" aria-label="Welcome">
-      <button type="button" role="tab" id="${id}-tab-about" aria-controls="${id}-about" aria-selected="true" data-about-tab="about">Welcome</button>
-      <button type="button" role="tab" id="${id}-tab-updates" aria-controls="${id}-updates" aria-selected="false" tabindex="-1" data-about-tab="updates">Updates</button>
-    </div>
-    <div class="about-pane" role="tabpanel" id="${id}-about" aria-labelledby="${id}-tab-about" data-about-pane="about"></div>
-    <div class="about-pane" role="tabpanel" id="${id}-updates" aria-labelledby="${id}-tab-updates" data-about-pane="updates" hidden><div class="about-updates" aria-live="polite"></div></div>`
+  return `<div class="about-pane" data-about-pane="about"></div>
+    <div class="about-pane" data-about-pane="updates" hidden><h2 class="about-updates-title">Updates</h2><div class="about-updates" aria-live="polite"></div></div>`
 }
 
 /** The lobby's Updates sheet body: the release list, filled by fillUpdates when it opens. */
@@ -27,25 +25,8 @@ export const updatesSheetHtml = (): string => '<div class="about-updates" aria-l
 
 export type AboutTab = 'about' | 'updates'
 
-/** Wire the tabs inside `root`. Arrow keys move between tabs, as a tab list should. */
-export function wireAbout(root: HTMLElement, signal: AbortSignal): void {
-  const tabs = [...root.querySelectorAll<HTMLButtonElement>('[data-about-tab]')]
-  for (const tab of tabs) {
-    tab.addEventListener('click', () => showAboutTab(root, tab.dataset.aboutTab as AboutTab), { signal })
-    tab.addEventListener('keydown', event => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return
-      event.preventDefault()
-      const next = tabs[(tabs.indexOf(tab) + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length]
-      showAboutTab(root, next.dataset.aboutTab as AboutTab); next.focus()
-    }, { signal })
-  }
-}
-
+/** Show one of the guide's two views inside `root`. Updates fetches the release feed the first time. */
 export function showAboutTab(root: HTMLElement, tab: AboutTab): void {
-  for (const button of root.querySelectorAll<HTMLButtonElement>('[data-about-tab]')) {
-    const on = button.dataset.aboutTab === tab
-    button.setAttribute('aria-selected', String(on)); button.tabIndex = on ? 0 : -1
-  }
   for (const pane of root.querySelectorAll<HTMLElement>('[data-about-pane]')) pane.hidden = pane.dataset.aboutPane !== tab
   if (tab === 'updates') void fillUpdates(root.querySelector<HTMLElement>('.about-updates')!)
 }

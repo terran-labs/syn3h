@@ -63,7 +63,7 @@ import { markedText } from './playerMarks'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
-import { aboutHtml, fillUpdates, showAboutTab, updatesSheetHtml, wireAbout, type AboutTab } from './updates/about'
+import { aboutHtml, fillUpdates, showAboutTab, updatesSheetHtml, type AboutTab } from './updates/about'
 import { mountWelcome, WELCOME_WIDTH, type Welcome } from './welcome/welcome'
 import { LobbySheet } from './LobbySheet'
 import { UpdateNotice } from './updates/UpdateNotice'
@@ -285,7 +285,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels" role="group" aria-label="Worlds. Drag to look around; choose a world to go there."></div><nav class="lobby-links galaxy-links" aria-label="Lobby"${LOBBY_LINKS ? '' : ' hidden'}>${LOBBY_LINKS}</nav></div>
     </section>
-    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">Welcome</h2><button type="button" class="about-back card-close" aria-label="Close" data-tip="Close">${CARD_CLOSE}</button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
+    <dialog class="in-play-about" aria-label="Welcome to Mira"><header><button type="button" class="about-back card-close" aria-label="Close" data-tip="Close">${CARD_CLOSE}</button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="panel-action exit-stay">Stay</button><button type="button" class="panel-action exit-leave">Leave world</button></div></div></div>
@@ -432,7 +432,7 @@ export class Shell implements System {
     // it will land, so the sheet holds still.)
     const following = () => !!this.galaxy && this.galaxy.liftShown !== (this.galaxy.markLift > 0 ? 1 : 0)
     // The Welcome guide's content (src/ui/welcome): mounted on first open, its images loading on each.
-    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome', width: WELCOME_WIDTH, bleed: true, edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
+    this.aboutSheet = new LobbySheet(this.element, { name: 'about', title: 'Welcome to Mira', width: WELCOME_WIDTH, bleed: true, edges, following, home: () => this.lobbySettings.about, closed, cue: () => this.audio.cue('click'), fill: body => { this.lobbyWelcome = mountWelcome(body, { where: 'lobby' }) }, opened: () => this.lobbyWelcome?.opened() })
     this.updatesSheet = new LobbySheet(this.element, {
       name: 'updates', title: 'Updates', edges, following, home: () => this.lobbySettings.version, closed, cue: () => this.audio.cue('click'),
       fill: body => body.insertAdjacentHTML('beforeend', updatesSheetHtml()), opened: body => { void fillUpdates(body.querySelector<HTMLElement>('.about-updates')!) },
@@ -476,11 +476,9 @@ export class Shell implements System {
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
     // About and Updates as two tabs in the in-play guide; the lobby gives each its own sheet.
-    wireAbout(this.element.querySelector<HTMLElement>('.in-play-about')!, signal)
     // The Welcome guide fills the About pane now; its pictures wait until the player shows it.
     const aboutPane = this.element.querySelector<HTMLElement>('.in-play-about [data-about-pane="about"]')!
     this.playWelcome = mountWelcome(aboutPane, { where: 'play' })
-    this.element.querySelector('.in-play-about [data-about-tab="about"]')!.addEventListener('click', () => this.playWelcome.opened(), { signal })
     // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
     // opens Updates wherever the player is, and the lobby's Updates icon carries a quiet mark.
     this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand(); this.lobbySettings.markUpdate(this.updateNotice.version) })
@@ -690,12 +688,20 @@ export class Shell implements System {
     this.aboutOpen = true
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.poll(); this.touch.enabled = false
+    // The player's own pause while it is open (the owner, 25 November 2026: "ensure that the player
+    // is paused when the welcome modal is open"), the same as the Pause button: others see them
+    // paused; the world goes on for everyone else. Resumed on close unless they had paused first.
+    this.aboutPaused = !this.userPaused
+    if (this.aboutPaused) { if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user') }
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
-    if (tab) showAboutTab(guide, tab)
-    if (!guide.querySelector<HTMLElement>('[data-about-pane="about"]')!.hidden) this.playWelcome.opened()
+    const view = tab ?? 'about'
+    showAboutTab(guide, view)
+    // No visible title: its name is said to screen readers.
+    guide.setAttribute('aria-label', view === 'updates' ? 'Updates' : 'Welcome to Mira')
+    if (view === 'about') this.playWelcome.opened()
     guide.showModal()
     guide.scrollTop = 0
-    guide.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })
+    guide.querySelector<HTMLElement>('.about-back')!.focus({ preventScroll: true })
     this.syncPanels()
   }
   closeAbout(): void {
@@ -703,6 +709,9 @@ export class Shell implements System {
     this.aboutOpen = false
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     if (guide.open) guide.close()
+    // Opening it paused the player: resume them, unless they had paused before opening it.
+    if (this.aboutPaused && this.userPaused) { if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null) }
+    this.aboutPaused = false
     this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen || this.exitAsking
     this.touch.enabled = !this.game.input.suspended
     this.syncPanels()
@@ -1483,6 +1492,8 @@ export class Shell implements System {
   private pauseControl?: PauseControl
   private pauseUnsubscribe?: () => void
   private userPaused = false
+  /** True while Welcome, opened in play, is what paused the player (openAbout). */
+  private aboutPaused = false
   setPauseControl(control: PauseControl): void {
     this.pauseUnsubscribe?.(); this.pauseControl = control
     this.pauseUnsubscribe = control.subscribe((paused, reason) => this.applyPause(paused, reason))
@@ -2071,7 +2082,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .about-tabs *, .lobby-links *, .mira-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .pause-veil, .lobby-version, .lobby-close, .card-close, .welcome-ring-dot, .lobby-links *, .mira-advanced *, .world-inspector *, .performance-recommendation *, .race-controls *, .update-banner-actions *, .exit-confirm-actions *, .join-view *, .gear-selector *, .hud-accessories *, .hud-chat *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     // Upper left, where the light strikes at rest (glass.css).

@@ -317,26 +317,38 @@ html[data-glass-material] .mira-shell.exploration-ui[data-ui-frost="off"] > .wor
 .mira-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; }
 .mira-shell.exploration-ui button.panel-back:not(.liquid-glass) { border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
 .mira-shell.exploration-ui button.panel-back:not(.liquid-glass)::before { content: none; }
-/* The in-play guide: the lobby About (same glass, content and rules above) as a modal over
- * the world. Only its frame is its own: a sticky header with the X, and a scrolling body. */
-.mira-shell.exploration-ui .in-play-about { box-sizing: border-box; width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-ink); overflow: auto; overscroll-behavior: contain; }
-.mira-shell.exploration-ui .in-play-about::backdrop { background: rgb(0 4 10 / .55); }
-.mira-shell.exploration-ui .in-play-about > header { position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 36px; background: rgb(3 6 10 / .96); border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-/* By id: the shared About heading rule above sets a bottom margin with higher specificity. */
-.mira-shell #in-play-about-title { margin: 0; outline: none; }
-/* Over a busy world and the open sidebar, the glass needs more body than the lobby's. */
-html .mira-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(3 7 12 / .95); }
-.mira-shell.exploration-ui .in-play-about-body { padding: 24px 36px; text-align: left; }
-/* While paused, Welcome sits in the pause screen's row of three: pause-screen.css. */
-/* Phones, portrait and landscape: one header row of 56px, title left and the X right. */
+/* The in-play guide: one calm dark surface over a darkened, paused world, with only the X at its
+ * top right (the owner, 25 November 2026: no tabs, no title; "fade the background of the game
+ * darker", "fade out the rest of the UX"). The X stays put while the guide scrolls under it. */
+.mira-shell.exploration-ui .in-play-about { box-sizing: border-box; width: min(860px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-ink); overflow: auto; overscroll-behavior: contain; }
+.mira-shell.exploration-ui .in-play-about::backdrop { background: rgb(0 3 8 / .8); }
+/* A row of no height that sticks to the top: the X hangs from it at the right. */
+.mira-shell.exploration-ui .in-play-about > header { position: sticky; top: 0; z-index: 2; height: 0; display: flex; justify-content: flex-end; padding: 0; background: none; border: 0; pointer-events: none; }
+html .mira-shell.exploration-ui .in-play-about > header .card-close { position: relative; top: 14px; right: 14px; margin: 0; pointer-events: auto; }
+/* No glass sheen or rim on the guide: plain, nearly opaque, so text reads over any world. */
+html .mira-shell.exploration-ui:is([data-glass], *) .in-play-about { background: rgb(6 8 12 / .97); background-image: none; border-color: rgb(225 225 225 / .1); box-shadow: 0 24px 80px rgb(0 0 0 / .5); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.mira-shell.exploration-ui .in-play-about-body { padding: 44px 56px 40px; text-align: left; }
+/* The opening line clears the X beside it. */
+.mira-shell.exploration-ui .in-play-about .welcome-lede { padding-right: 48px; }
+/* Everything else steps out while it is open, as on the pause screen (pause-screen.css). */
+.mira-shell:has(> .in-play-about[open]) > :not(.in-play-about, .wi-tooltip),
+body:has(> .mira-shell > .in-play-about[open]) > :is(.touch-controls, .mira-nametags, .daydream-pill) {
+  opacity: 0 !important; visibility: hidden; pointer-events: none;
+  transition: opacity .3s ease-out, visibility 0s linear .3s !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mira-shell:has(> .in-play-about[open]) > :not(.in-play-about, .wi-tooltip),
+  body:has(> .mira-shell > .in-play-about[open]) > :is(.touch-controls, .mira-nametags, .daydream-pill) { transition: none !important; }
+}
+/* Phones, portrait and landscape. */
 @media (max-width: 600px), (max-height: 550px) {
-  .mira-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }
-  .mira-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
+  .mira-shell.exploration-ui .in-play-about { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  html .mira-shell.exploration-ui .in-play-about > header .card-close { top: 8px; right: 6px; }
+  .mira-shell.exploration-ui .in-play-about-body { padding: 22px 18px 24px; }
 }
 .mira-shell.exploration-ui button.panel-back:focus-visible,
 .mira-shell.exploration-ui .about-links a:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
 @media (max-width: 600px) {
-  .mira-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
   .mira-shell.exploration-ui .about-columns { grid-template-columns: 1fr; gap: 16px; }
   .mira-shell.exploration-ui button.panel-back { width: 100%; min-width: 0; }
 }
