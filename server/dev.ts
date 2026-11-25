@@ -20,7 +20,7 @@ const reporters = new Map<string, PresenceReporter>()
 function report(room: Room): void {
   let reporter = reporters.get(room.name)
   if (!reporter) {
-    reporter = new PresenceReporter(async r => { registry.report(r.room, r.players, Date.now(), r.recipeId) })
+    reporter = new PresenceReporter(async r => { registry.report(r.room, r.players, Date.now(), r.recipeId, r.active) })
     reporters.set(room.name, reporter)
   }
   const { seed, ...presence } = room.presence()

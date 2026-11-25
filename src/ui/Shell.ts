@@ -31,7 +31,7 @@ import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/s
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
-import { populationLabel } from './galaxy/presence'
+import { activePlayersLabel, populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { captionBlocked, captionHidden, captionMask, type ScreenBox } from './galaxy/labels'
@@ -1871,7 +1871,7 @@ export class Shell implements System {
         for (const world of worlds) {
           if (world.id === 'custom') continue
           const chip = chips.get(world.id)!, value = values.get(world.recipe ?? world.id) ?? null
-          const text = value && value.players > 0 ? `${value.players} online` : ''
+          const text = value && value.active > 0 ? activePlayersLabel(value.active) : ''
           const count = chip.querySelector('.galaxy-population')!
           if (count.textContent !== text) count.textContent = text
           // The day length goes in the tooltip, not the label: the label stays two short lines.

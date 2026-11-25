@@ -7,9 +7,9 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import type { PlayerInfo } from '../shared/protocol'
-import { RoomRegistry, type RegistryEntry } from './registry'
+import { ACTIVE_SAVE_MS, RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
-import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
+import { ATTACHMENT_PAUSE_MS, CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
 import { logError, logEvent } from './log'
@@ -78,6 +78,8 @@ interface Attachment {
   token?: string | null
   /** Epoch ms the socket was accepted, for the close line's openMs. */
   at?: number
+  /** The player was paused as last seen (Room.pausedOf), so a wake counts them right (adopt). */
+  paused?: boolean
   // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
   // within 1.5 s of the place's last message falls back to the quiet rule (Room.quietFor).
 }
@@ -300,6 +302,8 @@ export class RoomDO {
   private room: Room | null = null
   private snapshot: RoomSnapshot | undefined
   private readonly peers = new WeakMap<WebSocket, Peer>()
+  /** When each socket's attachment last took a pause change (ms): see ATTACHMENT_PAUSE_MS. */
+  private readonly pauseWrittenAt = new WeakMap<WebSocket, number>()
   /**
    * Epoch ms of the clock alarm this object last set, or 0 when none is pending. In memory
    * only: after an eviction it reads 0, and the next message sets the alarm again, which
@@ -335,16 +339,21 @@ export class RoomDO {
 
   /** Only on the registry instance: the counts, loaded from storage on first use. */
   private registryReady: Promise<RoomRegistry> | null = null
+  /** Only on the registry instance: when the counts were last stored (ms), see ACTIVE_SAVE_MS. */
+  private countsSavedAt = -Infinity
 
   /** The registry instance's two requests; see REGISTRY_ID. */
   private async registryFetch(req: Request, path: string): Promise<Response> {
     this.registryReady ??= this.state.storage.get<Record<string, RegistryEntry>>('counts').then(saved => new RoomRegistry(saved))
     const registry = await this.registryReady
     if (path === '/report' && req.method === 'POST') {
-      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown } | null
+      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
-        registry.report(body.room, body.players, Date.now(), body.recipeId)
-        await this.state.storage.put('counts', registry.save())
+        const durability = registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
+        if (durability === 'save' || (durability === 'later' && Date.now() - this.countsSavedAt >= ACTIVE_SAVE_MS)) {
+          this.countsSavedAt = Date.now()
+          await this.state.storage.put('counts', registry.save())
+        }
       }
       return new Response(null, { status: 204 })
     }
@@ -378,7 +387,14 @@ export class RoomDO {
       const att = ws.deserializeAttachment() as Attachment
       if (!att.info) {
         const info = room.info(peer)
-        if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer) } satisfies Attachment)
+        if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer), ...(room.pausedOf(peer) ? { paused: true } : {}) } satisfies Attachment)
+      } else if (room.pausedOf(peer) !== Boolean(att.paused) && Date.now() - (this.pauseWrittenAt.get(ws) ?? 0) >= ATTACHMENT_PAUSE_MS) {
+        // Pausing or resuming: kept with the socket for a hibernation wake. At most one rewrite
+        // per socket per ATTACHMENT_PAUSE_MS, however fast a client flips the bit; the latest
+        // value is written by the first message after that (a paused page sends one a second).
+        const { paused: _was, ...rest } = att
+        ws.serializeAttachment({ ...rest, ...(room.pausedOf(peer) ? { paused: true } : {}) } satisfies Attachment)
+        this.pauseWrittenAt.set(ws, Date.now())
       }
     } catch (error) {
       // Logged, then thrown on as before: the runtime's handling of a failed event is unchanged.
@@ -521,7 +537,7 @@ export class RoomDO {
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as Attachment | null
-      if (att?.info) room.adopt(this.peer(ws), att.info, att.token)
+      if (att?.info) room.adopt(this.peer(ws), att.info, att.token, att.paused === true)
       else room.connect(this.peer(ws))
     }
     this.room = room

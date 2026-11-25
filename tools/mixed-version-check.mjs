@@ -25,7 +25,7 @@ const server = createServer(async (req,res) => {
     const path = new URL(req.url,'http://fixture').pathname
     if (path === '/presence') {
       const registry = new RoomRegistry(), now = Date.now()
-      for (const [name,room] of rooms) { const p = room.presence(); registry.report(name,p.players,now,p.recipeId) }
+      for (const [name,room] of rooms) { const p = room.presence(); registry.report(name,p.players,now,p.recipeId,p.active) }
       res.writeHead(200, { 'content-type':'application/json' }).end(JSON.stringify(registry.presence(now)))
       return
     }
