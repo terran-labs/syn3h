@@ -6,6 +6,7 @@ import { markShaderReveal } from '../core/diagnosticShaders'
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
 import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery } from '../core/roomAddress'
+import { canonicalNameSeed, canonicalSeed } from '../core/publicWorlds'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
@@ -1832,7 +1833,11 @@ export class Shell implements System {
     // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
     const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
     const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
-    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : randomSeed(), nameSeed: recipe.id === current && !copy ? worldNameSeed.value : randomNameSeed() }))
+    // Each planet is its public world, the same canonical world for every visitor and session
+    // (core/publicWorlds.ts), so what the lobby shows is where a tap lands. The planet the player
+    // is on in a private room (a parallel universe, a named room) shows that room's own world.
+    const ownWorld = (recipe: string) => recipe === current && !isDefaultRoom(this.room)
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: copy ? randomSeed() : ownWorld(recipe.id) ? worldSeed.value : canonicalSeed(recipe.id), nameSeed: copy ? randomNameSeed() : ownWorld(recipe.id) ? worldNameSeed.value : canonicalNameSeed(recipe.id) }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     // Hidden for now (see OFFER_CUSTOM_PLANET): the lobby offers planets only.
     if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
