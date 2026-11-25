@@ -3,7 +3,7 @@ import { markedName, type MarkedPlayer } from './playerMarks'
 export interface ScoreRow { name: string; score: number; self: boolean; it: boolean; flags: string }
 /** Preserve networking's text API; parse only its explicit row markers and score column. */
 export function parseScoreRow(line: string): ScoreRow | null {
-  const match = /^([ >])\s+(.+?)\s+(-?\d+)\s{2,}((?:(?:\[IT\]|\[KING\]|\(you\)|\(host\)|\(out\)|\(paused\)|\(not responding\))\s*)*)$/.exec(line)
+  const match = /^([ >])\s+(.+?)\s+(-?\d+)\s{2,}((?:(?:\[IT\]|\[KING\]|\(you\)|\(host\)|\(out\)|\(stuck\)|\(paused\)|\(not responding\))\s*)*)$/.exec(line)
   if (!match) return null
   return { name: match[2].trim(), score: Number(match[3]), self: match[4].includes('(you)'), it: match[1] === '>' || match[4].includes('[IT]'), flags: match[4].trim() }
 }
@@ -11,63 +11,130 @@ export function parseScoreRow(line: string): ScoreRow | null {
 export interface RosterPlayer extends MarkedPlayer { id: number }
 export type PlayerRoster = () => readonly RosterPlayer[]
 
+export interface SessionPlayer extends RosterPlayer {
+  score: number
+  self: boolean
+  host: boolean
+  it: boolean
+  king: boolean
+  paused: boolean
+  muted: boolean
+}
+
+interface DisplayRow extends ScoreRow {
+  player?: RosterPlayer
+  paused: boolean
+  muted: boolean
+}
+
 export class Scoreboard {
-  private signature = ''
+  private detailSignature: string | undefined
+  private rowLines: string | undefined
+  private players?: readonly SessionPlayer[]
   private previousEvents = new Set<string>()
-  private roster: PlayerRoster = () => []
+  private rows = new Map<string, { element: HTMLElement; label: string }>()
+
   constructor(private readonly host: HTMLElement, private readonly notify: (text: string) => void) {
-    // Another player's name opens the per-player menu (Mute or Unmute on this screen), the one
-    // the Chat card's log opens; it replaced the Chat card's People list on 22 November 2026.
+    // The same local text mute menu opens from a name in Chat or Players & session.
     host.addEventListener('click', (event) => {
       const name = (event.target as Element).closest<HTMLButtonElement>('button.score-name')
       if (name) chatLink.openPersonMenu(Number(name.dataset.id), name, name.dataset.name ?? '')
     })
   }
-  /** Resolve row names to players, for their marks and the per-player menu. */
-  setRoster(roster: PlayerRoster): void { this.roster = roster; this.signature = ''; this.rowSignature = '' }
-  private rowSignature = ''
-  setStatus(lines: readonly string[]): void {
-    const signature = lines.join('\n')
-    if (signature === this.signature) return
-    this.signature = signature
+
+  setStatus(lines: readonly string[], players?: readonly SessionPlayer[], details = true): void {
+    const signature = details || !players ? lines.join('\n') : ''
+    if (players !== this.players || (!players && signature !== this.rowLines)) {
+      this.players = players
+      this.rowLines = players ? undefined : signature
+      this.updateRows(lines, players)
+    }
+    const detailSignature = details ? signature : ''
+    if (detailSignature === this.detailSignature) return
+    this.detailSignature = detailSignature
+    this.updateDetails(details ? lines : [])
+  }
+
+  private updateRows(lines: readonly string[], players?: readonly SessionPlayer[]): void {
+    const display: DisplayRow[] = []
+    if (players) {
+      // Room identities are the source of the roster. Display names need not be unique.
+      for (const player of players) display.push({
+        player, name: player.name, score: player.score, self: player.self, it: player.it,
+        paused: player.paused, muted: player.muted,
+        flags: [player.king ? '[KING]' : '', player.host ? '(host)' : ''].join(' '),
+      })
+    } else {
+      for (const line of lines) {
+        const row = parseScoreRow(line)
+        if (row) display.push({ ...row, paused: row.flags.includes('(paused)'), muted: false })
+      }
+    }
+
+    const next = new Map<string, { element: HTMLElement; label: string }>()
+    display.forEach((row, index) => {
+      const { player, name, self } = row
+      const key = player ? `player-${player.id}` : `text-${index}`
+      const label = JSON.stringify([name, self, player?.bot, player?.color])
+      const previous = this.rows.get(key)
+      const entry = previous?.label === label ? previous : { element: this.rowElement(row), label }
+      this.updateRow(entry.element, row)
+      next.set(key, entry)
+    })
+    for (const [key, old] of this.rows) if (next.get(key) !== old) old.element.remove()
+    let anchor: Element | null = this.host.querySelector(':scope > .score-detail[data-after-rows]')
+    for (const { element } of [...next.values()].reverse()) {
+      if (element.parentNode !== this.host || element.nextSibling !== anchor) this.host.insertBefore(element, anchor)
+      anchor = element
+    }
+    this.rows = next
+  }
+
+  private updateDetails(lines: readonly string[]): void {
     const events = new Set<string>()
-    const rowLines = lines.filter(line => parseScoreRow(line))
-    // The player rows are rebuilt only when a row changes. The detail lines (ping, delay)
-    // change every frame; rebuilding the rows with them replaced a name between a press and
-    // its release, so a click on it was lost.
-    // Who each name is (the roster can learn a bot's colour after its row was drawn) is part of it.
-    const roster = this.roster()
-    const rowSignature = `${rowLines.join('\n')}|${roster.map(p => `${p.id}:${p.name}:${p.bot}:${p.color ?? ''}`).join(',')}`
-    const keepRows = rowSignature === this.rowSignature && rowLines.length > 0
-    this.rowSignature = rowSignature
-    const before: HTMLElement[] = [], rows: HTMLElement[] = [], after: HTMLElement[] = []
+    const before: HTMLElement[] = [], after: HTMLElement[] = []
     const first = lines.findIndex(line => parseScoreRow(line))
     lines.forEach((line, index) => {
-      const row = parseScoreRow(line)
-      if (row) { if (!keepRows) rows.push(this.rowElement(row, roster)); return }
+      if (parseScoreRow(line)) return
       const element = document.createElement('div')
-      element.className = `score-detail${/^(net:|host:)/.test(line) ? ' is-developer' : ''}`; element.textContent = line
+      element.className = `score-detail${/^(net:|host:)/.test(line) ? ' is-developer' : ''}`
+      element.textContent = line
       if (!/^(net:|host:)/.test(line) && /joined|left|tagged| is it|locked|unlocked/i.test(line)) {
         events.add(line); if (!this.previousEvents.has(line)) this.notify(line)
       }
-      ;(first >= 0 && index > first ? after : before).push(element)
+      if (first >= 0 && index > first) { element.dataset.afterRows = ''; after.push(element) }
+      else before.push(element)
     })
     this.previousEvents = events
-    if (keepRows) {
-      for (const old of [...this.host.querySelectorAll(':scope > .score-detail')]) old.remove()
-      this.host.prepend(...before); this.host.append(...after)
-    } else this.host.replaceChildren(...before, ...rows, ...after)
+    for (const old of this.host.querySelectorAll(':scope > .score-detail')) old.remove()
+    this.host.prepend(...before); this.host.append(...after)
   }
-  private rowElement(row: ScoreRow, roster: readonly RosterPlayer[]): HTMLElement {
+
+  private rowElement(row: DisplayRow): HTMLElement {
     const element = document.createElement('div')
-    element.className = `score-row${row.it ? ' is-it' : ''}${row.self ? ' is-self' : ''}`
-    const player = roster.find(p => p.name === row.name) ?? null
-    const name = document.createElement(player && !row.self ? 'button' : 'span'), score = document.createElement('strong'), flags = document.createElement('small')
-    // The name with its marks (a bot's icon in its colour), as every surface draws it.
+    element.className = 'score-row'
+    const { player } = row
+    const name = document.createElement(player && !row.self ? 'button' : 'span')
     name.className = 'score-name'; name.append(...markedName(player ?? { name: row.name, bot: false })); name.title = row.name
-    if (name instanceof HTMLButtonElement && player) { name.type = 'button'; name.dataset.id = String(player.id); name.dataset.name = row.name; name.title = `Options for ${row.name}` }
-    score.textContent = String(row.score); flags.textContent = [row.flags.includes('[KING]') ? 'KING' : row.it ? 'IT' : '', row.self ? 'YOU' : '', row.flags.includes('(host)') ? 'HOST' : ''].filter(Boolean).join(' · ')
-    element.append(name, flags, score)
+    if (player) element.dataset.playerId = String(player.id)
+    if (name instanceof HTMLButtonElement && player) {
+      name.type = 'button'; name.dataset.id = String(player.id); name.dataset.name = row.name
+      name.title = `Options for ${row.name}`
+    }
+    element.append(name, document.createElement('small'), document.createElement('strong'))
     return element
+  }
+
+  private updateRow(element: HTMLElement, row: DisplayRow): void {
+    element.classList.toggle('is-it', row.it)
+    element.classList.toggle('is-self', row.self)
+    const flags = element.children[1], score = element.children[2]
+    const label = [
+      row.flags.includes('[KING]') ? 'KING' : row.it ? 'IT' : '',
+      row.self ? 'YOU' : '', row.flags.includes('(host)') ? 'HOST' : '',
+      row.paused ? 'PAUSED' : '', row.muted ? 'MUTED' : '',
+    ].filter(Boolean).join(' · ')
+    if (flags.textContent !== label) flags.textContent = label
+    if (score.textContent !== String(row.score)) score.textContent = String(row.score)
   }
 }
