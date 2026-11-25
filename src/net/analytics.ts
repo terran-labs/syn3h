@@ -13,7 +13,7 @@
  *   as a fallback), never awaited, never retried. A crash loop costs a handful of requests.
  */
 import { levelNumber, qualityLevel } from '../core/quality'
-import { deviceClass } from '../../shared/device'
+import { deviceClassSync as deviceClass } from '../core/device'
 import { localStore, sessionStore } from '../core/safeStorage'
 import { cleanFrames, errorName, reduceMessage } from '../../shared/crashText'
 
@@ -68,7 +68,7 @@ export function entryRef(search: string = typeof location === 'undefined' ? '' :
 // Read at module load, before the lobby cleans the bar.
 const REF = entryRef()
 
-/** Phone, tablet or desktop: the one rule, in shared/device.ts (also the players card's labels). */
+/** Phone, tablet or desktop: the one rule, in src/core/device.ts (shared with the players card's labels). */
 export { deviceClass }
 
 export const buildVersion = (): string => {
