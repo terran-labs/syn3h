@@ -29,7 +29,8 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true, args:
 const errors = [], notes = []
 // [name, vehicle, zorb, start depth under the surface (negative: above), forward m/s, up m/s, frames]
 const ZORB = [['zorb-deep', 'buggy', true, 8, 4, 14, 14], ['zorb-shallow', 'buggy', true, 2.5, 4, 6, 12], ['zorb-bob', 'buggy', true, 0, 0, 0, 10]]
-const KINDS = phone ? ['buggy'] : ['buggy', 'jet', 'hovercraft', 'tank']
+// The tank is hidden in this build (src/vehicles/available.ts): asking for it gets the buggy.
+const KINDS = phone ? ['buggy'] : ['buggy', 'jet', 'hovercraft']
 const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18, -3.2, 10], [`${k}-exit`, k, false, 3, 14, 9, 12]])]
 const HOURS = phone ? [14] : [14, 22]
 
@@ -42,10 +43,14 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
   await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
   await page.evaluate(() => window.syn3h.shell.play())
   await page.waitForFunction(() => window.syn3h.game.tick > 60, null, { timeout: 120000 })
+  // High, set as the quality menu would, and wait for its change to finish (a veil hides the game meanwhile).
+  await page.evaluate(() => { const q = window.syn3h.game.quality; q.setAuto(false); q.manualChange = (_l, apply) => apply(); q.setLevel(3) })
+  await page.waitForFunction(() => window.syn3h.game.quality.governor.level === 3 && !document.querySelector('.quality-change-veil'), null, { timeout: 90000 })
+  await page.waitForTimeout(1500)
   await page.addStyleTag({ content: 'body * { visibility: hidden !important } #game, #game * { visibility: visible !important }' })
   const spot = await page.evaluate((hour) => {
     const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position
-    s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', hour); s.params.set('sun.dayLength', 0); s.params.set('gfx.quality', 3)
+    s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', hour); s.params.set('sun.dayLength', 0);
     const deep = (x, z) => t.liquidKindAt?.(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 12
     for (let r = 30; r < 3000; r += 15) for (let a = 0; a < 64; a++) {
       const ang = a / 64 * Math.PI * 2, x = sp.x + Math.cos(ang) * r, z = sp.z + Math.sin(ang) * r
