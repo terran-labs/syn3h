@@ -4,9 +4,9 @@
  * The sun's glow was added over every pixel of a world farther than the sun and almost none
  * over nearer pixels, so the plane at the sun's depth sliced each sphere it passed through.
  *
- * The script holds the system still, looks along the orbital plane as the owner did, finds
- * moments when a world's centre is at the sun's depth and beside it on screen, and saves a
- * capture of each. It asserts what can be measured: across such a world's disc, from its
+ * The script holds the system still, looks along the orbital plane as the owner did, views
+ * the same seeded Volcanic world at a fixed time with its sphere crossing the solar depth
+ * plane, and saves the frame. It asserts what can be measured: across such a world's disc, from its
  * centre to near its limb, brightness has no step (no neighbouring samples differ sharply).
  *
  *   MIRA_URL=http://127.0.0.1:5193/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/galaxy-veil.mjs
@@ -24,34 +24,49 @@ await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
 const report = []
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+  const page = await browser.newPage({ reducedMotion: 'reduce', viewport: { width: 1280, height: 800 } })
   const errors = []; page.on('pageerror', e => errors.push(e.message))
-  await page.goto(`${base}?room=veil-${Date.now()}`, { waitUntil: 'load' })
+  await page.goto(`${base}?world=volcanic.1&room=veil-${Date.now()}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.mira?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
   await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400); window.mira.params.set('gfx.level', 2) })
   await page.waitForFunction(() => window.mira.shell.graphics.planetMaps >= window.mira.planets.PLANETS.length, null, { timeout: 60000 })
-  await page.waitForTimeout(4500) // past the logo's reveal
-  // Hold the orbits, look along the plane from close in, and step the clock by hand.
-  const at = (clock, yaw) => page.evaluate(async ([clock, yaw]) => {
-    const g = window.mira.shell.galaxy
-    window.mira.shell.stopAttract() // the idle tour would replace the galaxy after twenty seconds
-    g.options.still = () => true; g.clock = clock; g.yaw = yaw; g.pitch = 0.1; g.distance = 9; g.reach = 9; g.wake = 3
-    for (let i = 0; i < 4; i++) { g.wake = 3; await new Promise(r => requestAnimationFrame(r)) }
-    return { reach: g.reach, screen: g.screen.map(s => ({ id: s.id, x: s.x, y: s.y, r: s.radius, depth: s.depth, visible: s.visible })) }
-  }, [clock, yaw])
-  // Moments when a world is beside the sun (one to four of its radii off) and at its depth.
-  const found = []
-  for (let clock = 0; clock < 700 && found.length < 3; clock += 3) {
-    const { reach, screen } = await at(clock, 0.6)
-    const hit = screen.find(s => s.visible && Math.abs(s.depth - reach) < 0.12 && Math.abs(s.x - 640) > s.r * 1.2 && Math.abs(s.x - 640) < s.r * 5 && s.r > 30 && !screen.some(o => o !== s && o.visible && Math.hypot(o.x - s.x, o.y - s.y) < o.r + s.r))
-    if (hit && !found.some(f => f.id === hit.id)) found.push({ clock, ...hit })
-  }
-  assert.ok(found.length > 0, 'found a world level with the sun to look at')
-  for (const [n, world] of found.entries()) {
-    await at(world.clock, 0.6); await page.waitForTimeout(150)
-    const path = `${out}/${tag}-${n}-${world.id}.png`
-    const shot = await page.screenshot({ path, clip: { x: Math.max(0, world.x - 320), y: Math.max(0, world.y - 240), width: 640, height: 480 } })
-    // Brightness along eight spokes of the disc, centre to 85 percent of the radius.
+  // Map completion is asynchronous. Hold both the camera and the orbital clock before reading
+  // the displayed disc. Choose the viewing angle from the actual orbit so respacing it does
+  // not change which time, terrain or world we measure.
+  const clock = 24
+  const world = await page.evaluate(async clock => {
+    const shell = window.mira.shell, g = shell.galaxy
+    shell.stopAttract()
+    const index = g.options.worlds.findIndex(w => w.id === 'volcanic')
+    const { position: [x, y, z], radius } = g.places(clock)[index]
+    const pitch = 0.1, distance = 9
+    // Put the centre half a radius farther from the eye than the sun. The sun's depth
+    // then falls inside the globe, where the historical per-pixel cutoff drew a ring.
+    const centreDistance = distance + radius / 2
+    const along = (distance ** 2 + x*x + y*y + z*z - centreDistance ** 2) / (2 * distance)
+    const turn = Math.acos((along - y * Math.sin(pitch)) / (Math.hypot(x, z) * Math.cos(pitch)))
+    g.clockHold = true
+    g.clock = clock
+    for (const side of [-1, 1]) {
+      g.pitch = pitch; g.distance = distance; g.reach = distance
+      g.yaw = Math.atan2(x, z) + side * turn
+      const frame = g.frames
+      g.wake = 2
+      while (g.frames === frame) await new Promise(resolve => requestAnimationFrame(resolve))
+      const disc = g.screen[index]
+      if (disc.visible && !g.screen.some(other => other !== disc && other.visible &&
+          other.depth < disc.depth && Math.hypot(other.x - disc.x, other.y - disc.y) < other.radius + disc.radius)) {
+        return { id: disc.id, x: disc.x, y: disc.y, r: disc.radius, clock }
+      }
+    }
+    throw Error('Volcanic is occluded on both sides of the solar-depth test view')
+  }, clock)
+  {
+    const clip = { x: Math.min(1280 - 640, Math.max(0, Math.round(world.x - 320))),
+      y: Math.min(800 - 480, Math.max(0, Math.round(world.y - 240))), width: 640, height: 480 }
+    const path = `${out}/${tag}-0-${world.id}.png`
+    const shot = await page.screenshot({ path, clip, style: '.galaxy-labels { visibility: hidden !important }' })
+    // Brightness over concentric rings of the disc, centre to 85 percent of the radius.
     const steps = await page.evaluate(async ([data, cx, cy, r]) => {
       const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode()
       const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
@@ -63,7 +78,7 @@ try {
       const rings = []
       for (let k = 0; k <= 17; k++) { const d = r * 0.05 * k; let sum = 0; for (let a = 0; a < 48; a++) sum += luma(cx + Math.cos(a / 48 * 6.2832) * d, cy + Math.sin(a / 48 * 6.2832) * d); rings.push(sum / 48) }
       return { rings: rings.map(v => Math.round(v)), worst: Math.max(...rings.slice(1).map((v, i) => Math.abs(v - rings[i]))) }
-    }, [shot.toString('base64'), world.x - Math.max(0, world.x - 320), world.y - Math.max(0, world.y - 240), world.r])
+    }, [shot.toString('base64'), world.x - clip.x, world.y - clip.y, world.r])
     report.push({ world: world.id, clock: world.clock, radiusPx: Math.round(world.r), worstRingStep: Math.round(steps.worst * 10) / 10, rings: steps.rings.join(' '), path })
   }
   console.table(report.map(({ rings, ...row }) => row)); for (const row of report) console.log(row.world, 'ring brightness, centre to limb:', row.rings)
