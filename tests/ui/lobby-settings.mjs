@@ -108,6 +108,12 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     assert.deepEqual(await choices.allTextContents(), ['Liquid', 'Flat'])
     assert.equal(style0, 2)
     assert.equal(await glass.locator('.tint-row input').inputValue(), '65')
+    await page.waitForFunction(() => {
+      const section = document.querySelector('#lobby-settings .wi-card[data-section="glass"]')
+      const button = section?.querySelector('.tint-default')
+      const next = section?.nextElementSibling
+      return button && next && button.getBoundingClientRect().bottom + 1 < next.getBoundingClientRect().top
+    })
     await page.screenshot({ path: `${out}/${mode}-flat-style.png` })
     await tap(glass.getByRole('button', { name: 'Liquid', exact: true }))
     await page.waitForFunction(() => window.mira.params.get('hud.surfaceCoverage').value === 25)

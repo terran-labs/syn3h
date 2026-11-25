@@ -97,6 +97,7 @@ html .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-b
    height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
 .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card, .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card.is-open { flex: 0 0 auto; min-height: 0; }
 .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
+.mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card[data-section="glass"].is-open > .wi-body { padding-block-end: 14px; }
 /* A long label wraps to a second line rather than ending in an ellipsis. */
 .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
 .mira-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 4px 6px 14px; flex: 0 0 auto; background: none; border: 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
