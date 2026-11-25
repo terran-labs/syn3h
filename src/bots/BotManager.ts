@@ -23,6 +23,8 @@ import { BotPacer, BudgetHysteresis } from './pacing'
 import { assignTargets, type Candidate } from './tactics'
 import { difficultyScale, PER_PERSON, skill } from './skills'
 import { wrapDistance } from '../../shared/wrap'
+import { BOT_TRAITS, type BotTraits } from '../../shared/protocol'
+import type { Personality } from './mind/personality'
 
 /** The arrival effect (src/vehicles/effects/Materialize.ts), as far as bots use it. */
 export interface BotArrivalEffect {
@@ -248,6 +250,29 @@ export class BotManager implements System {
    * it changes, with null for free play. Networking owns the rules; this only shapes how
    * the host's bots behave. Remote managers ignore it, as they hold no bots.
    */
+  /** Personality overrides by place in the line-up (network bot id minus BOT_ID_BASE), from the room. */
+  private readonly traitOverrides = new Map<number, BotTraits>()
+  setBotTraits(index: number, traits: BotTraits): void {
+    this.traitOverrides.set(index, traits)
+    const mind = this.brains[index]?.mind
+    if (mind) applyTraits(mind.personality, traits)
+  }
+  /**
+   * A moderator ejected this bot: it goes now, in its departure cloud where there is one. Network
+   * bot ids are places in the line-up, so the bots after it take the next lower ids, and other
+   * screens see those replicas re-associate once. The room has already lowered the bot count, so
+   * the pacing does not refill it.
+   */
+  ejectBot(index: number): void {
+    const bot = this.bots[index], brain = this.brains[index]
+    if (!bot || !brain) return
+    this.bots.splice(index, 1); this.brains.splice(index, 1)
+    for (const controller of this.brains) controller.setPeers(this.bots)
+    if (!this.effect) { this.effects.get(bot)?.(); this.effects.delete(bot); this.game.remove(brain); this.removeBotVehicle(bot); return }
+    this.leaving.set(bot, brain)
+    const gone = () => { if (this.leaving.delete(bot)) this.removeDeparting(bot, brain) }
+    ;(this.effect.depart?.(bot) ?? this.effect.begin(bot, { hold: false, holdSeconds: 0.7 })).then(gone, gone)
+  }
   setMatch(match: BotMatch | null) {
     this.match = match
     for (const brain of this.brains) brain.match = match
@@ -389,6 +414,8 @@ export class BotManager implements System {
       // Each bot gets a character from the world seed and its own id, and a mind to act on it.
       const pilot = createPilot(bot, this.terrain)
       if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
+      // A moderator's overrides for this place in the line-up (the room keeps them across hosts).
+      if (brain.mind) applyTraits(brain.mind.personality, this.traitOverrides.get(index))
       brain.navigator = this.navigator
       brain.setGear(this.gearHooks)
       brain.match = this.match
@@ -482,4 +509,13 @@ export class BotManager implements System {
     this.daydream.dispose(); this.navigator.dispose?.()
     this.clearBots()
   }
+}
+
+/** Apply overrides to a bot's personality in place, and name its strongest trait again. */
+function applyTraits(p: Personality, traits: BotTraits | undefined): void {
+  if (!traits) return
+  for (const key of BOT_TRAITS) { const v = traits[key]; if (typeof v === 'number' && Number.isFinite(v)) p[key] = Math.min(1, Math.max(0, v)) }
+  const names = { boldness: 'daredevil', curiosity: 'explorer', sociability: 'shadow', mischief: 'trickster', patience: 'cruiser' } as const
+  let best = -1
+  for (const key of BOT_TRAITS) if (p[key] > best) { best = p[key]; p.archetype = names[key] }
 }

@@ -61,6 +61,10 @@ import { aimError as botAimError, fireRate as botFireRate, gameGear, grappleRate
 import { aimDirection } from '../bots/tactics'
 import { botGameOptions } from './bots'
 import { BotRamReporter } from './botRams'
+import { canModerate, type ModerationReason, type RoomKind } from '../../shared/moderation'
+import { deviceLabelSync, deviceModel } from '../core/device'
+import { localStore } from '../core/safeStorage'
+import { CLOSE_EJECTED, type BanishChoice, type BotTraits } from '../../shared/protocol'
 import type { BotGearOption } from '../bots/gear'
 import { seededRandom } from '../bots/random'
 import { playWithMe } from '../bots/play/PlayDirector'
@@ -122,6 +126,10 @@ export interface NetBots extends RaceBots {
   readonly brainList?: readonly { readonly vehicle: Vehicle; readonly target: Vehicle | null }[]
   /** Everyone the bots may play with: the host's own vehicle and every remote person's. */
   setTargets?(vehicles: readonly Vehicle[]): void
+  /** A moderator's personality overrides for the bot at this place in the line-up (the host applies them). */
+  setBotTraits?(index: number, traits: BotTraits): void
+  /** A moderator ejected the bot at this place: the host drops that very one. */
+  ejectBot?(index: number): void
   /** Whether a vehicle may be gone after in a game now (not materializing, paused or just tagged). */
   gameAvailable?: (vehicle: Vehicle) => boolean
 }
@@ -149,6 +157,12 @@ export interface NetContext {
   onJoinStatus?(message: string): void
   /** Each welcome into the room (first entry and every rejoin). */
   onWelcome?(): void
+  /** This player was ejected (or turned away as banished) from this world: the UI takes them to the lobby. */
+  onEjected?(notice: { by: string; banish: BanishChoice; seconds: number | null }): void
+  /** For moderators: this world's banishes, after asking (requestBanishes) or lifting one. */
+  onBanishes?(list: { ref: string; name: string; seconds: number | null }[]): void
+  /** For moderators: a banish could not be kept, the world's list is full of permanent ones. */
+  onBanishRefused?(): void
   /** Vehicle kind chosen on the start screen. Falls back to `player.kind`, then 'buggy'. */
   kind?: VehicleKind
   /** Colours chosen on the start screen, as '#rrggbb'. */
@@ -269,6 +283,12 @@ export class NetClient implements System {
   /** New remotes are compiled before they show, people first and bots one at a time (arrivals.ts). */
   readonly arrivals = new RemoteArrivals(vehicle => this.ctx.onRemoteVehicleChanged?.(vehicle as Vehicle))
   readonly players = new Map<number, PlayerInfo>()
+  /** public, universe or private (welcome): who may moderate here (shared/moderation.ts). Unknown before welcome. */
+  roomKind: RoomKind | null = null
+  /** Bots' personality overrides in this room, by bot id (welcome and 'bot-traits'). */
+  readonly botTraits = new Map<number, BotTraits>()
+  /** Names of players who just left, so the host line can name a host who has gone. */
+  private readonly departed = new Map<number, string>()
   readonly events: NetEvent[] = []
   /** Chat lines, mutes and display rules (src/net/chat.ts). */
   readonly chat: ChatChannel
@@ -557,6 +577,8 @@ export class NetClient implements System {
         ...(playWithMe.value ? {} : { play: false }),
         // The creator key, if this device holds one: the room grants the creator role for it.
         ...helloCreatorField(),
+        // Roster: region and country shown unless the player said no; the device, display only.
+        ...(shareLocationPreference() ? {} : { shareLocation: false }), deviceLabel: deviceLabelSync(), ...(DEVICE_MODEL.value ? { deviceModel: DEVICE_MODEL.value } : {}),
       })
       this.dropReport = null
     }
@@ -1885,6 +1907,9 @@ export class NetClient implements System {
         this.players.clear()
         for (const p of msg.players) this.players.set(p.id, p)
         this.game = normalizeGame(msg.game)
+        this.roomKind = msg.roomKind ?? null
+        this.botTraits.clear()
+        for (const [id, traits] of Object.entries(msg.botTraits ?? {})) this.applyBotTraits(Number(id), traits)
         // The room's world (seed included) first: the terrain regenerates before anything
         // spawns, and onTerrainRegenerated seats us on the new ground.
         // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
@@ -1926,6 +1951,8 @@ export class NetClient implements System {
       }
       case 'leave':
         longFrames.event('network.leave')
+        this.departed.set(msg.id, this.displayName(msg.id))
+        if (this.departed.size > 32) this.departed.delete(this.departed.keys().next().value!)
         if (!isBotId(msg.id)) this.event(`${this.nameOf(msg.id)} left`)
         this.players.delete(msg.id)
         this.removeRemote(msg.id, true)
@@ -2003,12 +2030,64 @@ export class NetClient implements System {
       case 'chat-refused':
         this.chat.receive(msg)
         break
+      case 'ejected':
+        this.onEjected(msg)
+        break
+      case 'bot-traits':
+        this.applyBotTraits(msg.bot, msg.traits)
+        break
+      case 'banishes':
+        this.ctx.onBanishes?.(msg.list)
+        break
+      case 'banish-refused':
+        this.ctx.onBanishRefused?.()
+        break
       case 'error':
         if (msg.message === 'room is full') { this.onRoomFull(); break }
         this.event(`Server: ${msg.message}`)
         if (msg.message.includes('protocol')) reloadForNewProtocol()
         break
     }
+  }
+
+  // -------------------------------------------------------------------------------------
+  // Player panel: moderation and the player's own sharing (the room enforces every rule)
+  // -------------------------------------------------------------------------------------
+
+  /** The room's host id, or 0. */
+  get hostId(): number { return this.game.host }
+  /** Whether this player may mute for everyone, eject or set traits for `targetId` here, and the rule that decides it. */
+  moderation(targetId: number): { ok: boolean; reason: ModerationReason } {
+    const me = this.players.get(this.id), target = this.players.get(targetId)
+    if (!this.roomKind || !me || !target) return { ok: false, reason: 'unknown' }
+    const who = (p: PlayerInfo) => ({ id: p.id, host: p.id === this.game.host, ...(p.role === 'creator' ? { role: 'creator' as const } : {}), ...(p.bot ? { bot: true } : {}) })
+    return canModerate(who(me), who(target), this.roomKind)
+  }
+  /** Mute for everyone (moderators); the personal "Mute for me" is chat.mute(id). */
+  muteForEveryone(id: number, muted: boolean): void { this.send({ type: 'mute', id, muted }) }
+  /** Eject a player, kept out of this world for `banish`, or remove a bot. */
+  eject(id: number, banish: BanishChoice = 'none'): void { this.send({ type: 'eject', id, banish }) }
+  setBotTraits(bot: number, traits: BotTraits): void { this.send({ type: 'bot-traits', bot, traits }) }
+  requestBanishes(): void { this.send({ type: 'banishes' }) }
+  unbanish(ref: string): void { this.send({ type: 'unbanish', ref }) }
+  /** Show my region and country to others, or not: kept on this device and told to the room. */
+  setShareLocation(on: boolean): void {
+    try { localStore()?.setItem(SHARE_LOCATION_KEY, on ? '1' : '0') } catch { /* kept for this visit only */ }
+    this.send({ type: 'profile', shareLocation: on })
+  }
+  get shareLocation(): boolean { return shareLocationPreference() }
+
+  /** One bot's overrides: kept for display, and applied to its mind where this client simulates it. */
+  private applyBotTraits(bot: number, traits: BotTraits): void {
+    this.botTraits.set(bot, traits)
+    if (this.isHost) this.ctx.bots?.setBotTraits?.(bot - BOT_ID_BASE, traits)
+  }
+  /** Ejected, or turned away as banished: no reconnecting, and the UI takes it from here. */
+  private onEjected(msg: Extract<ServerMessage, { type: 'ejected' }>): void {
+    const by = msg.by ? this.displayName(msg.by) : 'the host'
+    this.conn.close()
+    try { this.onDisconnect(false) } finally { this.stoppedHere(msg.banish === 'none' ? 'You were ejected from this world. You may rejoin when you like.' : 'You were ejected from this world.') }
+    this.ctx.onEjected?.({ by, banish: msg.banish, seconds: msg.seconds })
   }
 
   private onGame(msg: Extract<ServerMessage, { type: 'game' }>): void {
@@ -2029,7 +2108,21 @@ export class NetClient implements System {
       case 'default': if (msg.actor !== this.id) this.event(`${a} is it`); break
       case 'leave': if (msg.game.it && msg.game.it !== this.id) this.event(`${this.nameOf(msg.game.it)} is it`); break
       case 'lock': this.event(msg.game.locked ? 'Host locked shared sliders' : 'Host unlocked shared sliders'); break
-      case 'host': this.event(msg.actor === this.id ? 'You are now host' : `${a} is now host`); break
+      case 'host': {
+        // Who had it and why (newer rooms say), once per change: a clear line for everyone.
+        const from = msg.from ? this.departed.get(msg.from) ?? this.nameOf(msg.from) : ''
+        const why = msg.reason === 'away' ? `${from} is away. ` : msg.reason === 'ejected' ? `${from} was ejected. ` : from ? `${from} left. ` : ''
+        this.event(msg.actor === this.id ? `${why}You are now the host of this world.` : `${a} is now the host.`)
+        // The room's bot overrides outlast the host: the new host's bots take them on.
+        if (msg.actor === this.id) for (const [id, traits] of this.botTraits) this.ctx.bots?.setBotTraits?.(id - BOT_ID_BASE, traits)
+        break
+      }
+      case 'mute': this.event(msg.muted ? `${b} was muted for everyone` : `${b} can be heard again`); break
+      case 'eject':
+        this.event(`${b} was ejected from this world`)
+        // The host's simulation drops that very bot (the room has already lowered the count).
+        if (msg.target !== undefined && isBotId(msg.target) && this.isHost) this.ctx.bots?.ejectBot?.(msg.target - BOT_ID_BASE)
+        break
       case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : msg.game.mode === MODE_TAG ? 'Tag game: ram or beam whoever is it' : 'Explore: no game running'); break
       case 'capture': this.event(`${a} ${msg.actor === this.id ? 'hold' : 'holds'} the hill`); break
       case 'contest': this.event('The hill is contested'); break
@@ -2404,3 +2497,12 @@ export function startNetworking(ctx: NetContext): NetClient {
 function materializing(vehicle: Vehicle | undefined): boolean {
   return vehicle?.object.userData.materializing === true
 }
+
+/** The player's own choice to show their region and country (default yes), kept on this device. */
+const SHARE_LOCATION_KEY = 'mira.shareLocation'
+function shareLocationPreference(): boolean {
+  try { return localStore()?.getItem(SHARE_LOCATION_KEY) !== '0' } catch { return true }
+}
+/** A model only where the browser volunteers one (Android), asked for once at load; display only. */
+const DEVICE_MODEL: { value?: string } = {}
+if (typeof navigator !== 'undefined') void deviceModel().then(m => { DEVICE_MODEL.value = m }, () => {})

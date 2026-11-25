@@ -16,6 +16,10 @@ import { wrapDistance } from './wrap'
 export const PROTOCOL_VERSION = 2
 /** Close code: this player's place was taken over by a newer connection with its secret. */
 export const CLOSE_REPLACED = 4003
+/** The room closes an ejected player's socket with this code, after sending 'ejected'. */
+export const CLOSE_EJECTED = 4006
+/** How long an eject keeps someone out of that one world (server/banish.ts). */
+export type BanishChoice = 'none' | '5m' | '30m' | '24h' | 'permanent'
 
 /** Binary message kinds (first byte). */
 export const BIN_STATE = 1
@@ -200,6 +204,18 @@ export interface PlayerInfo {
    */
   play?: boolean
   /**
+   * Where the player is, never finer than a first-level region: ISO 3166-1 alpha-2 country ("US")
+   * and the region's name ("Texas"). Absent when unknown or when the player turned sharing off
+   * (shareLocation in hello and profile): then the room sends no location for them to anyone.
+   */
+  country?: string
+  region?: string
+  /** What the player is on, from the fixed list in shared/device.ts, and a model only where the browser volunteers one (Android). Display only. */
+  deviceLabel?: string
+  deviceModel?: string
+  /** Muted for everyone by a moderator (shared/moderation.ts): the room relays none of their chat. */
+  muted?: true
+  /**
    * What the room vouches for about this player: 'creator' when its hello proved the creator
    * key (server/creator.ts). Set only by the room; any role a client sends is ignored. Absent
    * for everyone else and from older rooms; an older client ignores it and shows no badge.
@@ -210,6 +226,11 @@ export interface PlayerInfo {
 
 /** Roles the room may assert on a PlayerInfo. Kept equal to server/creator.ts ROLES. */
 export type PlayerRole = 'creator'
+
+/** A bot's personality traits (src/bots/mind/personality.ts), each 0..1. */
+export const BOT_TRAITS = ['boldness', 'curiosity', 'sociability', 'mischief', 'patience'] as const
+export type BotTrait = typeof BOT_TRAITS[number]
+export type BotTraits = Partial<Record<BotTrait, number>>
 
 /**
  * Game modes, the value of the shared parameter `game.mode`.
@@ -400,6 +421,8 @@ export type ClientMessage =
    * grant the creator role. Never relayed, stored or logged; a wrong one is treated as absent.
    */
   | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean
+      /** Show my region and country to others (default true); my device (shared/device.ts), display only. */
+      shareLocation?: boolean; deviceLabel?: string; deviceModel?: string
       aid?: string; build?: string; device?: string; backend?: string; quality?: number; ref?: string; creator?: string
       /** Device and graphics capability, once per session (src/net/deviceFacts.ts, server/analytics.ts cleanDevice). */
       dev?: object }
@@ -409,7 +432,16 @@ export type ClientMessage =
    * de-duplicates a name exactly as at hello, and takes at most one rename per
    * RENAME_INTERVAL_MS; an ignored rename is answered with the player's current profile.
    */
-  | { type: 'profile'; kind?: string; colors?: [string, string]; name?: string; play?: boolean }
+  | { type: 'profile'; kind?: string; colors?: [string, string]; name?: string; play?: boolean; shareLocation?: boolean }
+  /** Moderators only (shared/moderation.ts): mute a player for everyone, or lift it. */
+  | { type: 'mute'; id: number; muted: boolean }
+  /** Moderators only: eject a player, kept out of this world for the chosen time, or remove a bot. */
+  | { type: 'eject'; id: number; banish?: BanishChoice }
+  /** Moderators only: this world's active banishes, and lifting one. */
+  | { type: 'banishes' }
+  | { type: 'unbanish'; ref: string }
+  /** Moderators only: set one bot's personality traits (clamped to 0..1, unknown traits dropped). */
+  | { type: 'bot-traits'; bot: number; traits: BotTraits }
   /**
    * The grabbed player asks player (or bot) `from` to let go of the cord it has tied to them: a
    * press of their own Grapple, or a double tap of brake. The room checks that `from`'s cord is
@@ -491,7 +523,7 @@ export type ClientMessage =
   | { type: 'chat'; text: string; bot?: number }
 
 export type TagEvent =
-  | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
+  | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host' | 'mute' | 'eject'
   // King of the Hill
   | 'mode' | 'capture' | 'contest' | 'free' | 'stuck' | 'dunk' | 'win' | 'reset'
 
@@ -502,6 +534,10 @@ export type ServerMessage =
       id: number
       slot: number
       room: string
+      /** public, universe or private (shared/moderation.ts): who may moderate here. */
+      roomKind?: 'public' | 'universe' | 'private'
+      /** Bots' personality overrides set in this room, by bot id. */
+      botTraits?: Record<number, BotTraits>
       players: PlayerInfo[]
       params: Record<string, ParamWireValue>
       game: GameState
@@ -529,7 +565,21 @@ export type ServerMessage =
   /** Player `from` used Yoink on vehicle `y.to`. */
   | { type: 'yoink'; from: number; y: YoinkWire }
   | { type: 'race'; race: RaceState | null }
-  | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
+  | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number
+      /** event 'host': the previous host and why it changed. event 'mute': the new state. */
+      from?: number; reason?: 'left' | 'away' | 'ejected'; muted?: boolean }
+  /**
+   * To an ejected player only, just before the room closes the socket with CLOSE_EJECTED, and to a
+   * banished person who tries to come back. It concerns this one world. seconds: time left, null
+   * for permanent; banish 'none' means they may rejoin when they like.
+   */
+  | { type: 'ejected'; by: number; banish: BanishChoice; seconds: number | null }
+  /** To a moderator: this world's active banishes (names at the time, time left, no identities). */
+  | { type: 'banishes'; list: { ref: string; name: string; seconds: number | null }[] }
+  /** To a moderator whose banish could not be kept: the world's list is full of permanent ones. */
+  | { type: 'banish-refused'; reason: 'full' }
+  /** One bot's effective trait overrides, to everyone. */
+  | { type: 'bot-traits'; bot: number; traits: BotTraits }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply
    * `params`. `idle`: nobody was playing; `host`: player `from` asked for defaults; `join`:
@@ -543,7 +593,7 @@ export type ServerMessage =
    */
   | { type: 'chat'; from: number; text: string; t: number }
   /** Your line was not relayed: `rate` (try again in `wait` seconds) or `off` (the host turned chat off). */
-  | { type: 'chat-refused'; reason: 'rate' | 'off'; wait?: number }
+  | { type: 'chat-refused'; reason: 'rate' | 'off' | 'muted'; wait?: number }
 
 export const MAX_JSON_BYTES = 8192
 // The room retains its registered world settings and up to 256 additional ids. A 64-character id, finite number and JSON punctuation
