@@ -1,5 +1,6 @@
 import type { VehicleKind } from '../vehicles'
 import type { Input } from '../core/Input'
+import type { GearControls, GearRack } from '../weapons/Gear'
 import { params } from '../../shared/params'
 import './touch-stick.css'
 import { persistHandedness, touchAimCurve, touchAimRadius, touchAimSpeed, touchLeftHanded, touchPinchSpeed, touchRole } from './TouchPreferences'
@@ -55,6 +56,21 @@ export interface TouchTag {
   /** Drop a held charge or carry without sending it. */
   cancel(): void
 }
+interface GearButtonLabel { readonly text: string; readonly name: string }
+
+const tagLabel: GearButtonLabel = { text: 'TAG', name: 'Tag with Plasma Tag' }
+const gearButtonLabels: Partial<Record<string, GearButtonLabel>> = {
+  'red:charge': { text: 'CHARGE', name: 'Charge Plasma Thunder' },
+  'red:fire': { text: 'SEND', name: 'Send Plasma Thunder on release' },
+  'pester:launch': { text: 'SEND', name: 'Send a Chaser' },
+  'bungee:launch': { text: 'HOOK', name: 'Hook with Grapple' },
+  // The rack advertises Let go for the flying hook, but the primary trigger leaves it alone.
+  'bungee:release': { text: 'WAIT', name: 'Wait for Grapple to attach' },
+  'bungee:reelIn': { text: 'REEL', name: 'Reel in Grapple' },
+  'yoink:grab': { text: 'GRAB', name: 'Grab with Yoink' },
+  'yoink:fling': { text: 'FLING', name: 'Fling with Yoink on release' },
+}
+
 /** How long the reticle and the camera aim outlast the lift, ms: a release shot still goes where it pointed. */
 export const TAG_FADE_MS = 150
 /** The cameras with a distance to pinch: chase (camera.mode 0) and orbit (2). Cockpit, stationary and roam have none. */
@@ -87,6 +103,9 @@ export class TouchControls {
   private cordButtons: HTMLElement[] = []
   private specialButton?: HTMLElement
   private zorbButton?: HTMLElement
+  private gearButton?: HTMLButtonElement
+  private gearButtonLabel?: GearButtonLabel
+  private gearControls?: GearControls
   /** Shows Tag's held state and the Cancel ring; run on every Tag event and every held frame. */
   private syncTag = (): void => {}
 
@@ -280,7 +299,7 @@ export class TouchControls {
    * TAG_FADE_MS.
    */
   private tagButton(signal: AbortSignal): void {
-    const button = this.element.querySelector<HTMLButtonElement>('[data-action="fire"]')!
+    const button = this.gearButton = this.element.querySelector<HTMLButtonElement>('[data-action="fire"]')!
     const stick = this.tagStick
     const ring = this.cancelRing!
     const sync = this.syncTag = () => {
@@ -371,7 +390,24 @@ export class TouchControls {
   setGear(gear: TouchGear): void { this.gear = gear }
   /** The Bungee reads V from the keyboard; holding LET OUT is holding V. */
   private key(type: 'keydown' | 'keyup'): void { window.dispatchEvent(new KeyboardEvent(type, { code: 'KeyV', key: 'v' })) }
+  private syncGearButton(): void {
+    const button = this.gearButton
+    if (!button) return
+    const controls = (window as unknown as { miraNet?: { gear?: GearRack } }).miraNet?.gear?.controls()
+    if (controls === this.gearControls && this.gearButtonLabel) return
+    this.gearControls = controls
+    const action = controls?.actions[0]
+    const label = (controls && action && gearButtonLabels[`${controls.gear}:${action.id}`]) ?? tagLabel
+    if (label === this.gearButtonLabel) return
+    this.gearButtonLabel = label
+    // The glass press wraps the text in a span that it scales while the thumb is down.
+    const content = button.querySelector('.glass-press-label') ?? button
+    content.textContent = label.text
+    button.setAttribute('aria-label', label.name)
+  }
+
   update(): void {
+    this.syncGearButton()
     if (this.tagStick.held) {
       const now = performance.now()
       this.tagStick.frame((now - this.lastFrame) / 1000)

@@ -171,7 +171,13 @@ html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .shell-minimap
 
 .touch-controls .touch-actions { grid-template-rows: repeat(2, var(--thumb-size)); grid-template-areas: "fire special" "zorb brakes"; }
 .touch-controls[data-vehicle="jet"] .touch-actions { grid-template-areas: "throttleUp fire special" "throttleDown zorb brakes"; }
-.touch-controls .touch-actions [data-action="fire"] { grid-area: fire; }
+/* Keep the gear verb on one line in both the plain disc and the shader's scaled label. */
+.touch-controls .touch-actions .liquid-glass.glass-round.touch-fire {
+  grid-area: fire; font-size: 11px; letter-spacing: .06em; white-space: nowrap; overflow-wrap: normal;
+}
+.touch-controls .touch-actions .liquid-glass.glass-round.touch-fire > .glass-press-label {
+  white-space: inherit; overflow-wrap: inherit;
+}
 .touch-controls .touch-actions [data-action="special"] { grid-area: special; }
 .touch-controls .touch-actions [data-action="zorb"] { grid-area: zorb; }
 .touch-controls .touch-actions [data-action="brakes"] { grid-area: brakes; }

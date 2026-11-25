@@ -79,7 +79,7 @@ describe('applyRoomWorld', () => {
     // What a joiner brings from its URL or from sliders moved before joining.
     params.set('tag.cooldown', 7)
     params.set('laser.speed', 40)
-    params.set('net.sendRate', 30)
+    params.set('net.sendRate', 25)
     const changes: string[] = []
     const off = params.onChange((id, _value, source) => changes.push(`${id}:${source}`))
     applyRoomWorld(oldRoom())
@@ -87,7 +87,7 @@ describe('applyRoomWorld', () => {
     expect(tagCooldown.value).toBe(tagCooldown.def.default)
     expect(laserSpeed.value).toBe(250)
     expect(kothTargetScore.value).toBe(30)
-    expect(netSendRate.value).toBe(30)
+    expect(netSendRate.value).toBe(25)
     // Told to listeners as the room's doing, so nothing is echoed back to the server.
     expect(changes).toContain('tag.cooldown:remote')
     expect(changes.every((c) => c.endsWith(':remote'))).toBe(true)

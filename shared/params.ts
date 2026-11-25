@@ -142,7 +142,7 @@ export const worldSeed = defineParam({
  *  - below 0, that older name of the seed -n, pinned when a seed is changed under it.
  */
 export const worldNameSeed = defineParam({
-  id: 'world.nameSeed', label: 'Name', group: 'World', scope: 'world',
+  id: 'world.nameSeed', label: 'Name seed', group: 'World', scope: 'world',
   default: 0, min: -999999, max: 999999999, step: 1,
 })
 
