@@ -11,6 +11,10 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
+// 6. Every node sits on its line: each circle's centre x is its line's centre x (half a pixel),
+//    and each line runs from its first circle's centre to its last's (the owner, 25 November
+//    2026: the line ran past Wings and the circles sat left of it). Chat's unread count never
+//    moves the key column. At 1280x800 and on a phone, where only the drum's lit node shows.
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
@@ -50,6 +54,32 @@ const measure = (page) => page.evaluate(() => {
     w: innerWidth, h: innerHeight,
   }
 })
+/** Each line (the drum's spine, the rows' hairline) with the centres of the circles on it. */
+const lines = (page) => page.evaluate(() => {
+  const r = (e) => e.getBoundingClientRect()
+  const node = (e) => { const c = getComputedStyle(e, '::before'); if (c.content === 'none' || c.display === 'none') return null; const b = r(e); return { x: b.left + parseFloat(c.left) + parseFloat(c.width) / 2, y: b.top + parseFloat(c.top) + parseFloat(c.marginTop) + parseFloat(c.height) / 2 } }
+  const centre = (e) => { const b = r(e); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } }
+  const drum = document.querySelector('.gear-selector .gs-drum'), d = r(drum), spine = r(document.querySelector('.gear-selector .gs-spine'))
+  // The drum's circles in its three visible rows: the selected one's (on the window) and its neighbours'.
+  // (A circle left of the drum's clip, as on touch, is not drawn.)
+  const gear = [node(document.querySelector('.gear-selector .gs-window')), ...[...drum.querySelectorAll('button.gs-item:not(.is-active)')].map(node)
+    .filter((n) => n && n.y > d.top && n.y < d.bottom && n.x >= d.left)].sort((a, b) => a.y - b.y)
+  const acc = document.querySelector('.hud-accessories'), rows = acc && acc.checkVisibility() && (() => { const c = getComputedStyle(acc, '::before'), b = r(acc); return { x: b.left + parseFloat(c.left) + parseFloat(c.width) / 2, top: b.top + parseFloat(c.top), bottom: b.bottom - parseFloat(c.bottom) } })()
+  return {
+    gear: { line: { x: spine.left + spine.width / 2, top: spine.top, bottom: spine.bottom }, nodes: gear },
+    rows: rows && { line: rows, nodes: [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) .acc-pip')].map((p) => centre(p)) },
+  }
+})
+const onLines = (m, at, ends = true) => {
+  for (const [name, group] of Object.entries(m)) {
+    if (!group) continue
+    assert.ok(group.nodes.length, `${at}: ${name} has circles`)
+    for (const n of group.nodes) assert.ok(Math.abs(n.x - group.line.x) <= .5, `${at}: a ${name} circle is centred on its line ${JSON.stringify(group)}`)
+    if (!ends) continue
+    assert.ok(Math.abs(group.line.top - group.nodes[0].y) <= .5, `${at}: the ${name} line starts at its first circle ${JSON.stringify(group)}`)
+    assert.ok(Math.abs(group.line.bottom - group.nodes.at(-1).y) <= .5, `${at}: the ${name} line ends at its last circle ${JSON.stringify(group)}`)
+  }
+}
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
 try {
@@ -84,6 +114,24 @@ try {
     }
     // 3 and 4, in the free cursor mode.
     await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+    if (w === 1280) {
+      // 6. Circles on their lines, with each gear selected (first, last and between), and Chat's
+      // key column still with an unread count of 1 and 9+.
+      const gears = await page.locator('.gear-selector .gs-drum button.gs-item').count()
+      for (let g = 0; g < gears; g++) {
+        await page.keyboard.press(String(g + 1)); await page.waitForTimeout(350)
+        onLines(await lines(page), `${w}x${h} gear ${g + 1}`)
+      }
+      const keyX = () => page.evaluate(() => [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) kbd')].map((k) => k.getBoundingClientRect().left))
+      const still = await keyX()
+      assert.ok(still.every((x) => Math.abs(x - still[0]) <= .5), `the keys share one column ${JSON.stringify(still)}`)
+      for (const n of [1, 12, 0]) {
+        await page.evaluate(async (n) => { const { chatLink } = await import('/src/ui/chat/chatLink.ts'); chatLink.setUnread(n, false) }, n)
+        await page.waitForTimeout(250)
+        assert.deepEqual(await keyX(), still, `an unread count of ${n} moves no key`)
+        onLines(await lines(page), `${w}x${h} unread ${n}`)
+      }
+    }
     if (w === 1440) {
       for (const kind of ['buggy', 'jet', 'hovercraft']) {
         await page.evaluate((k) => window.mira.swapVehicle(k), kind)
@@ -117,6 +165,9 @@ try {
   for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
     const { context, page } = await open({ viewport, isMobile: true, hasTouch: true })
     assert.equal(await page.locator('.hud-accessories').isVisible(), false, `${viewport.width}x${viewport.height}: no accessory rows on a phone`)
+    // 6. The drum's lit node on its line (touch hides the other circles, and its line fades out
+    // past the rows as the drum scrolls, so only the centre is checked).
+    onLines(await lines(page), `${viewport.width}x${viewport.height}`, false)
     await context.close()
   }
   assert.deepEqual(errors, [], 'no page errors')
