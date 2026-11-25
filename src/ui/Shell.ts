@@ -2030,7 +2030,9 @@ export class Shell implements System {
     for (const [id, chip] of this.galaxyChips) {
       // The world in play is whatever the room says it is: its sphere and label follow.
       const world = this.galaxyWorlds.find(w => w.id === id)
-      if (world && id === current && !world.forming) {
+      // Before entering, a public planet shows its canonical world (core/publicWorlds.ts), not the
+      // world this page happened to start on; once in play, or in a private room, the world in play.
+      if (world && id === current && !world.forming && (this.started || !isDefaultRoom(this.room))) {
         world.nameSeed = worldNameSeed.value
         if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
       }
