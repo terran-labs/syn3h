@@ -97,8 +97,34 @@ export default {
       if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
       return env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID)).fetch(new Request(`https://registry/${url.pathname === '/presence' ? 'presence' : 'totals'}`))
     }
+    // The standalone WebGPU present test (public/webgpu-present-test.html) keeps its .html address:
+    // Workers Assets' default html_handling answers /name.html with a 307 to /name, and the
+    // release guard (tools/frozen-versions.mjs check) wants that release's file at the address
+    // asked. So this one path runs the Worker first (wrangler.toml) and is served exactly as any
+    // other root file, by version, except that its own static asset is read at the extensionless
+    // address the assets answer with a 200. A frozen version's copy comes from R2 under its .html
+    // key, as archived.
+    if (url.pathname === PRESENT_TEST) return serveVersioned(req, url, { ...env, ASSETS: htmlAsset(env.ASSETS) })
     return serveVersioned(req, url, env)
   },
+}
+
+const PRESENT_TEST = '/webgpu-present-test.html'
+/** `assets`, reading PRESENT_TEST from its extensionless address: the same body, status and caching headers, as text/html, never a redirect. */
+function htmlAsset(assets: Fetcher): Fetcher {
+  // Only fetch: it is all serveVersioned and the functions it calls use of ASSETS.
+  return {
+    async fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+      const req = new Request(input as RequestInfo, init)
+      const url = new URL(req.url)
+      if (url.pathname !== PRESENT_TEST) return assets.fetch(req)
+      url.pathname = PRESENT_TEST.slice(0, -'.html'.length)
+      const got = await assets.fetch(new Request(url, { method: req.method, headers: req.headers, redirect: 'manual' }))
+      const out = new Response(got.body, got)
+      if (got.ok) out.headers.set('content-type', 'text/html; charset=utf-8')
+      return out
+    },
+  } as unknown as Fetcher
 }
 
 /**

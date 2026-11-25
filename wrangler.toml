@@ -12,7 +12,9 @@ binding = "ASSETS"
 # if SPA style not found handling is enabled later.
 # "/" goes to the Worker so ?v=<version> can serve a frozen build; build.json and models too,
 # because their names are not content hashed and a frozen page must get its own copies.
-run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*"]
+# /webgpu-present-test.html: the default html_handling would answer it with a 307 to the
+# extensionless address; the Worker serves the file itself, at its own address (server/worker.ts).
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html"]
 
 # Frozen versions, stored once in R2 (tools/frozen-versions.mjs archive) and read by the Worker for
 # every version but its own; deployments carry none. "/v/*" above sends a frozen page's own
