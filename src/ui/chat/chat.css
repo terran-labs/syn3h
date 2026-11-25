@@ -100,10 +100,11 @@
 .chat-status[hidden] { display: none; }
 /* (The field's selectors carry .chat-body so they outrank theme-halo.css's underline on every
    card input.) */
+/* Offset the field by its inline padding to align its text with the log. */
 /* The field and Send: one gradient rule above, nothing below, and no underline on the field
    itself; it sits on the card. Send is the card's primary action, so it is filled. */
 .chat-form { display: flex; align-items: center; gap: 8px; padding: 8px 0 0; border-top: 1px solid transparent; border-image: var(--rule) 1; }
-:root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { flex: 1; min-width: 0; min-height: 40px; padding: 4px 2px; border: 0; background: none; box-shadow: none; font: 400 14px 'Barlow', sans-serif; }
+:root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field { flex: 1; min-width: 0; min-height: 40px; margin-inline-start: -8px; padding: 4px 8px; border: 0; background: none; box-shadow: none; font: 400 14px 'Barlow', sans-serif; }
 :root .mira-shell.exploration-ui .world-inspector .chat-body .chat-form input.chat-field.chat-field:focus-visible { outline: none; border-radius: var(--glass-control-radius, 24px); background: rgb(255 255 255 / .06); }
 :root .mira-shell.exploration-ui .world-inspector .chat-form .chat-send { min-height: 40px; padding: 0 18px; border: 1px solid transparent; border-radius: var(--glass-control-radius, 24px); background: rgb(255 255 255 / .2); color: #fff; font: 600 12px 'Barlow', sans-serif; letter-spacing: .06em; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px; transition: background-color .18s, outline-color .18s; }
 :root .mira-shell.exploration-ui .world-inspector .chat-form .chat-send:hover { background: rgb(255 255 255 / .28); outline: var(--control-hover-outline); }
