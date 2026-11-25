@@ -9,7 +9,9 @@
 //  5. "Reset M changes" touching anything outside its section, or nothing inside it;
 //  6. a row moving when its reset appears or goes.
 // Written against the registry and the rows the row builder makes, not card names, so it
-// survives cards being merged and renamed.
+// survives cards being merged and renamed. A setting whose only control is built by hand
+// marks that control with data-setting-id="<id>" and gives it the shared reset
+// (src/ui/resetControl.ts); the coverage check counts it then, and fails until it does.
 //
 //   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs reset-defaults
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
@@ -43,9 +45,12 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- 1. Every setting row has a reset, and every setting has a row. ----
     const coverage = await page.evaluate(notRows => {
-      const rows = [...document.querySelectorAll('.wi-row[data-id]')]
-      const bare = rows.filter(row => !row.querySelector(':scope > button.reset-control')).map(row => row.dataset.id)
-      const shown = new Set(rows.map(row => row.dataset.id))
+      // Rows from the row builder (in play and in the lobby's Settings), and controls built by
+      // hand that declare the setting they set with data-setting-id. Both must carry the reset.
+      const rows = [...document.querySelectorAll('.wi-row[data-id]')], built = [...document.querySelectorAll('[data-setting-id]')]
+      const bare = [...rows.filter(row => !row.querySelector(':scope > button.reset-control')).map(row => row.dataset.id),
+        ...built.filter(el => !el.querySelector('button.reset-control')).map(el => el.dataset.settingId)]
+      const shown = new Set([...rows.map(row => row.dataset.id), ...built.map(el => el.dataset.settingId)])
       const missing = mira.params.all().map(p => p.def).filter(def => !def.hidden && !notRows.includes(def.id) && !shown.has(def.id))
         // A hidden vehicle's handling is hidden with it (src/vehicles/available.ts).
         .filter(def => !(def.group === 'Tank' && !document.querySelector('[data-group="Tank"]'))).map(def => def.id)
@@ -120,13 +125,16 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     // ---- 4. Under the host's lock a guest cannot reset a shared setting. ----
     await page.evaluate(() => {
       mira.params.set('world.gravity', 12, 'local')
+      // A guest in a locked room: canEditWorld() reads the room client (worldPermissions.ts).
+      window.resetCheckNet = !window.miraNet
+      if (window.resetCheckNet) window.miraNet = {}
       Object.defineProperty(window.miraNet, 'canEditWorld', { get: () => false, configurable: true })
     })
     const gravity = page.locator('.wi-row[data-id="world.gravity"] > .reset-control')
     await page.waitForFunction(() => document.querySelector('.wi-row[data-id="world.gravity"] > .reset-control').disabled)
     await gravity.evaluate(b => b.click())
     assert.equal(await page.evaluate(() => mira.params.get('world.gravity').value), 12, 'a locked reset changes nothing')
-    await page.evaluate(() => { delete window.miraNet.canEditWorld; mira.params.set('world.gravity', mira.params.get('world.gravity').def.default, 'local') })
+    await page.evaluate(() => { if (window.resetCheckNet) delete window.miraNet; else delete window.miraNet.canEditWorld; mira.params.set('world.gravity', mira.params.get('world.gravity').def.default, 'local') })
 
     assert.deepEqual(errors, [], 'no page errors')
     console.log(`reset-defaults ${mode}: ${coverage.rows} rows, all with a working reset`)
