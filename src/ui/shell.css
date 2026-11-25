@@ -396,32 +396,25 @@
 .galaxy-open .lobby-panels, .galaxy-open .lobby-footer { visibility: hidden; }
 .galaxy-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 16px max(18px, env(safe-area-inset-bottom)); }
 .galaxy-ui > * { pointer-events: auto; }
-/* Its own stacking layer: captions order by depth among themselves (Shell sets z-index per caption)
-   and stay under the lobby's controls. */
+/* Keep the caption layer under the controls, with each caption anchored to its planet. */
 .galaxy-labels { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
-/* Planet captions (the owner, 16 November 2026: "a lot more subtle... remove the borders and
-   backgrounds entirely and always have the text be below"): type set straight on the scene,
-   centred under each planet, like a star chart's. No plate, no rim, no bar. Shell.ts places
-   each from its planet alone and sets only --caption-strength (depth, pointing, focus). The
-   planet takes taps; the caption is a focusable button for the keyboard and screen readers. */
 /* `:not(#galaxy-caption)` lifts these over the shell's and themes' generic button rules (a
    caption is a button), which would otherwise give it a rim and a fill; no element has that id. */
 .mira-shell button.galaxy-label:not(#galaxy-caption) {
   --caption-strength: 1; --caption-tint: #f6f9fc; --caption-accent: #f6f9fc;
-  /* Nearer, larger planets get larger captions (src/ui/galaxy/captionScale.ts): the name and the
-     lines under it are sized in em of this, so one eased font-size scales them all, letter
-     spacing included. --caption-scale is 1 for the farthest planets, the original size. */
-  font-size: calc(1px * var(--caption-scale, 1));
-  position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%);
-  display: grid; justify-items: center; min-width: 0; min-height: 0; margin: 0; padding: 0;
+  /* Scale the whole button from its top centre. Its layout box stays at the farthest size. */
+  font-size: 1px;
+  position: absolute; left: 0; top: 0; translate: -200px -200px;
+  transform-origin: 50% 0; transform: translateX(-50%) scale(var(--caption-scale, 1));
+  display: grid; justify-items: center; align-content: start; min-width: 44px; min-height: 32px; margin: 0; padding: 0;
   border: 0; border-radius: 0; outline: 0; background: none; background-image: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
-  pointer-events: none; cursor: default; white-space: nowrap; text-align: center;
+  pointer-events: none; touch-action: none; white-space: nowrap; text-align: center;
   color: color-mix(in srgb, #f6f9fc 94%, var(--caption-tint));
   text-shadow: var(--float-under);
   --caption-pulse: 0;
   /* At rest, toward the hovered strength by the planet's pulse (0 to its peak share); hidden stays hidden. */
   opacity: calc(var(--caption-base) * var(--caption-strength) + (min(1, calc(var(--caption-strength) * 100)) - var(--caption-base) * var(--caption-strength)) * var(--caption-pulse));
-  transition: opacity .35s ease-out, color .35s ease-out, font-size .35s ease-out;
+  transition: opacity .35s ease-out, color .35s ease-out;
   /* Several discs cut one caption: each mask layer keeps what lies outside its disc, so they intersect. */
   mask-composite: intersect; -webkit-mask-composite: source-in; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat;
 }
@@ -437,7 +430,7 @@
    biome and online lines rise with it and stay a step quieter. A caption at strength 0 (its planet hidden, or not yet arrived in the
    opening) stays hidden: min(1, strength x 100) is 0 there and 1 anywhere else. The occlusion
    mask is untouched, so letters behind a nearer planet stay cut. */
-.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: min(1, calc(var(--caption-strength) * 100)); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out, font-size .35s ease-out; }
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: min(1, calc(var(--caption-strength) * 100)); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out; }
 .mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) > small { opacity: .85; transition: opacity .22s ease-out; }
 @media (prefers-reduced-motion: reduce) {
   .mira-shell button.galaxy-label:not(#galaxy-caption), .mira-shell button.galaxy-label:not(#galaxy-caption) > small { transition: none; }
@@ -448,9 +441,9 @@
 /* The galaxy would not start: its labels become a row of buttons above the help line. */
 .galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
 .mira-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
-/* A caption that would touch the lobby's own controls (Shell, captionBlocked) has faded to nothing
-   through --caption-strength; it takes no taps either, so a tap there reaches the control. */
-.mira-shell button.galaxy-label.is-blocked { pointer-events: none; }
+.galaxy-open button.galaxy-label:not(#galaxy-caption):not(.is-suppressed) { pointer-events: auto; cursor: pointer; }
+.mira-shell button.galaxy-label:not(#galaxy-caption).is-suppressed { opacity: 0; transition: none; }
+
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
 /* The descent: the lobby's words and glass fall away, the galaxy blurs as it dives, and the
@@ -517,7 +510,7 @@
     display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px; border-radius: 22px;
   }
   .mira-shell.exploration-ui.galaxy-open .galaxy-links button { min-height: 44px; padding: 0 14px; font-size: 12px; }
-  /* Smaller captions on a short phone; overlap is accepted. */
+  /* Smaller captions on a short phone. */
   .mira-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
   .mira-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
 }

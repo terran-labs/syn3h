@@ -1,11 +1,10 @@
-/**
- * The lobby's planet captions take no layout: each sits under its own planet (Shell.ts), and
- * captions may overlap. What remains here is depth. Captions are page elements over the
- * canvas, so they cannot be tucked behind a world; a planet mostly hidden behind a nearer one,
- * or behind the sun, has its caption faded instead of written over what is in front.
- */
 /** A planet on screen. depth: distance from the eye along the view; smaller is nearer. */
-export interface LabelPlace { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }
+export interface ScreenDisc { x: number; y: number; radius: number; depth?: number }
+export interface LabelPlace extends ScreenDisc { id: string; visible: boolean; depth: number }
+
+export function insideDisc(disc: ScreenDisc, x: number, y: number): boolean {
+  return Math.hypot(x - disc.x, y - disc.y) < disc.radius
+}
 
 /** How much of disc a is covered by disc b, 0 to 1. */
 export function covered(a: { x: number; y: number; radius: number }, b: { x: number; y: number; radius: number }): number {
@@ -23,7 +22,7 @@ export function covered(a: { x: number; y: number; radius: number }, b: { x: num
  * planet, or it sits behind the sun's core (the sun is drawn over a far planet). `sun` is the
  * sun's disc on screen with its depth, when known.
  */
-export function captionHidden(place: LabelPlace, places: readonly LabelPlace[], sun?: { x: number; y: number; radius: number; depth?: number }): boolean {
+export function captionHidden(place: LabelPlace, places: readonly LabelPlace[], sun?: ScreenDisc): boolean {
   if (places.some(other => other.id !== place.id && other.visible && other.depth < place.depth && covered(place, other) > 0.5)) return true
   return !!sun && sun.depth !== undefined && sun.depth < place.depth && covered(place, sun) > 0.5
 }
@@ -32,19 +31,20 @@ export function captionHidden(place: LabelPlace, places: readonly LabelPlace[], 
  * The mask that cuts a caption where nearer bodies cover it: one transparent disc per planet
  * nearer the eye than the caption's own (and the sun, when nearer), in the caption's own box.
  * Positions are given from the box's top centre (`calc(50% + dx)`), since the caption is
- * centred on its planet, so nothing has to be measured. The disc edge is a one pixel ramp
+ * usually centred on its planet. The disc edge is a one pixel ramp
  * at the planet's limb, crisp and antialiased. 'none' when nothing nearer touches it.
  */
-export function captionMask(place: LabelPlace, places: readonly LabelPlace[], sun: { x: number; y: number; radius: number; depth?: number } | undefined, top: number, scale = 1): string {
+export function captionMask(place: LabelPlace, places: readonly LabelPlace[], sun: ScreenDisc | undefined, top: number, scale = 1, center = place.x): string {
   const nearer = places.filter(other => other.id !== place.id && other.visible && other.depth < place.depth)
   const bodies: { x: number; y: number; radius: number }[] = [...nearer]
   if (sun && sun.depth !== undefined && sun.depth < place.depth) bodies.push(sun)
   // Only bodies that can reach the caption: within a generous box under the planet, as large as the caption is drawn.
-  const reach = bodies.filter(b => Math.abs(b.x - place.x) < b.radius + 160 * scale && b.y + b.radius > top - 2 && b.y - b.radius < top + 40 * scale)
+  const reach = bodies.filter(b => Math.abs(b.x - center) < b.radius + 160 * scale && b.y + b.radius > top - 2 && b.y - b.radius < top + 40 * scale)
   if (!reach.length) return 'none'
   return reach.map(b => {
-    const dx = (b.x - place.x).toFixed(1), dy = (b.y - top).toFixed(1), r = b.radius
-    return `radial-gradient(circle at calc(50% + ${dx}px) ${dy}px, transparent ${Math.max(0, r - 0.5).toFixed(1)}px, #000 ${(r + 0.5).toFixed(1)}px)`
+    const dx = ((b.x - center) / scale).toFixed(1), dy = ((b.y - top) / scale).toFixed(1)
+    const inner = (Math.max(0, b.radius - 0.5) / scale).toFixed(1), outer = ((b.radius + 0.5) / scale).toFixed(1)
+    return `radial-gradient(circle at calc(50% + ${dx}px) ${dy}px, transparent ${inner}px, #000 ${outer}px)`
   }).join(', ')
 }
 
@@ -59,4 +59,30 @@ export interface ScreenBox { left: number; top: number; right: number; bottom: n
  */
 export function captionBlocked(box: ScreenBox, blockers: readonly ScreenBox[], margin = 8): boolean {
   return blockers.some(b => box.left < b.right + margin && box.right > b.left - margin && box.top < b.bottom + margin && box.bottom > b.top - margin)
+}
+
+/** One placement per caption. Clamping keeps the box in view without switching sides. */
+export function captionBox(place: LabelPlace, top: number, size: { width: number; height: number }, width: number, height: number): ScreenBox | undefined {
+  const inset = 6
+  if (size.width > width - 2 * inset || size.height > height - 2 * inset ||
+      place.x + place.radius < 0 || place.x - place.radius > width ||
+      place.y + place.radius < 0 || place.y - place.radius > height) return
+  const left = Math.max(inset, Math.min(width - inset - size.width, place.x - size.width / 2))
+  top = Math.max(inset, Math.min(height - inset - size.height, top))
+  return { left, top, right: left + size.width, bottom: top + size.height }
+}
+
+/** Sorted by explicit priority, with input order breaking ties so orbit depth cannot swap captions. */
+export function captionLayout(captions: readonly { id: string; box: ScreenBox; priority: number }[], blockers: readonly ScreenBox[]): Map<string, number> {
+  const occupied: ScreenBox[] = []
+  const strength = new Map<string, number>()
+  for (const { id, box } of [...captions].sort((a, b) => b.priority - a.priority)) {
+    if (captionBlocked(box, blockers)) continue
+    if (captionBlocked(box, occupied, 2)) continue
+    let gap = 10
+    for (const other of occupied) gap = Math.min(gap, Math.max(other.left - box.right, box.left - other.right, other.top - box.bottom, box.top - other.bottom))
+    strength.set(id, gap / 10)
+    occupied.push(box)
+  }
+  return strength
 }

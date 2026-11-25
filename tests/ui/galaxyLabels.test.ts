@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captionBlocked, captionHidden, captionMask, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
+import { captionBlocked, captionBox, captionHidden, captionLayout, captionMask, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
 
 const place = (id: string, x: number, y: number, radius: number, depth: number): LabelPlace => ({ id, x, y, radius, visible: true, depth })
 
@@ -45,5 +45,26 @@ describe('captions and the lobby controls', () => {
   it('leaves a caption clear of every control alone', () => {
     expect(captionBlocked({ left: 100, top: 400, right: 220, bottom: 440 }, [dock])).toBe(false)
     expect(captionBlocked({ left: 100, top: 400, right: 220, bottom: 440 }, [])).toBe(false)
+  })
+})
+
+describe('caption placement', () => {
+  it('keeps an edge caption inside the viewport and its mask aligned with the globe', () => {
+    const world = place('edge', 5, 370, 30, 10)
+    const box = captionBox(world, 405, { width: 100, height: 32 }, 350, 400)!
+    expect(box.left).toBeGreaterThanOrEqual(0)
+    expect(box.bottom).toBeLessThanOrEqual(400)
+    const center = (box.left + box.right) / 2
+    const front = place('front', center + 8, box.top + 4, 15, 5)
+    expect(captionMask(world, [front], undefined, box.top, 2, center)).toContain('calc(50% + 4.0px) 2.0px')
+  })
+
+  it('gives a collision to the highlighted caption and keeps the dock clear', () => {
+    const box = { left: 10, right: 100, top: 40, bottom: 70 }
+    const idle = { id: 'idle', box, priority: 0 }
+    const pointed = { id: 'pointed', box, priority: 3 }
+    expect(captionLayout([idle, pointed], []).has('idle')).toBe(false)
+    expect(captionLayout([idle, pointed], []).get('pointed')).toBeGreaterThan(0)
+    expect(captionLayout([idle, pointed], [box]).size).toBe(0)
   })
 })

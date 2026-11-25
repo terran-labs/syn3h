@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pickWorld } from '../../src/ui/galaxy/Galaxy'
+import { pickLobbyTarget, pickWorld } from '../../src/ui/galaxy/Galaxy'
 
 const world = (id: string, x: number, y: number, radius: number, depth: number) => ({ id, x, y, radius, visible: true, depth })
 
@@ -19,5 +19,20 @@ describe('galaxy tap', () => {
   })
   it('ignores worlds that are not visible', () => {
     expect(pickWorld([{ ...world('a', 100, 100, 30, 1), visible: false }], 100, 100)).toBeUndefined()
+  })
+})
+
+describe('caption tap', () => {
+  const front = world('front', 100, 100, 15, 5), back = world('back', 130, 90, 15, 20)
+  const sun = { x: 110, y: 100, radius: 10, depth: 12 }
+
+  it('keeps the caption when a tap only hits another world’s padding', () => {
+    expect(pickLobbyTarget([front, back], sun, 100, 118, 22, 'back')).toBe('back')
+  })
+
+  it('routes masked pixels to a foreground globe and stops at the sun', () => {
+    expect(pickLobbyTarget([front, back], sun, 110, 100, 22, 'back')).toBe('front')
+    expect(pickLobbyTarget([front, back], sun, 117, 100, 22, 'back')).toBeUndefined()
+    expect(pickLobbyTarget([front, back], sun, 117, 100, 22)).toBeUndefined()
   })
 })
