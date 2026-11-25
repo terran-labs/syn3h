@@ -72,7 +72,7 @@ export interface PlayerPanelActions {
   botTraits(id: number): { values: BotTraits; overridden: readonly BotTrait[] } | null
   /** Set a trait (0..1), or reset it to the bot's own nature with null. */
   setBotTrait(id: number, trait: BotTrait, value: number | null): void
-  /** Whether I share my place (the Me card switch), for my own panel's note. */
+  /** Whether I share my place (the "Show my location" switch, Me), for my own panel's note. */
   sharesLocation(): boolean
   /** The phone layout is on: the panel takes the sidebar's place. */
   phone(): boolean

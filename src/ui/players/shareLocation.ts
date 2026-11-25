@@ -1,5 +1,5 @@
 /**
- * "Show my location to other players" (the Me card, Privacy): on by default. Off, the room
+ * "Show my location to other players" (the Me settings, group Privacy): on by default. Off, the room
  * keeps your place to itself and the Players card shows only your device. The net client sends
  * it in hello and as a profile change ({ type: 'profile', shareLocation }), as it does for
  * "Bots may play with me". The server never sends anything finer than a region and a country.
