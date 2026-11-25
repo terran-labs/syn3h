@@ -153,6 +153,14 @@ export const MAX_PUBLIC_ROOMS = 64
 export const RESERVE_MS = 10_000
 /** Counts older than this are not trusted for seating, ms (rooms with traffic refresh every 30 s). */
 export const ASSIGN_TTL_MS = PRESENCE_TTL_MS
+/** How long a public arrival waits for the registry before going to "lobby" as before, ms. */
+export const ASSIGN_TIMEOUT_MS = 1000
+/**
+ * After the registry says overflow is off, a Worker isolate sends public arrivals to "lobby"
+ * without asking again for this long, ms: with the runtime flag off, almost no join waits on
+ * the registry. Turning the flag on therefore reaches every isolate within this time.
+ */
+export const OFF_CACHE_MS = 15_000
 
 export interface AssignRequest {
   /** The room this tab was assigned before (a reconnect, a reload): kept if it has a seat. */

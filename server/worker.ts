@@ -7,7 +7,7 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import { MAX_ROOM_PLAYERS, type PlayerInfo } from '../shared/protocol'
-import { type AssignRequest, isPublicRoom, PUBLIC_BASE, RoomRegistry, type RegistryEntry } from './registry'
+import { ASSIGN_TIMEOUT_MS, type AssignRequest, isPublicRoom, OFF_CACHE_MS, PUBLIC_BASE, RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
@@ -131,14 +131,8 @@ export default {
   },
 }
 
-/** How long a public arrival waits for the registry before going to "lobby" as before, ms. */
-export const ASSIGN_TIMEOUT_MS = 1000
-/**
- * After the registry says overflow is off, this isolate sends public arrivals to "lobby"
- * without asking again for this long, ms: with the runtime flag off, almost no join waits on
- * the registry. Turning the flag on therefore reaches every isolate within this time.
- */
-export const OFF_CACHE_MS = 15_000
+// ASSIGN_TIMEOUT_MS and OFF_CACHE_MS live in server/registry.ts: a Worker's entry module may
+// export only handlers and functions (workerd refuses to start on an exported number).
 let offUntil = 0
 /** Tests run many deployments in one isolate. */
 export function forgetOverflowCache(): void { offUntil = 0 }

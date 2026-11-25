@@ -9,8 +9,9 @@
  *  - a slow or failing registry stops anyone from joining.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ASSIGN_TTL_MS, isPublicRoom, MAX_PUBLIC_ROOMS, publicRooms, RESERVE_MS, RoomRegistry } from '../../server/registry'
-import worker, { ASSIGN_TIMEOUT_MS, forgetOverflowCache, OFF_CACHE_MS, RoomDO } from '../../server/worker'
+import { ASSIGN_TIMEOUT_MS, ASSIGN_TTL_MS, isPublicRoom, MAX_PUBLIC_ROOMS, OFF_CACHE_MS, publicRooms, RESERVE_MS, RoomRegistry } from '../../server/registry'
+import * as entry from '../../server/worker'
+import worker, { forgetOverflowCache, RoomDO } from '../../server/worker'
 import { MAX_ROOM_PLAYERS } from '../../shared/protocol'
 
 const CAP = MAX_ROOM_PLAYERS
@@ -177,6 +178,12 @@ const flip = (env: object, on: boolean, token = TOKEN) =>
 describe('public overflow in the Worker', () => {
   beforeEach(() => forgetOverflowCache())
   afterEach(() => vi.useRealTimers())
+
+  it('exports only what workerd accepts from an entry module (handlers, classes, functions)', () => {
+    for (const [name, value] of Object.entries(entry)) {
+      if (name !== 'default') expect([name, typeof value]).toEqual([name, 'function'])
+    }
+  })
 
   it('master switch off: the request reaches lobby untouched and the registry is never asked', async () => {
     for (const master of [undefined, 'off', 'on']) {
