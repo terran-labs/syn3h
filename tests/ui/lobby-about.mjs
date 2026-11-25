@@ -88,7 +88,7 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   await icon.click()
   const about=page.locator('.lobby-sheet-about')
   await about.locator('.welcome-body > h3').first().waitFor({state:'visible'})
-  assert.equal((await about.locator('h2').first().textContent()).trim(),'Welcome','the sheet is titled Welcome')
+  assert.equal((await about.locator('h2').first().textContent()).trim(),'Welcome to Mira','the sheet is named Welcome to Mira')
   // The panel's own motion (the buttons beside it keep their slow gear turn).
   await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
   const geometry=await about.locator('.lobby-sheet-panel').evaluate(el=>{const r=el.getBoundingClientRect();return {rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},viewportWidth:innerWidth,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth}})
