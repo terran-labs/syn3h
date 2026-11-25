@@ -2,6 +2,18 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Tuesday 24 November: failed physics downloads retry automatically
+
+**Decided** by the owner, in his words: "failed physics downloads should retry automatically".
+
+**Why.** A dropped connection while the physics engine downloads used to leave the player
+with a reload message, even when the next request would have worked.
+
+**What it changes.** This replaces the "no fallback" rule of 15 November (9:32am entry). A
+failed download of the physics engine now retries by itself, five tries with backoff, with
+one line on the loading veil and a Try again button after the last try (v26.11.2403). The
+single load path is unchanged: one streaming compile of one file, and no second path.
+
 ## Monday 23 November: diagnostic link switches stay in every production release
 
 **Decided** by the owner, in his words: "I love all your URL params to test different
