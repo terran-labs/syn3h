@@ -55,6 +55,8 @@ export function ringHtml(cards: readonly string[], shots: readonly RingShot[]): 
 </section>`
 }
 
+/** How long after a swipe its own click is ignored. */
+const SWALLOW_MS = 400
 const wrap = (value: number, count: number) => ((value % count) + count) % count
 const typing = (el: Element | null) => !!el?.closest('input, textarea, select, [contenteditable=""], [contenteditable=true], [role=tab], [role=slider]')
 
@@ -129,19 +131,20 @@ export function wireRing(root: HTMLElement, shots: readonly RingShot[], signal?:
   }
   dots.forEach((dot, i) => dot.addEventListener('click', () => pick(i), { signal }))
 
-  // A swipe across the pictures: a mostly sideways drag of 40 px or more. The tap a swipe ends
-  // with is swallowed, so it never also picks the picture under the finger.
-  let down: { x: number; y: number; id: number } | null = null, swiped = false
-  track.addEventListener('pointerdown', event => { down = { x: event.clientX, y: event.clientY, id: event.pointerId }; swiped = false }, { signal })
+  // A swipe across the pictures: a mostly sideways drag of 40 px or more. The click a swipe ends
+  // with (within SWALLOW_MS) is swallowed, so it never also picks the picture under the finger;
+  // a later tap is never lost, even when a swipe ends without a click.
+  let down: { x: number; y: number; id: number } | null = null, swipedAt = -Infinity
+  track.addEventListener('pointerdown', event => { down = { x: event.clientX, y: event.clientY, id: event.pointerId } }, { signal })
   track.addEventListener('pointerup', event => {
     if (!down || down.id !== event.pointerId) return
     const dx = event.clientX - down.x, dy = event.clientY - down.y
     down = null
-    if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) { swiped = true; step(dx < 0 ? 1 : -1) }
+    if (Math.abs(dx) >= 40 && Math.abs(dx) > Math.abs(dy) * 1.2) { swipedAt = performance.now(); step(dx < 0 ? 1 : -1) }
   }, { signal })
   track.addEventListener('pointercancel', () => { down = null }, { signal })
   cards.forEach((card, i) => card.addEventListener('click', () => {
-    if (swiped) { swiped = false; return }
+    if (performance.now() - swipedAt < SWALLOW_MS) return
     if (card.dataset.slot === 'side') pick(i)
   }, { signal }))
 
