@@ -5,6 +5,9 @@
 // - paused, with the build notice: every shown item of the strip is clear of every other;
 // - in play, with the build notice and the slow-frames offer: likewise, and none
 //   covers a thumb control.
+// Every state measured is made the way the game makes it (its new-build event, a recommendation in
+// its performance history, Shell.requestPause) and measured only once it holds and has stopped
+// moving for several frames (steady), never after a fixed wait: a loaded machine is slower, not wrong.
 //   MIRA_URL=http://127.0.0.1:5213/ node tests/ui/bottom-stack.mjs [out-dir]
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
@@ -24,6 +27,20 @@ const layout = () => {
   const controls = [...document.querySelectorAll('.touch-controls button, .shell-minimap')].filter(shown).map(el => ({ name: el.className.split(' ')[0], ...box(el) }))
   return { items, controls }
 }
+/**
+ * Wait until `ready` holds and the strip, the controls and their opacity and visibility have
+ * stayed the same for STEADY_FRAMES animation frames, so nothing is measured mid-fade or mid-move.
+ * Every wait is on a condition: a loaded machine only makes it take longer.
+ */
+const STEADY_FRAMES = 6
+const steady = (page, ready, what) => page.waitForFunction(([ready, frames]) => {
+  const w = window
+  const look = el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return [r.left, r.top, r.width, r.height, s.opacity, s.visibility, s.display].map(v => typeof v === 'number' ? Math.round(v) : v).join() }
+  const now = [...document.querySelectorAll('.bottom-stack > *, .touch-controls button, .shell-minimap')].map(look).join('|')
+  if (!new Function(`return (${ready})()`)()) { w.__steady = 0; w.__look = null; return false }
+  w.__steady = now === w.__look ? (w.__steady ?? 0) + 1 : 0; w.__look = now
+  return w.__steady >= frames
+}, [ready.toString(), STEADY_FRAMES], { polling: 'raf', timeout: 60000 }).catch(error => { throw new Error(`${what}: never steady (${error.message.split('\n')[0]})`) })
 const clash = (a, b) => a.right > b.left + 0.5 && a.left < b.right - 0.5 && a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true })
@@ -41,12 +58,25 @@ try {
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('mira:new-build')))
     await page.waitForFunction(() => document.querySelector('.bottom-stack > #mira-build-notice'), null, { timeout: 5000 })
 
-    // In play, with every driving notice shown at once.
+    // In play, with every driving notice shown at once. The running-slow offer is shown the way
+    // the game shows it: a recommendation in the performance history, published to the panel
+    // (PerformancePanel.showRecommendation hides the offer on any publish without one). The
+    // history sets its recommendation afresh at the end of every sampling window, so it is held
+    // there for the rest of this visit, after each real sample.
     await page.evaluate(() => {
-      const offer = document.querySelector('.performance-recommendation'); offer.hidden = false
-      offer.querySelector('p').textContent = 'Running slow: frames are taking longer than they should.'
+      const quality = window.mira.game.quality, history = quality.history, level = quality.governor.level
+      const offer = Object.freeze({ level, targetLevel: Math.max(0, level - 1), observedFps: 24, bots: 4, fewerBots: false })
+      const sample = history.sample.bind(history)
+      history.sample = (...args) => { const changed = sample(...args); history.recommendation = offer; return changed }
+      history.recommendation = offer
+      quality.publishPerformance()
     })
-    await page.waitForTimeout(300)
+    await steady(page, () => {
+      const opaque = el => !!el && !el.hidden && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none' && Number(getComputedStyle(el).opacity) === 1
+      const shell = document.querySelector('.mira-shell')
+      return shell.classList.contains('is-playing') && !shell.classList.contains('is-paused') && opaque(document.querySelector('.bottom-stack > .performance-recommendation')) && opaque(document.getElementById('mira-build-notice'))
+        && [...document.querySelectorAll('.touch-controls button:not([hidden])')].every(b => getComputedStyle(b).visibility !== 'hidden' && Number(getComputedStyle(b.closest('.touch-controls')).opacity) === 1)
+    }, `${tag} in play`)
     const play = await page.evaluate(layout)
     if (out) await page.screenshot({ path: `${out}/${tag}-play-build-slow.png` })
     for (const [i, a] of play.items.entries()) for (const b of play.items.slice(i + 1)) assert.ok(!clash(a, b), `${tag} in play: ${a.name} and ${b.name} overlap ${JSON.stringify([a, b])}`)
@@ -59,9 +89,15 @@ try {
     assert.ok(play.items.length >= 2, `${tag} in play: the build notice and the offer both show (${play.items.map(i => i.name)})`)
 
     // Paused, with the build notice.
+    // Paused as the player pauses (Shell.requestPause): wait for the thumb controls' fade out and
+    // the pause bar's fade in to finish, so a control half faded is not measured as shown.
     await page.evaluate(() => mira.shell.requestPause())
-    await page.locator('.pause-actions').waitFor({ state: 'visible' })
-    await page.waitForTimeout(500)
+    await steady(page, () => {
+      const opaque = el => !!el && !el.hidden && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none' && Number(getComputedStyle(el).opacity) === 1
+      const touch = document.querySelector('.touch-controls')
+      return document.querySelector('.mira-shell').classList.contains('is-paused') && opaque(document.querySelector('.bottom-stack > .pause-actions')) && opaque(document.getElementById('mira-build-notice'))
+        && (!touch || getComputedStyle(touch).visibility === 'hidden')
+    }, `${tag} paused`)
     const paused = await page.evaluate(layout)
     if (out) await page.screenshot({ path: `${out}/${tag}-paused-build.png` })
     const names = paused.items.map(i => i.name)
