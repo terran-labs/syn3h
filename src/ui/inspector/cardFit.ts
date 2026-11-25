@@ -4,12 +4,13 @@
  *
  * Which stay open (cardsToClose; the owner, 22 November 2026: "I should really only be able to
  * see two cards at a normal laptop screen height ... You should be more aggressive about
- * collapsing older cards"). Every open card must be able to show OPEN_PX (or all of itself
- * when it is shorter) while every closed card's header stays in view, without the stack
- * overflowing by more than NEAR_PX. While that fails, the card open longest closes, then the
- * next. Never closed: the card just opened, one the player is typing in or dragging a slider
- * in. No count per screen size: the count follows from the measured heights (cardFit.test.ts
- * works it out for 720 to 1440 px tall screens).
+ * collapsing older cards"; 25 November 2026: one card at a time unless the window is very
+ * tall). A lone open card must be able to show OPEN_PX (or all of itself when it is shorter);
+ * two or more must each be able to show TWO_CARD_PX; and every closed card's header stays in
+ * view, without the stack overflowing by more than NEAR_PX. While that fails, the card opened
+ * longest ago closes, then the next. Never closed: the card just opened, one the player is
+ * typing in or dragging a slider in, one holding an unsent draft. No count per screen size:
+ * the count follows from the measured heights (cardFit.test.ts).
  *
  * How they share (shareHeights; "singular panels which have enough internal contents to
  * warrant it expand as far as they can when that is the only panel open"). The height left
@@ -20,13 +21,21 @@
  */
 
 /**
- * What an open card must be able to show: its header and about three rows. With the stack's
- * measured headers (46 px) and gaps (7 px), this leaves one card open at 720 px tall, two at 800
- * and 900, three at 1080 and six at 1440 (cardFit.test.ts).
+ * What a lone open card must be able to show: its header and about three rows. Below this, even
+ * one card cannot show usefully and the stack scrolls. Two or more need TWO_CARD_PX each.
  */
 export const OPEN_PX = 200
 /** "Nearly fit": how far the stack may overflow before an older card closes. */
 export const NEAR_PX = 24
+/**
+ * One card open at a time unless the window is very tall (the owner, 25 November 2026: "You
+ * also need to be aggressive about closing old cards when new cards are opened. Unless the
+ * viewport is very tall, I think we should only have one card open at a time."). A second card
+ * stays open only when every open card can show TWO_CARD_PX (or all of itself when shorter)
+ * with every other header in view: a header and about eight rows, so neither scrolls much.
+ * Provisional until measured against the cards' real heights; tests read this constant.
+ */
+export const TWO_CARD_PX = 440
 
 export interface FitCard {
   id: string
@@ -55,11 +64,13 @@ export function neededHeight(cards: readonly FitCard[], gap: number, closing: Re
  * recent; `keep` is the card just opened. Returns fewer than needed (perhaps none) when
  * nothing else may close; the stack then scrolls, and still no card is squeezed.
  */
-export function cardsToClose(cards: readonly FitCard[], order: readonly string[], available: number, gap: number, keep: string | null = null, floor = OPEN_PX, near = NEAR_PX): string[] {
+export function cardsToClose(cards: readonly FitCard[], order: readonly string[], available: number, gap: number, keep: string | null = null, floor = OPEN_PX, near = NEAR_PX, pair = TWO_CARD_PX): string[] {
   const closing = new Set<string>()
   const byId = new Map(cards.map(card => [card.id, card]))
+  // With more than one card staying open, each must be able to show the larger pair floor.
+  const staying = () => cards.reduce((n, card) => n + (card.open && !closing.has(card.id) ? 1 : 0), 0)
   for (const id of order) {
-    if (neededHeight(cards, gap, closing, floor) <= available + near) break
+    if (neededHeight(cards, gap, closing, staying() > 1 ? Math.max(floor, pair) : floor) <= available + near) break
     const card = byId.get(id)
     if (!card || !card.open || !card.closable || id === keep) continue
     closing.add(id)

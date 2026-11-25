@@ -188,6 +188,11 @@ interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; su
  * while the card is the one panel on screen, the shared X (cardClose.ts) stands at the header's
  * right as a button of its own and closes the panels (phone-panels.css).
  */
+/**
+ * A card holding an unsent draft: a field that sends (enterkeyhint="send", the chat field) with
+ * text in it. Closing it to make room would hide what the player was writing, so it stays open.
+ */
+const hasDraft = (card: HTMLElement): boolean => [...card.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input[enterkeyhint="send"], textarea[enterkeyhint="send"]')].some(field => field.value.trim() !== '')
 const CARD_HEAD = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'
 /** Phone panels: how long each change between the three states takes (ms). Shorten, never lengthen: this is mid-game. */
 export const PHONE_PANEL_MS = { show: 220, hide: 160, open: 240, back: 200, stagger: 15, staggerCap: 6, ghost: 140, ghostOut: 90 } as const
@@ -1310,7 +1315,8 @@ export class Inspector {
     requestAnimationFrame(() => { this.fitQueued = false; if (this.moving.size) { this.queueFit(keep); return } this.reflow(() => this.fit(keep)) })
   }
   /**
-   * A card the player is using, which is never the one closed: typing in it (a text field, the
+   * A card the player is using, which is never the one closed (also: one holding an unsent draft,
+   * hasDraft): typing in it (a text field, the
    * chat field, a number being edited) or holding the pointer down in it (dragging a slider).
    * Focus merely left inside a card (a clicked fold, the chat log) does not count: it kept
    * cards open for good, which let four stay open at laptop height (22 November 2026).
@@ -1318,7 +1324,7 @@ export class Inspector {
   private busy(card: HTMLElement): boolean {
     const active = document.activeElement
     const typing = active instanceof HTMLElement && card.contains(active) && (active.isContentEditable || active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement && !['checkbox', 'radio', 'range', 'button', 'color'].includes(active.type))
-    return card === this.pressed || typing || !!this.editing && card.contains(this.editing.field)
+    return card === this.pressed || typing || !!this.editing && card.contains(this.editing.field) || hasDraft(card)
   }
   /**
    * Close the cards open longest until the open ones fit (cardFit.ts cardsToClose), then share
@@ -1356,7 +1362,10 @@ export class Inspector {
     }
     const gap = parseFloat(getComputedStyle(stack).rowGap) || 0
     const order = this.openOrder.filter(id => cards.some(card => card.dataset.section === id))
-    const close = new Set(cardsToClose([...measured.values()], order, stack.clientHeight, gap, keep?.dataset.section ?? null))
+    // The card opened last is never the one closed, on this fit or any later one (a refit after a
+    // resize or a content change passes no card): otherwise a card that may not close (a chat
+    // draft) left the newest card as the only one a refit could close.
+    const close = new Set(cardsToClose([...measured.values()], order, stack.clientHeight, gap, keep?.dataset.section ?? order.at(-1) ?? null))
     for (const [card, fit] of measured) if (close.has(fit.id)) { this.toggle(card, false); fit.open = false }
     const heights = shareHeights([...measured.values()], stack.clientHeight, gap)
     for (const [card, fit] of measured) {

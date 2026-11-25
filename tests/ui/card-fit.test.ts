@@ -3,7 +3,7 @@
  * card closing itself, a card the player is using snapping shut, and cards squeezed to slivers.
  */
 import { expect, it } from 'vitest'
-import { OPEN_PX, NEAR_PX, cardsToClose, comfortable, neededHeight, shareHeights, type FitCard } from '../../src/ui/inspector/cardFit'
+import { OPEN_PX, NEAR_PX, TWO_CARD_PX, cardsToClose, comfortable, neededHeight, shareHeights, type FitCard } from '../../src/ui/inspector/cardFit'
 
 const HEAD = 46, GAP = 8
 const card = (id: string, open: boolean, natural = 600, closable = true): FitCard => ({ id, open, closed: HEAD, natural: open ? natural : HEAD, closable })
@@ -70,26 +70,39 @@ it('leaves no open card below the comfortable height after any open, resize or c
   }
 })
 
-// Measured in play (22 November 2026): seven cards with 46 px headers, 7 px gaps, and the stack
-// 130 px shorter than the window. Bug this catches: more than two cards staying open at a
-// normal laptop height (the owner: "I should really only be able to see two cards at a normal
-// laptop screen height"), or a lone card closing itself on a short screen.
-it('keeps two cards open at laptop height, opening each card in turn', () => {
-  const ids = ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat']
+// The sidebar's cards with 46 px headers, 7 px gaps, and the stack 130 px shorter than the window
+// (measured in play, 22 November 2026). Bug this catches: a second card staying open below the
+// height the one-card rule allows (the owner, 25 November 2026: "Unless the viewport is very
+// tall, I think we should only have one card open at a time"), or a lone card closing itself.
+// The threshold is derived from TWO_CARD_PX, so retuning it moves the expectation.
+it('keeps one card open unless the window is tall enough for two to show fully', () => {
+  // The in-play sidebar's cards since ui/sidebar-on-player-panel (25 November 2026).
+  const ids = ['game', 'players', 'world', 'performance', 'chat']
   const openAt = (windowHeight: number) => {
     let cards = ids.map(id => ({ id, open: false, closed: 46, natural: 46, closable: true }))
     let order: string[] = []
     for (const id of ids) {
-      cards = cards.map(c => c.id === id ? { ...c, open: true, natural: 600 } : c); order.push(id)
+      cards = cards.map(c => c.id === id ? { ...c, open: true, natural: 900 } : c); order.push(id)
       const close = new Set(cardsToClose(cards, order, windowHeight - 130, 7, id))
       cards = cards.map(c => close.has(c.id) ? { ...c, open: false, natural: 46 } : c); order = order.filter(o => !close.has(o))
+      expect(cards.find(c => c.id === id)!.open).toBe(true)
     }
     return cards.filter(c => c.open).length
   }
+  // Two open at TWO_CARD_PX each, every other header closed, the gaps between all of them.
+  const two = (ids.length - 2) * 46 + (ids.length - 1) * 7 + 2 * TWO_CARD_PX - NEAR_PX + 130
   expect(openAt(720)).toBe(1)
-  expect(openAt(800)).toBe(2)
-  expect(openAt(900)).toBe(2)
-  expect(openAt(1080)).toBeGreaterThanOrEqual(2)
+  expect(openAt(two - 1)).toBe(1)
+  expect(openAt(two)).toBe(2)
+})
+
+// Bug: a chat draft hidden because another card opened (the chat card holding unsent text is
+// marked not closable by the Inspector).
+it('never closes a card holding a draft, and the new card stays open beside it', () => {
+  const cards = [card('chat', true, 600, false), card('world', true), card('you', false)]
+  const close = cardsToClose(cards, ['chat', 'world'], 500, GAP, 'world')
+  expect(close).not.toContain('chat')
+  expect(close).not.toContain('world')
 })
 
 // Bugs: a lone chat card not filling the sidebar, a short card stretched to empty space, or
