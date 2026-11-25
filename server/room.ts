@@ -379,10 +379,19 @@ export class Room {
     return false
   }
 
-  /** Authoritative current world, not the first hello or the mutable global registry. */
+  /**
+   * Authoritative current world, not the first hello or the mutable global registry.
+   * `players`: connected (held places excluded). `active`: those of them not paused, the
+   * count the lobby shows. Paused is the latest state's FLAG_PAUSED, sent at once and then
+   * every second while the pause screen is up or the page is hidden (src/net/PausedHeartbeat.ts).
+   * A player who has not sent a state yet, or an older client that never flags a pause,
+   * counts as active. A paused player keeps their seat: the cap counts `players.size`.
+   */
   presence() {
     const value = (id: string) => this.values.get(id) ?? registry.get(id)?.def.default
-    return { players: this.playerCount - this.heldCount,
+    let active = 0
+    for (const p of this.players.values()) if (!p.heldUntil && !p.lastState?.paused) active++
+    return { players: this.playerCount - this.heldCount, active,
       recipeId: recipeIdForLook(value('terrain.look')), seed: value('world.seed') ?? null }
   }
 

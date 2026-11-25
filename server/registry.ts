@@ -24,7 +24,13 @@ export const REFRESH_MS = 2 * 60_000
 
 export const PRESENCE_REFRESH_MS = 30_000
 export const PRESENCE_TTL_MS = 90_000
-export interface RegistryEntry { players: number; at: number; recipeId?: RecipeId | null }
+export interface RegistryEntry {
+  players: number
+  at: number
+  recipeId?: RecipeId | null
+  /** Of `players`, those not paused; absent from rooms that do not report it (read as all). */
+  active?: number
+}
 
 export interface Totals {
   /** Rooms with at least one connected player. */
@@ -39,15 +45,21 @@ export class RoomRegistry {
 
   constructor(saved?: Record<string, RegistryEntry>) {
     for (const [room, e] of Object.entries(saved ?? {})) {
-      if (e && Number.isInteger(e.players) && e.players > 0 && Number.isFinite(e.at)) this.entries.set(room, { players: e.players, at: e.at, recipeId: cleanRecipeId(e.recipeId) })
+      if (e && Number.isInteger(e.players) && e.players > 0 && Number.isFinite(e.at)) this.entries.set(room, { players: e.players, at: e.at, recipeId: cleanRecipeId(e.recipeId), ...activeOf(e.active, e.players) })
     }
   }
 
-  /** A room says how many players are connected. Zero forgets the room. */
-  report(room: string, players: number, now: number, recipeId?: unknown): void {
+  /**
+   * A room says how many players are connected, and how many of them are not paused (`active`,
+   * optional: older rooms do not say, and then all count as active). Zero forgets the room.
+   */
+  report(room: string, players: number, now: number, recipeId?: unknown, active?: unknown): void {
     if (typeof room !== 'string' || !room || room.length > 128) return
     if (!Number.isInteger(players) || players <= 0) this.entries.delete(room)
-    else this.entries.set(room, { players: Math.min(players, 1000), at: now, recipeId: cleanRecipeId(recipeId) })
+    else {
+      const n = Math.min(players, 1000)
+      this.entries.set(room, { players: n, at: now, recipeId: cleanRecipeId(recipeId), ...activeOf(active, n) })
+    }
   }
 
   totals(now: number): Totals {
@@ -71,8 +83,8 @@ export class RoomRegistry {
     for (const e of this.entries.values()) {
       if (now - e.at >= PRESENCE_TTL_MS || e.at > now) continue
       const id = cleanRecipeId(e.recipeId)
-      const g = groups.get(id) ?? { recipeId: id, rooms: 0, players: 0, oldestReportAt: e.at }
-      g.rooms++; g.players += e.players; g.oldestReportAt = Math.min(g.oldestReportAt, e.at)
+      const g = groups.get(id) ?? { recipeId: id, rooms: 0, players: 0, active: 0, oldestReportAt: e.at }
+      g.rooms++; g.players += e.players; g.active = (g.active ?? 0) + (e.active ?? e.players); g.oldestReportAt = Math.min(g.oldestReportAt, e.at)
       groups.set(id, g)
     }
     return { version: 1, generatedAt: now, ttlMs: PRESENCE_TTL_MS,
@@ -83,4 +95,9 @@ export class RoomRegistry {
   save(): Record<string, RegistryEntry> {
     return Object.fromEntries(this.entries)
   }
+}
+
+/** A reported active count, kept only when it is a whole number from 0 to `players`. */
+function activeOf(raw: unknown, players: number): { active?: number } {
+  return Number.isInteger(raw) && (raw as number) >= 0 ? { active: Math.min(raw as number, players) } : {}
 }

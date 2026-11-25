@@ -341,9 +341,9 @@ export class RoomDO {
     this.registryReady ??= this.state.storage.get<Record<string, RegistryEntry>>('counts').then(saved => new RoomRegistry(saved))
     const registry = await this.registryReady
     if (path === '/report' && req.method === 'POST') {
-      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown } | null
+      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
-        registry.report(body.room, body.players, Date.now(), body.recipeId)
+        registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
         await this.state.storage.put('counts', registry.save())
       }
       return new Response(null, { status: 204 })
