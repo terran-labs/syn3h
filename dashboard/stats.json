@@ -1,27 +1,27 @@
 {
-  "generatedAt": "2026-11-25T06:02:44.622Z",
+  "generatedAt": "2026-11-25T21:35:54.349Z",
   "commits": {
-    "total": 3464,
-    "last48h": 130,
-    "merges": 954
+    "total": 3477,
+    "last48h": 103,
+    "merges": 957
   },
   "pullRequests": {
     "count": 0,
     "merged": 0,
-    "mergedDirectly": 954,
+    "mergedDirectly": 957,
     "note": "Lanes merge branches directly; few changes went through pull requests."
   },
   "releases": {
-    "production": 113,
-    "today": 6,
+    "production": 114,
+    "today": 1,
     "withdrawn": 4,
-    "newest": "v26.11.2405",
-    "newestAt": "2026-11-24 22:01 PST"
+    "newest": "v26.11.2500",
+    "newestAt": "2026-11-25 13:34 PST"
   },
   "code": {
-    "sourceFiles": 556,
-    "lines": 105571,
-    "testFiles": 373,
+    "sourceFiles": 559,
+    "lines": 106000,
+    "testFiles": 375,
     "params": 450
   },
   "tokens": {
