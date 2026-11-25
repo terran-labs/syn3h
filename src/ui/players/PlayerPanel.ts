@@ -363,6 +363,9 @@ export class PlayerPanel {
       })
       const says = Object.assign(document.createElement('p'), { className: 'pp-why', id: `${id}-says`, textContent: trait.says })
       row.append(label, out, reset.element, input, says)
+      // On touch, nothing hovers: the reset writes the default under its arrow while the row is touched.
+      row.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') row.classList.add('is-selected') })
+      for (const type of ['pointerup', 'pointercancel'] as const) row.addEventListener(type, () => window.setTimeout(() => row.classList.remove('is-selected'), 1500))
       section.append(row)
     }
     return section
