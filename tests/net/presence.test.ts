@@ -98,6 +98,10 @@ describe('aggregate presence', () => {
     expect(r.totals(200)).toEqual({ rooms: 3, players: 7 })
     expect(r.presence(200).byRecipe).toEqual([row('alpine', 2, 5, 100, 3), row('desert', 1, 2, 100, 2)])
     expect(new RoomRegistry(r.save()).presence(200).byRecipe).toEqual([row('alpine', 2, 5, 100, 3), row('desert', 1, 2, 100, 2)])
+    // A room that stops reporting (a crashed process) drops out of presence, active and all,
+    // at the same 90 s as players; /status keeps it for its own longer, safer bound.
+    expect(r.presence(100 + PRESENCE_TTL_MS).byRecipe).toEqual([])
+    expect(r.totals(100 + PRESENCE_TTL_MS).players).toBe(7)
     // The existing fields keep their names, meaning and order; `active` is only added.
     expect(Object.keys(r.presence(200).byRecipe[0])).toEqual(['recipeId', 'rooms', 'players', 'active', 'oldestReportAt'])
   })
