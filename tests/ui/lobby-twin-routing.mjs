@@ -57,14 +57,18 @@ async function openLobby(page, url) {
   undefined, 60)
 }
 
-async function controls(page, recipe, onScreen = true) {
+async function controls(page, recipe, onScreen = true, actions = ['public', 'private']) {
   const found = await waitForState(page, `accessible Twin controls for ${recipe ?? 'a visible planet'}`,
-    ({ recipe, onScreen }) => {
+    ({ recipe, onScreen, actions }) => {
       const usable = button => {
-        if (!button || button.closest('[hidden], [inert]') || getComputedStyle(button).visibility !== 'visible') return false
+        if (!button || button.tabIndex < 0 || button.closest('[hidden], [inert], .is-suppressed') ||
+            getComputedStyle(button).visibility !== 'visible') return false
         const box = button.getBoundingClientRect()
-        return box.width > 0 && box.height > 0 && (!onScreen ||
-          (box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight))
+        if (box.width <= 0 || box.height <= 0) return false
+        if (!onScreen) return true
+        const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2)
+        return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight &&
+          button.contains(hit)
       }
       const captions = [...document.querySelectorAll('button.galaxy-private-caption[data-twin-for]')]
       for (const privateButton of captions) {
@@ -74,7 +78,8 @@ async function controls(page, recipe, onScreen = true) {
         const publicButton = name?.closest('button')
         const publicLabel = document.getElementById(`twin-public-${id}`)
         const privateLabel = document.getElementById(`twin-private-${id}`)
-        if (usable(publicButton) && usable(privateButton) && publicLabel && privateLabel) {
+        const buttons = { public: publicButton, private: privateButton }
+        if (publicLabel && privateLabel && actions.every(action => usable(buttons[action]))) {
           return {
             recipe: id,
             public: `${name.textContent.trim()} ${publicLabel.textContent.trim()}`,
@@ -83,7 +88,7 @@ async function controls(page, recipe, onScreen = true) {
         }
       }
       return null
-    }, { recipe, onScreen }, 30)
+    }, { recipe, onScreen, actions }, 30)
   const names = await found.jsonValue()
   assert.match(names.public, /· Public and shared$/, 'the public caption identifies its action')
   assert.match(names.private, /^Your .+ · Private to you$/, 'the private caption identifies its action')
@@ -106,18 +111,30 @@ async function assertIdle(page, level, reduced, label) {
   assert.equal(start.quality, level, `${label}: expected graphics quality`)
   assert.equal(start.reduced, reduced, `${label}: expected motion preference`)
   if (reduced) assert.ok(start.live && start.frames > 0, `${label}: rendered galaxy exists before it rests`)
-  for (let i = 0; i < 20; i++) {
-    const before = await state()
-    assert.ok(before.visible, `${label}: foreground lobby during idle sampling`)
-    await page.waitForTimeout(1200)
-    if ((await state()).frames !== before.frames) continue
-    await page.waitForTimeout(2200)
-    const after = await state()
-    assert.ok(after.visible, `${label}: lobby stayed foreground during idle sampling`)
-    assert.equal(after.frames, before.frames, `${label}: zero new galaxy draws over the settled interval`)
-    return { draws: 0, sampleMilliseconds: 2200, rendered: after.live }
-  }
-  assert.fail(`${label}: the lobby never settled to zero draws`)
+  // Presence refreshes and each painter result can legitimately wake the held galaxy.
+  // Start the observation after the maps are uploaded and a presence poll has completed.
+  await waitForState(page, `${label}: planet maps uploaded and presence settled`, () => {
+    const shell = window.mira.shell
+    const galaxy = shell.galaxy
+    const presence = galaxy?.live ? galaxy.presence : shell.flatTwinPresence
+    const snapshot = presence?.snapshot
+    if (document.hidden || !presence?.active || presence.request || !snapshot ||
+        Date.now() - snapshot.generatedAt >= 25_000) return false
+    if (!galaxy?.live) return true
+    const worlds = galaxy.options.worlds
+    return galaxy.holding && !galaxy.painting && galaxy.queue.length === 0 && galaxy.wake === 0 &&
+      galaxy.painted === worlds.filter(world => !world.forming).length &&
+      worlds.every((world, index) => world.forming || Boolean(galaxy.layers[index]))
+  }, undefined, 120)
+
+  const before = await state()
+  assert.ok(before.visible, `${label}: foreground lobby during idle sampling`)
+  const sampleMilliseconds = 3400
+  await page.waitForTimeout(sampleMilliseconds)
+  const after = await state()
+  assert.ok(after.visible, `${label}: lobby stayed foreground during idle sampling`)
+  assert.equal(after.frames, before.frames, `${label}: zero new galaxy draws over the settled interval`)
+  return { draws: 0, sampleMilliseconds, rendered: after.live }
 }
 
 async function capture(page, name) {
@@ -141,20 +158,24 @@ async function checkLobbyFetches(page, url, secret, countBefore) {
     const totals = await presence.json()
     assert.ok(Array.isArray(totals.byRecipe), 'lobby privacy: presence returned recipe aggregates')
     assert.equal(countBefore(), 1, 'lobby privacy: opening the lobby made no new room welcome')
+    const leaks = []
+    const endpoint = url => new URL(url).pathname.replaceAll(secret, '[private room]')
     for (const request of requests) {
       const headers = await request.allHeaders()
-      assert.ok(!JSON.stringify([request.url(), request.postData(), headers.referer]).includes(secret),
-        'lobby privacy: a fetch exposed the private room in its address, body, or referrer')
+      for (const [field, value] of Object.entries({
+        address: request.url(), body: request.postData(), referrer: headers.referer,
+      })) {
+        if (value?.includes(secret)) leaks.push({ endpoint: endpoint(request.url()), field })
+      }
     }
     for (const response of responses) {
       if (!response.ok()) continue
       const type = response.headers()['content-type'] ?? ''
-      if (/json|^text\//i.test(type)) {
-        const body = await response.text()
-        assert.ok(!body.includes(secret), 'lobby privacy: a fetch response exposed the private room')
+      if (/json|^text\//i.test(type) && (await response.text()).includes(secret)) {
+        leaks.push({ endpoint: endpoint(response.url()), field: 'response' })
       }
     }
-    return { requests: requests.length, responses: responses.length, presenceStatus: presence.status() }
+    return { requests: requests.length, responses: responses.length, presenceStatus: presence.status(), leaks }
   } finally {
     page.off('request', requestListener)
     page.off('response', responseListener)
@@ -175,33 +196,35 @@ try {
   step = 'desktop rendered lobby and reduced-motion rest'
   await openLobby(host, lobbyURL(3))
   const reducedMotion = await assertIdle(host, 3, true, 'desktop reduced motion')
-  const first = await controls(host)
+  const publicTarget = await controls(host, undefined, true, ['public'])
+  await controls(host, undefined, true, ['private'])
   await capture(host, 'desktop-twins')
   assert.equal(hostWelcomes.length, 0, 'desktop lobby did not join before a deliberate tap')
 
   step = 'desktop Public tap'
-  await first.public.click()
+  await publicTarget.public.click()
   const publicWelcome = await joined(host, hostWelcomes, 0, step)
   assert.equal(publicWelcome.room, 'lobby', 'Public tap welcomed into the default public room')
   await capture(host, 'desktop-public')
 
   step = 'desktop first Private tap'
   await openLobby(host, lobbyURL(3))
-  await (await controls(host, first.recipe)).private.click()
+  const privateTarget = await controls(host, undefined, true, ['private'])
+  await privateTarget.private.click()
   const privateWelcome = await joined(host, hostWelcomes, 1, step)
   assert.match(privateWelcome.room, /^p-[a-z0-9]{22}$/, 'Private tap welcomed into a parallel room')
   // Use the entry address produced by the Private tap, including its normal autoplay flag.
   const invite = new URL(host.url())
   assert.equal(invite.searchParams.get('room'), privateWelcome.room, 'the invite room matches the welcome')
   const world = invite.searchParams.get('world')
-  assert.ok(world?.startsWith(`${first.recipe}.`), 'the invite preserves the selected world')
+  assert.ok(world?.startsWith(`${privateTarget.recipe}.`), 'the invite preserves the selected world')
   await capture(host, 'desktop-private')
 
   step = 'same browser reopens its own private twin'
   const differentPreview = new URL(lobbyURL(3))
-  differentPreview.searchParams.set('world', `${first.recipe}.${world === `${first.recipe}.12345` ? 12346 : 12345}`)
+  differentPreview.searchParams.set('world', `${privateTarget.recipe}.${world === `${privateTarget.recipe}.12345` ? 12346 : 12345}`)
   await openLobby(host, differentPreview.href)
-  await (await controls(host, first.recipe)).private.click()
+  await (await controls(host, privateTarget.recipe, true, ['private'])).private.click()
   const reused = await joined(host, hostWelcomes, 2, step)
   assert.equal(reused.room, privateWelcome.room, 'same browser gets a welcome in the original room')
   assert.equal(new URL(host.url()).searchParams.get('world'), world, 'same browser keeps the original world code')
@@ -216,7 +239,8 @@ try {
   await openLobby(guest, lobbyURL(3))
   await waitForState(guest, 'the phone galaxy to render',
     () => window.mira.shell.galaxy?.live && window.mira.shell.galaxy.frames > 0, undefined, 60)
-  await controls(guest)
+  await controls(guest, undefined, true, ['public'])
+  await controls(guest, undefined, true, ['private'])
   await capture(guest, 'phone-twins')
   assert.equal(guestWelcomes.length, 0, 'phone lobby did not join before opening the invite')
 
@@ -238,11 +262,14 @@ try {
   step = 'phone lobby privacy and Minimal rest after visiting the invite'
   // Keep the inbound room and world in the entry URL, but remove autoplay to visit only the lobby.
   const lobbyFetches = await checkLobbyFetches(guest, lobbyURL(0, invite), reused.room, () => guestWelcomes.length)
+  if (lobbyFetches.leaks.length) {
+    console.error('Lobby fetches exposed the private room:', JSON.stringify(lobbyFetches.leaks))
+  }
   const minimal = await assertIdle(guest, 0, false, 'phone Minimal')
   await capture(guest, 'phone-minimal-twins')
 
   step = 'phone deliberately makes its own private twin'
-  await (await controls(guest, first.recipe, false)).private.tap()
+  await (await controls(guest, privateTarget.recipe, false, ['private'])).private.tap()
   const independent = await joined(guest, guestWelcomes, 1, step)
   assert.match(independent.room, /^p-[a-z0-9]{22}$/, 'guest Private tap welcomed into a parallel room')
   assert.notEqual(independent.room, reused.room, 'guest Private tap creates a room independent of the inbound invite')
@@ -253,6 +280,8 @@ try {
     guestWelcomeAndRoster: true, independentPrivateWelcome: true,
     lobbyFetches, reducedMotion, minimal,
   }, null, 2) + '\n')
+  step = 'the lobby fetch privacy assertion'
+  assert.deepEqual(lobbyFetches.leaks, [], 'lobby fetches must never expose the private room')
   console.log('Twin routing, lobby privacy, and idle draw checks passed')
 } catch (error) {
   throw new Error(`Twin browser proof failed during ${step}`, { cause: error })
