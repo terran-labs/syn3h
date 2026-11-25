@@ -57,7 +57,7 @@
 .mira-shell.exploration-ui .updates-github:hover { color: var(--s3-accent-2); background: rgb(205 205 205 / .06); }
 .mira-shell.exploration-ui .updates-github:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 0; }
 .mira-shell.exploration-ui .updates-github .github-mark { width: 16px; height: 16px; flex: 0 0 auto; fill: currentColor; }
-.mira-shell.exploration-ui .about-pane > .updates-github { float: right; margin: -6px 0 0 12px; }
+.mira-shell.exploration-ui .about-pane > .updates-github { display: flex; width: max-content; margin: -8px 0 4px auto; }
 .mira-shell.exploration-ui .update-badge { padding: 2px 8px; white-space: nowrap; border-radius: 999px; font: 500 11px/1.4 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
 .mira-shell.exploration-ui .update-badge.is-new { color: #0f0f0f; background: var(--s3-accent-2); }
 .mira-shell.exploration-ui .update-badge.is-running { color: var(--s3-accent-2); border: 1px solid var(--s3-line); }
