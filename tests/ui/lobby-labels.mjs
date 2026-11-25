@@ -3,7 +3,7 @@
 import '../../tools/lib/legacy-env.mjs'
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 
 const url = process.env.MIRA_URL
 assert.ok(url, 'MIRA_URL is required')
@@ -15,10 +15,13 @@ const views = [
   ['landscape-small', 667, 375, true, 'reduce'],
   ['desktop', 1440, 900, false, 'no-preference'],
   ['desktop-1280', 1280, 800, false, 'reduce'],
+  ['desktop-1700', 1700, 1100, false, 'reduce'],
 ]
+const requestedViews = process.argv.slice(2)
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 try {
   for (const [name, width, height, phone, reducedMotion] of views) {
+    if (requestedViews.length && !requestedViews.includes(name)) continue
     const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: phone ? 2 : 1, isMobile: phone, hasTouch: phone, reducedMotion })
     const page = await context.newPage()
     const errors = []
@@ -43,6 +46,93 @@ try {
     const dismiss = page.locator('.update-banner .update-dismiss')
     if (await dismiss.isVisible()) await dismiss.click()
     await page.waitForTimeout(900)
+    if (name === 'desktop-1280' || name === 'desktop-1700') {
+      const trace = await page.evaluate(async () => {
+        const { captionBlocked, captionBox, captionClearance } = await import('/src/ui/galaxy/labels.ts')
+        const shell = window.mira.shell, galaxy = shell.galaxy
+        const chips = [...document.querySelectorAll('.galaxy-label')]
+        const archipelago = chips.find(chip => chip.dataset.world === 'archipelago')
+        // A reproducible wide caption exercises the dock corner at the initial orbit position.
+        shell.galaxyWorlds.find(world => world.id === 'archipelago').nameSeed = 54 // Zephsaquis Minor
+        shell.refreshGalaxyLabels(true)
+        galaxy.clockHold = true
+        const draw = async time => {
+          const frame = galaxy.frames
+          galaxy.clock = time
+          galaxy.refreshCaptions()
+          while (galaxy.frames === frame) await new Promise(requestAnimationFrame)
+        }
+        await new Promise(requestAnimationFrame)
+        await new Promise(requestAnimationFrame)
+        const rows = []
+        for (let t = 0; t <= 1200; t += 30) {
+          await draw(t)
+          const visible = galaxy.screen.filter(p => p.visible)
+          const nearest = visible.reduce((a, b) => a.depth < b.depth ? a : b)
+          const shown = chips.filter(chip => !chip.hidden && !chip.classList.contains('is-suppressed'))
+          const blockers = [shell.lobbySettings.dock, shell.lobbySettings.version].map(el => el.getBoundingClientRect().toJSON())
+          for (const chip of shown) {
+            const place = visible.find(p => p.id === chip.dataset.world)
+            const rect = chip.querySelector('.galaxy-caption-text').getBoundingClientRect()
+            if (captionClearance(rect, place, visible, galaxy.sunScreen) < 0) throw Error(`Foreground crosses ${place.id} at ${t}s`)
+          }
+          const describe = place => {
+            const chip = chips.find(c => c.dataset.world === place.id)
+            const scale = Number(chip.style.getPropertyValue('--caption-scale'))
+            const size = shell.chipSize.get(chip)
+            const text = shell.chipSize.get(chip.firstElementChild)
+            const scaled = { width: size.width * scale, height: size.height * scale }
+            const top = place.y + place.radius + 5 * scale
+            const nominal = captionBox(place, top, scaled, innerWidth, innerHeight)
+            const adjusted = captionBox(place, top, scaled, innerWidth, innerHeight, blockers)
+            const clear = adjusted && captionClearance({
+              left: (adjusted.left + adjusted.right - text.width * scale) / 2,
+              right: (adjusted.left + adjusted.right + text.width * scale) / 2,
+              top: adjusted.top, bottom: adjusted.top + text.height * scale,
+            }, place, visible, galaxy.sunScreen)
+            const clearOfCaptions = adjusted && !captionBlocked(adjusted, shown.filter(c => c !== chip).map(c => c.getBoundingClientRect()), 2)
+            return {
+              id: place.id, name: chip.querySelector('strong').textContent,
+              planet: place, nominal, oldDockBlocked: !!nominal && captionBlocked(nominal, blockers), adjusted,
+              clearOfForeground: clear > 1, clearOfCaptions,
+              shown: shown.includes(chip), actual: shown.includes(chip) ? chip.getBoundingClientRect().toJSON() : null,
+              opacity: Number(getComputedStyle(chip).opacity),
+            }
+          }
+          const closest = describe(nearest)
+          if (closest.clearOfForeground && closest.clearOfCaptions && !closest.shown) throw Error(`Nearest caption ${nearest.id} missing in free space at ${t}s`)
+          rows.push({ orbitSeconds: t, closest, archipelago: describe(visible.find(p => p.id === 'archipelago')) })
+        }
+        await draw(0)
+        // Reconstruct one-pixel crossings of the actual dock corner from the measured caption.
+        const p = galaxy.screen.find(place => place.id === 'archipelago')
+        const dock = shell.lobbySettings.dock.getBoundingClientRect().toJSON()
+        const scale = Number(archipelago.style.getPropertyValue('--caption-scale'))
+        const size = shell.chipSize.get(archipelago)
+        const scaled = { width: size.width * scale, height: size.height * scale }
+        const crossing = dock.top - 8 - scaled.height
+        const atCorner = { ...p, x: dock.left - scaled.width / 2 + 12 }
+        const dockCorner = []
+        for (let dy = -30; dy <= 5; dy++) {
+          galaxy.options.onLayout(galaxy.screen.map(place => place === p
+            ? { ...atCorner, y: crossing + dy - p.radius - 5 * scale }
+            : place))
+          const drawn = archipelago.getBoundingClientRect()
+          dockCorner.push({ dy, left: drawn.left, top: drawn.top, shown: !archipelago.classList.contains('is-suppressed') })
+        }
+        await draw(0)
+        return { orbit: rows, dockCorner }
+      })
+      await writeFile(`${out}/${name}-trace.json`, JSON.stringify(trace, null, 2) + '\n')
+      assert.ok(trace.orbit[0].archipelago.shown, `${name}: the settled archipelago caption is shown`)
+      if (name === 'desktop-1280') assert.ok(trace.orbit[0].archipelago.oldDockBlocked, 'the wide caption reproduces the old dock rejection')
+      assert.ok(trace.orbit.filter(row => row.closest.shown).length > 1, `${name}: nearest captions are shown through the orbit`)
+      for (const [i, row] of trace.dockCorner.entries()) {
+        const prior = trace.dockCorner[i - 1]
+        assert.ok(row.shown, `${name}: caption stays visible while passing the dock corner`)
+        if (prior?.shown) assert.ok(Math.abs(row.left - prior.left) < 4, `${name}: no horizontal jump at the dock corner`)
+      }
+    }
     const resting = await measure()
     check(resting)
     await page.waitForTimeout(400)

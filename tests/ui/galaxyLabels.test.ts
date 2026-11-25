@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { captionBlocked, captionBox, captionHidden, captionLayout, captionMask, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
+import { captionBlocked, captionBox, captionClearance, captionHidden, captionLayout, covered, type LabelPlace } from '../../src/ui/galaxy/labels'
 
 const place = (id: string, x: number, y: number, radius: number, depth: number): LabelPlace => ({ id, x, y, radius, visible: true, depth })
 
@@ -23,15 +23,13 @@ describe('planet captions: depth', () => {
 })
 
 describe('planet captions: occlusion', () => {
-  it('cuts a caption only by nearer bodies that reach it, from its own top centre', () => {
-    const far = place('far', 300, 300, 20, 20), near = place('near', 310, 335, 18, 10), farther = place('farther', 310, 335, 18, 30)
-    expect(captionMask(far, [far, farther], undefined, 325)).toBe('none')
-    const mask = captionMask(far, [far, near], undefined, 325)
-    expect(mask).toContain('calc(50% + 10.0px) 10.0px')
-    expect(mask).toContain('transparent 17.5px, #000 18.5px')
-    expect(captionMask(near, [far, near], undefined, 358)).toBe('none')
-    // The sun cuts what is behind it.
-    expect(captionMask(far, [far], { x: 300, y: 330, radius: 12, depth: 5 }, 325)).not.toBe('none')
+  it('measures whole-caption clearance against nearer globes and the sun', () => {
+    const far = place('far', 300, 300, 20, 20), near = place('near', 310, 335, 18, 10)
+    const box = { left: 280, top: 325, right: 305, bottom: 350 }
+    expect(captionClearance(box, far, [near])).toBeLessThan(0)
+    expect(captionClearance(box, far, [{ ...near, depth: 30 }])).toBe(Infinity)
+    expect(captionClearance(box, far, [], { ...near })).toBeLessThan(0)
+    expect(captionClearance({ ...box, right: 290 }, far, [near])).toBeGreaterThan(0)
   })
 })
 
@@ -49,14 +47,31 @@ describe('captions and the lobby controls', () => {
 })
 
 describe('caption placement', () => {
-  it('keeps an edge caption inside the viewport and its mask aligned with the globe', () => {
+  it('keeps an edge caption inside the viewport', () => {
     const world = place('edge', 5, 370, 30, 10)
     const box = captionBox(world, 405, { width: 100, height: 32 }, 350, 400)!
     expect(box.left).toBeGreaterThanOrEqual(0)
     expect(box.bottom).toBeLessThanOrEqual(400)
-    const center = (box.left + box.right) / 2
-    const front = place('front', center + 8, box.top + 4, 15, 5)
-    expect(captionMask(world, [front], undefined, box.top, 2, center)).toContain('calc(50% + 4.0px) 2.0px')
+
+  })
+
+  it('uses the free space beside the desktop dock when a wide caption grazes its corner', () => {
+    const world = place('archipelago', 1015, 600, 40, 10)
+    const dock = { left: 1116, top: 688, right: 1264, bottom: 784 }
+    const box = captionBox(world, 650, { width: 220, height: 60 }, 1280, 800, [dock])!
+    expect(box.top).toBe(650)
+    expect(box.left).toBeLessThan(world.x)
+    expect(box.right).toBeGreaterThan(world.x)
+    expect(captionBlocked(box, [dock])).toBe(false)
+  })
+
+  it('keeps a caption continuous as it crosses the dock’s vertical boundary', () => {
+    const world = place('archipelago', 1015, 600, 40, 10)
+    const dock = { left: 1116, top: 688, right: 1264, bottom: 784 }
+    const near = (top: number) => captionBox(world, top, { width: 220, height: 60 }, 1280, 800, [dock])!
+    const justAbove = near(619.5), justInside = near(620.5)
+    expect(captionBlocked(justInside, [dock])).toBe(false)
+    expect(Math.abs(justAbove.left - justInside.left)).toBeLessThan(1)
   })
 
   it('gives a collision to the highlighted caption and keeps the dock clear', () => {

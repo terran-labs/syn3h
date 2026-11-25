@@ -33,7 +33,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionBox, captionHidden, captionLayout, captionMask, type ScreenBox } from './galaxy/labels'
+import { captionBox, captionClearance, captionHidden, captionLayout, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -1789,13 +1789,15 @@ export class Shell implements System {
       // online. The caption and the planet both lead to the same world.
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       this.chipSizes.observe(chip)
-      chip.innerHTML = '<strong></strong><small class="galaxy-biome"></small>'
+      chip.innerHTML = '<span class="galaxy-caption-text"><strong></strong><small class="galaxy-biome"></small></span>'
+      const caption = chip.firstElementChild!
+      this.chipSizes.observe(caption)
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
       // A whisper of the planet's own colour in the near-white type.
       if (!world.forming) chip.style.setProperty('--caption-tint', plateTint(world.recipe ?? world.id.split('~')[0]))
       chip.style.setProperty('--caption-accent', captionAccent(world))
-      if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
+      if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; caption.append(count) }
       if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
       chip.addEventListener('click', event => {
         // Galaxy handles pointer gestures, including drags that begin on a caption.
@@ -1920,10 +1922,16 @@ export class Shell implements System {
           const scale = Number(chip.style.getPropertyValue('--caption-scale'))
           const size = this.chipSize.get(chip)
           if (!size?.width || !size.height) return []
-          const box = captionBox(place, place.y + place.radius + CAPTION_GAP * scale, { width: size.width * scale, height: size.height * scale }, layer.width, layer.height)
-          if (!box) return []
+          const box = captionBox(place, place.y + place.radius + CAPTION_GAP * scale, { width: size.width * scale, height: size.height * scale }, layer.width, layer.height, blockers)
+          const text = this.chipSize.get(chip.firstElementChild!)
+          if (!box || !text?.width || !text.height) return []
+          const center = (box.left + box.right) / 2, halfText = text.width * scale / 2
+          const foregroundGap = captionClearance({ left: center - halfText, right: center + halfText, top: box.top, bottom: box.top + text.height * scale }, place, places, sun)
+          // Leave space for the half-pixel placement tolerance and the limb's antialiasing.
+          if (foregroundGap <= 1) return []
+          const foregroundStrength = Math.min(1, foregroundGap / 8)
           const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
-          return [{ id: place.id, place, chip, box, priority, scale }]
+          return [{ id: place.id, place, chip, box, priority, foregroundStrength }]
         })
         const strengths = captionLayout(candidates, blockers)
         for (const [id, chip] of chips) {
@@ -1931,7 +1939,7 @@ export class Shell implements System {
           const tabIndex = strengths.get(id) ? 0 : -1
           if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
         }
-        for (const { id, place, chip, box, scale } of candidates) {
+        for (const { id, place, chip, box, foregroundStrength } of candidates) {
           const clearance = strengths.get(id)
           if (!clearance) continue
           const center = (box.left + box.right) / 2
@@ -1939,8 +1947,8 @@ export class Shell implements System {
           const depth = far > near ? (place.depth - near) / (far - near) : 0
           const strength = (clearance * (1 - 0.25 * depth + (id === current ? 0.2 : 0))).toFixed(2)
           if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
-          const mask = captionMask(place, places, sun, box.top, scale, center)
-          if (this.chipMask.get(chip) !== mask) { this.chipMask.set(chip, mask); chip.style.setProperty('mask-image', mask); chip.style.setProperty('-webkit-mask-image', mask) }
+          const foreground = foregroundStrength.toFixed(2)
+          if (chip.style.getPropertyValue('--caption-foreground') !== foreground) chip.style.setProperty('--caption-foreground', foreground)
         }
       },
     })
@@ -1969,8 +1977,6 @@ export class Shell implements System {
     }
     this.galaxy?.refreshCaptions()
   })
-  /** Each caption's last mask, so it is written only when it changes. */
-  private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()

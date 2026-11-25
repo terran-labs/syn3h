@@ -30,7 +30,7 @@ describe('caption tap', () => {
     expect(pickLobbyTarget([front, back], sun, 100, 118, 22, 'back')).toBe('back')
   })
 
-  it('routes masked pixels to a foreground globe and stops at the sun', () => {
+  it('routes caption padding to a foreground globe and stops at the sun', () => {
     expect(pickLobbyTarget([front, back], sun, 110, 100, 22, 'back')).toBe('front')
     expect(pickLobbyTarget([front, back], sun, 117, 100, 22, 'back')).toBeUndefined()
     expect(pickLobbyTarget([front, back], sun, 117, 100, 22)).toBeUndefined()

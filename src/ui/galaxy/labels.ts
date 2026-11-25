@@ -27,29 +27,10 @@ export function captionHidden(place: LabelPlace, places: readonly LabelPlace[], 
   return !!sun && sun.depth !== undefined && sun.depth < place.depth && covered(place, sun) > 0.5
 }
 
-/**
- * The mask that cuts a caption where nearer bodies cover it: one transparent disc per planet
- * nearer the eye than the caption's own (and the sun, when nearer), in the caption's own box.
- * Positions are given from the box's top centre (`calc(50% + dx)`), since the caption is
- * usually centred on its planet. The disc edge is a one pixel ramp
- * at the planet's limb, crisp and antialiased. 'none' when nothing nearer touches it.
- */
-export function captionMask(place: LabelPlace, places: readonly LabelPlace[], sun: ScreenDisc | undefined, top: number, scale = 1, center = place.x): string {
-  const nearer = places.filter(other => other.id !== place.id && other.visible && other.depth < place.depth)
-  const bodies: { x: number; y: number; radius: number }[] = [...nearer]
-  if (sun && sun.depth !== undefined && sun.depth < place.depth) bodies.push(sun)
-  // Only bodies that can reach the caption: within a generous box under the planet, as large as the caption is drawn.
-  const reach = bodies.filter(b => Math.abs(b.x - center) < b.radius + 160 * scale && b.y + b.radius > top - 2 && b.y - b.radius < top + 40 * scale)
-  if (!reach.length) return 'none'
-  return reach.map(b => {
-    const dx = ((b.x - center) / scale).toFixed(1), dy = ((b.y - top) / scale).toFixed(1)
-    const inner = (Math.max(0, b.radius - 0.5) / scale).toFixed(1), outer = ((b.radius + 0.5) / scale).toFixed(1)
-    return `radial-gradient(circle at calc(50% + ${dx}px) ${dy}px, transparent ${inner}px, #000 ${outer}px)`
-  }).join(', ')
-}
-
 /** A rectangle on screen, in CSS pixels. */
 export interface ScreenBox { left: number; top: number; right: number; bottom: number }
+
+const CONTROL_MARGIN = 8
 
 /**
  * Whether a caption's box comes within `margin` of any of the lobby's own controls (the buttons
@@ -57,19 +38,48 @@ export interface ScreenBox { left: number; top: number; right: number; bottom: n
  * taps, so it never draws over a control or reads through the card (the owner's iPad mini, 21
  * November 2026). The planet itself stays.
  */
-export function captionBlocked(box: ScreenBox, blockers: readonly ScreenBox[], margin = 8): boolean {
+export function captionBlocked(box: ScreenBox, blockers: readonly ScreenBox[], margin = CONTROL_MARGIN): boolean {
   return blockers.some(b => box.left < b.right + margin && box.right > b.left - margin && box.top < b.bottom + margin && box.bottom > b.top - margin)
 }
 
-/** One placement per caption. Clamping keeps the box in view without switching sides. */
-export function captionBox(place: LabelPlace, top: number, size: { width: number; height: number }, width: number, height: number): ScreenBox | undefined {
+/** Signed distance from the printed caption box to the closest foreground limb. */
+export function captionClearance(box: ScreenBox, place: LabelPlace, places: readonly LabelPlace[], sun?: ScreenDisc): number {
+  let gap = Infinity
+  for (const disc of sun ? [...places, sun] : places) {
+    if (disc.depth === undefined || disc.depth >= place.depth || ('visible' in disc && !disc.visible)) continue
+    const dx = Math.max(box.left - disc.x, disc.x - box.right, 0)
+    const dy = Math.max(box.top - disc.y, disc.y - box.bottom, 0)
+    gap = Math.min(gap, Math.hypot(dx, dy) - disc.radius)
+  }
+  return gap
+}
+
+/** Clamp at the viewport and keep captions clear of adjacent controls. */
+export function captionBox(place: LabelPlace, top: number, size: { width: number; height: number }, width: number, height: number, blockers: readonly ScreenBox[] = []): ScreenBox | undefined {
   const inset = 6
   if (size.width > width - 2 * inset || size.height > height - 2 * inset ||
       place.x + place.radius < 0 || place.x - place.radius > width ||
       place.y + place.radius < 0 || place.y - place.radius > height) return
   const left = Math.max(inset, Math.min(width - inset - size.width, place.x - size.width / 2))
   top = Math.max(inset, Math.min(height - inset - size.height, top))
-  return { left, top, right: left + size.width, bottom: top + size.height }
+  const bottom = top + size.height
+  let pushRight = 0, pushLeft = 0
+  for (const blocker of blockers) {
+    const min = blocker.left - CONTROL_MARGIN, max = blocker.right + CONTROL_MARGIN
+    if (left >= max || left + size.width <= min) continue
+    const verticalGap = Math.max(blocker.top - CONTROL_MARGIN - bottom, top - blocker.bottom - CONTROL_MARGIN, 0)
+    // Ease into the side clearance before reaching the control's corner.
+    const approach = Math.max(0, 1 - verticalGap / CONTROL_MARGIN / 3)
+    if (blocker.left + blocker.right > width) {
+      pushLeft = Math.max(pushLeft, approach * (left + size.width - min))
+    } else {
+      pushRight = Math.max(pushRight, approach * (max - left))
+    }
+  }
+  const offset = Math.max(-size.width / 2, Math.min(size.width / 2, pushRight - pushLeft))
+  const x = Math.max(inset, Math.min(width - inset - size.width, left + offset))
+  const box = { left: x, top, right: x + size.width, bottom }
+  return captionBlocked(box, blockers) ? undefined : box
 }
 
 /** Sorted by explicit priority, with input order breaking ties so orbit depth cannot swap captions. */

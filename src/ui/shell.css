@@ -401,7 +401,7 @@
 /* `:not(#galaxy-caption)` lifts these over the shell's and themes' generic button rules (a
    caption is a button), which would otherwise give it a rim and a fill; no element has that id. */
 .mira-shell button.galaxy-label:not(#galaxy-caption) {
-  --caption-strength: 1; --caption-tint: #f6f9fc; --caption-accent: #f6f9fc;
+  --caption-strength: 1; --caption-foreground: 1; --caption-tint: #f6f9fc; --caption-accent: #f6f9fc;
   /* Scale the whole button from its top centre. Its layout box stays at the farthest size. */
   font-size: 1px;
   position: absolute; left: 0; top: 0; translate: -200px -200px;
@@ -413,27 +413,25 @@
   text-shadow: var(--float-under);
   --caption-pulse: 0;
   /* At rest, toward the hovered strength by the planet's pulse (0 to its peak share); hidden stays hidden. */
-  opacity: calc(var(--caption-base) * var(--caption-strength) + (min(1, calc(var(--caption-strength) * 100)) - var(--caption-base) * var(--caption-strength)) * var(--caption-pulse));
+  opacity: calc(var(--caption-foreground) * (var(--caption-base) * var(--caption-strength) + (min(1, calc(var(--caption-strength) * 100)) - var(--caption-base) * var(--caption-strength)) * var(--caption-pulse)));
   transition: opacity .35s ease-out, color .35s ease-out;
-  /* Several discs cut one caption: each mask layer keeps what lies outside its disc, so they intersect. */
-  mask-composite: intersect; -webkit-mask-composite: source-in; mask-repeat: no-repeat; -webkit-mask-repeat: no-repeat;
 }
 /* .62 and .78 were tried first; the owner (17 November 2026) asked for "less transparent grey and
    more solid white", over the sun's shafts as well as dark space. */
 .mira-shell { --caption-base: .92; }
-.mira-shell button.galaxy-label > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
-.mira-shell button.galaxy-label > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
-.mira-shell button.galaxy-label > small:empty { display: none; }
+.galaxy-caption-text { display: grid; justify-items: center; }
+.mira-shell button.galaxy-label .galaxy-caption-text > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; margin-right: -.24em; }
+.mira-shell button.galaxy-label .galaxy-caption-text > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
+.mira-shell button.galaxy-label .galaxy-caption-text > small:empty { display: none; }
 /* A planet hovered (or held under a finger, or its caption focused, or chosen and flown to)
    brings its caption to full strength in its corona's colour (--caption-accent, set by Shell from
    the glow the galaxy draws round it), easing in over 220 ms and out over the resting 350 ms. The
    biome and online lines rise with it and stay a step quieter. A caption at strength 0 (its planet hidden, or not yet arrived in the
-   opening) stays hidden: min(1, strength x 100) is 0 there and 1 anywhere else. The occlusion
-   mask is untouched, so letters behind a nearer planet stay cut. */
-.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: min(1, calc(var(--caption-strength) * 100)); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out; }
-.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) > small { opacity: .85; transition: opacity .22s ease-out; }
+   opening) stays hidden. */
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: calc(var(--caption-foreground) * min(1, calc(var(--caption-strength) * 100))); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out; }
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) .galaxy-caption-text > small { opacity: .85; transition: opacity .22s ease-out; }
 @media (prefers-reduced-motion: reduce) {
-  .mira-shell button.galaxy-label:not(#galaxy-caption), .mira-shell button.galaxy-label:not(#galaxy-caption) > small { transition: none; }
+  .mira-shell button.galaxy-label:not(#galaxy-caption), .mira-shell button.galaxy-label:not(#galaxy-caption) .galaxy-caption-text > small { transition: none; }
 }
 .mira-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
 .mira-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
@@ -511,14 +509,14 @@
   }
   .mira-shell.exploration-ui.galaxy-open .galaxy-links button { min-height: 44px; padding: 0 14px; font-size: 12px; }
   /* Smaller captions on a short phone. */
-  .mira-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
-  .mira-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
+  .mira-shell button.galaxy-label .galaxy-caption-text > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
+  .mira-shell button.galaxy-label .galaxy-caption-text > small { font-size: 8.5em; line-height: 1.1765; }
 }
 
 /* Narrow phones in portrait: the same smaller captions. */
 @media (orientation: portrait) and (max-width: 480px) {
-  .mira-shell button.galaxy-label > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
-  .mira-shell button.galaxy-label > small { font-size: 8.5em; line-height: 1.1765; }
+  .mira-shell button.galaxy-label .galaxy-caption-text > strong { font-size: 9em; line-height: 1.3333; letter-spacing: .2em; margin-right: -.2em; }
+  .mira-shell button.galaxy-label .galaxy-caption-text > small { font-size: 8.5em; line-height: 1.1765; }
 }
 
 .entry-warm-progress { position: fixed; z-index: 45; bottom: max(2rem, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); padding: .4rem .8rem; border-radius: .4rem; background: #111a24; color: white; font: inherit; pointer-events: none; white-space: nowrap; }

@@ -252,7 +252,7 @@ export function pickWorld(screen: readonly { id: string; x: number; y: number; r
   const on = shown.filter(e => e.d < 0).sort((a, b) => a.s.depth - b.s.depth)[0]
   return (on ?? shown.filter(e => e.d < margin).sort((a, b) => a.d - b.d)[0])?.s.id
 }
-/** Captions beat globe padding. The nearer discs that cut a caption still own those pixels. */
+/** Captions beat globe padding. A nearer disc owns its pixels if it crosses the button’s padding. */
 export function pickLobbyTarget(screen: readonly LabelPlace[], sun: ScreenDisc, x: number, y: number, margin: number, caption?: string): string | undefined {
   const label = caption === undefined ? undefined : screen.find(place => place.id === caption)
   const sunDepth = insideDisc(sun, x, y) ? sun.depth ?? Infinity : Infinity
