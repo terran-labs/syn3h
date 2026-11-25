@@ -6,6 +6,8 @@
  * is lit while something is unread and hollow otherwise; the count is bright type just after the name.
  */
 import { chatLink } from './chat/chatLink'
+import { chatOn, chatShow } from '../../shared/chat'
+import { params } from '../../shared/params'
 
 const TITLE = 'Talk with everyone in this world. Opens Chat; Y does the same.'
 
@@ -16,6 +18,7 @@ export class ChatRow {
   private readonly tip = document.createElement('div')
   private tipTimer: ReturnType<typeof setTimeout> | undefined
   private readonly unsubscribe: () => void
+  private readonly unsubscribeParams: () => void
 
   constructor(parent: HTMLElement, signal?: AbortSignal) {
     this.element.className = 'hud-chat'
@@ -32,8 +35,18 @@ export class ChatRow {
     this.button.addEventListener('focus', () => this.showTip(0), { signal })
     for (const type of ['pointerleave', 'blur', 'pointerdown'] as const) this.button.addEventListener(type, () => this.hideTip(), { signal })
     this.unsubscribe = chatLink.subscribe(() => this.sync())
+    // Shown only while the room has chat (chat.on, the host's) and this player shows it
+    // (chat.show): the row, its count, its node and its share of the line go together.
+    this.unsubscribeParams = params.onChange((id) => { if (id === chatOn.def.id || id === chatShow.def.id) this.syncShown() })
+    this.syncShown()
     this.sync()
     parent.append(this.element, this.tip)
+  }
+
+  private syncShown(): void {
+    const shown = chatOn.value && chatShow.value
+    this.element.hidden = !shown
+    if (!shown) this.hideTip()
   }
 
   private label(): string {
@@ -70,5 +83,5 @@ export class ChatRow {
 
   private hideTip(): void { clearTimeout(this.tipTimer); this.tip.hidden = true }
 
-  dispose(): void { this.hideTip(); this.unsubscribe(); this.element.remove(); this.tip.remove() }
+  dispose(): void { this.hideTip(); this.unsubscribe(); this.unsubscribeParams(); this.element.remove(); this.tip.remove() }
 }

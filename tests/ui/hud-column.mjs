@@ -14,7 +14,8 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 6. Every node sits on its line: each circle's centre x is its line's centre x (half a pixel),
 //    and each line runs from its first circle's centre to its last's (the owner, 25 November
 //    2026: the line ran past Wings and the circles sat left of it). Chat's unread count never
-//    moves the key column. At 1280x800 and on a phone, where only the drum's lit node shows.
+//    moves the key column, and with chat off (chat.on or chat.show) the line ends at the last row
+//    left. At 1280x800 and on a phone, where only the drum's lit node shows.
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
@@ -67,7 +68,7 @@ const lines = (page) => page.evaluate(() => {
   const acc = document.querySelector('.hud-accessories'), rows = acc && acc.checkVisibility() && (() => { const c = getComputedStyle(acc, '::before'), b = r(acc); return { x: b.left + parseFloat(c.left) + parseFloat(c.width) / 2, top: b.top + parseFloat(c.top), bottom: b.bottom - parseFloat(c.bottom) } })()
   return {
     gear: { line: { x: spine.left + spine.width / 2, top: spine.top, bottom: spine.bottom }, nodes: gear },
-    rows: rows && { line: rows, nodes: [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) .acc-pip')].map((p) => centre(p)) },
+    rows: rows && { line: rows, nodes: [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) .acc-pip')].filter((p) => p.checkVisibility()).map((p) => centre(p)) },
   }
 })
 const onLines = (m, at, ends = true) => {
@@ -130,6 +131,16 @@ try {
         await page.waitForTimeout(250)
         assert.deepEqual(await keyX(), still, `an unread count of ${n} moves no key`)
         onLines(await lines(page), `${w}x${h} unread ${n}`)
+      }
+      // Room chat off (the host's chat.on): no Chat row, and the line ends at the last row left.
+      for (const [id, value] of [['chat.on', false], ['chat.show', false]]) {
+        await page.evaluate(([id, value]) => window.mira.params.set(id, value), [id, value])
+        await page.waitForTimeout(250)
+        assert.equal(await page.locator('.hud-chat').isVisible(), false, `${id} off hides the Chat row`)
+        onLines(await lines(page), `${w}x${h} ${id} off`)
+        await page.evaluate((id) => window.mira.params.set(id, true), id)
+        await page.waitForTimeout(250)
+        assert.equal(await page.locator('.hud-chat').isVisible(), true, `${id} back on shows the Chat row`)
       }
     }
     if (w === 1440) {

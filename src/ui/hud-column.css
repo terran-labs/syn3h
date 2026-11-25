@@ -143,6 +143,10 @@
   pointer-events: auto;
 }
 .mira-shell.has-touch :is(.hud-accessories, .hud-chat) { display: none; }
+/* Room chat off (chat.on) or hidden by the player (chat.show): no Chat row (ChatRow.ts), and the
+   rows' line ends at the last accessory's node instead. Nothing above moves. */
+.hud-chat[hidden] { display: none; }
+.mira-shell:has(.hud-chat[hidden]) .hud-accessories::before { bottom: calc(var(--col-row, 30px) / 2); }
 .mira-shell.is-focus :is(.hud-accessories, .hud-chat) { pointer-events: none; }
 /* The rows' own line: a hairline from the first row's node to Chat's. Every node is 7 px wide
    at spine - 3 px, so its centre is the line's centre (spine + .5 px) at any pixel ratio. */
