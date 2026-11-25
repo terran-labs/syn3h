@@ -10,8 +10,14 @@
  * short stem, a rounded head with side ears, and two eyes and a mouth cut out by the even-odd
  * fill rule, so whatever is behind shows through them. Screen readers hear "Bot" before the
  * name; the word is never drawn.
+ *
+ * The creator mark takes the same slot for the player the room vouches for as the creator
+ * (PlayerInfo.role, server/creator.ts): a line-art Mira icon (brand/creatorMarkPath.ts) in the
+ * player's colour through the same legibleTint, heard as "Creator". It comes only from the
+ * room's role, never from a name: the room strips typed lookalikes, and a bot never has a role.
  */
 import './player-marks.css'
+import { CREATOR_MARK_STROKE_PX, CREATOR_MARK_VIEWBOX, creatorMarkShape } from './brand/creatorMarkPath'
 
 const SVG = 'http://www.w3.org/2000/svg'
 const HEAD =
@@ -29,6 +35,8 @@ export interface MarkedPlayer {
   bot: boolean
   /** The player's vehicle colour, #rrggbb; the bot mark takes it, lifted to stay legible. */
   color?: string
+  /** What the room vouches for (PlayerInfo.role). Never set from anything a player typed. */
+  role?: 'creator'
 }
 
 /** The bot mark alone. Without a colour it takes the text colour around it. */
@@ -47,21 +55,58 @@ export function botMark(color?: string): SVGSVGElement {
   return svg
 }
 
+let creatorShape: ReturnType<typeof creatorMarkShape> | null = null
+
+/** The creator mark alone, in the bot mark's slot and colour rule. */
+export function creatorMark(color?: string): SVGSVGElement {
+  creatorShape ??= creatorMarkShape()
+  const svg = document.createElementNS(SVG, 'svg')
+  svg.setAttribute('class', 'bot-mark creator-mark')
+  svg.setAttribute('viewBox', CREATOR_MARK_VIEWBOX)
+  svg.setAttribute('role', 'img')
+  svg.setAttribute('aria-label', 'Creator')
+  if (color) svg.style.color = legibleTint(color)
+  const orbits = document.createElementNS(SVG, 'path')
+  orbits.setAttribute('d', creatorShape.orbits)
+  orbits.setAttribute('fill', 'none')
+  orbits.setAttribute('stroke', 'currentColor')
+  orbits.setAttribute('stroke-width', String(CREATOR_MARK_STROKE_PX))
+  orbits.setAttribute('stroke-linecap', 'round')
+  orbits.setAttribute('vector-effect', 'non-scaling-stroke')
+  const solids = document.createElementNS(SVG, 'path')
+  solids.setAttribute('d', creatorShape.solids)
+  solids.setAttribute('fill', 'currentColor')
+  svg.append(orbits, solids)
+  return svg
+}
+
+/** The mark a player's name carries, or null. A bot is never the creator. */
+function markFor(player: MarkedPlayer): SVGSVGElement | null {
+  if (player.bot) return botMark(player.color)
+  if (player.role === 'creator') return creatorMark(player.color)
+  return null
+}
+
+/** True when this player's name is drawn with a mark before it. */
+export const hasMark = (player: MarkedPlayer): boolean => player.bot || player.role === 'creator'
+
 /**
- * The nodes for a name with its marks, to append where the name goes: the bot mark first for a
- * bot, then the name as text (never markup). `shown` replaces the visible text ("You").
+ * The nodes for a name with its marks, to append where the name goes: the bot or creator mark
+ * first, then the name as text (never markup). `shown` replaces the visible text ("You").
  */
 export function markedName(player: MarkedPlayer, shown = player.name): Node[] {
   const text = document.createTextNode(shown)
-  return player.bot ? [botMark(player.color), text] : [text]
+  const mark = markFor(player)
+  return mark ? [mark, text] : [text]
 }
 
 /**
- * A line of text that may name players (a toast: "Zepy tagged you"), with each bot's mark set
- * before its name. Names are matched whole and longest first, so "Ann" never marks "Annika".
+ * A line of text that may name players (a toast: "Zepy tagged you"), with each bot's or the
+ * creator's mark set before its name. Names are matched whole and longest first, so "Ann" never
+ * marks "Annika".
  */
 export function markedText(text: string, players: readonly MarkedPlayer[]): Node[] {
-  const bots = players.filter(p => p.bot && p.name).sort((a, b) => b.name.length - a.name.length)
+  const bots = players.filter(p => hasMark(p) && p.name).sort((a, b) => b.name.length - a.name.length)
   if (!bots.length) return [document.createTextNode(text)]
   const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}])(${bots.map(b => escape(b.name)).join('|')})(?![\\p{L}\\p{N}])`, 'gu')

@@ -15,6 +15,9 @@
 
 import type { PlayerRole } from '../shared/protocol'
 import { sha256Hex } from './log'
+import { stripBadgeLookalikes } from '../shared/nameMarks'
+
+export { stripBadgeLookalikes }
 
 /** Roles the room asserts about a player (PlayerInfo.role). A client can never set its own. */
 const ROLES: readonly PlayerRole[] = ['creator']
@@ -69,27 +72,6 @@ export class KeyFailures {
 // ---------------------------------------------------------------------------------------
 // Names
 // ---------------------------------------------------------------------------------------
-
-/**
- * Characters a name may not contain anywhere: anything that could pass for the badge (stars,
- * sparkles, checks, crowns, medals, seals) and invisible characters that hide or reorder text
- * (zero width, direction controls, variation selectors, tag characters). Emoji in general stay.
- */
-const BADGE_LOOKALIKES = new RegExp([
-  '[\\u2600-\\u27bf]', // Miscellaneous Symbols and Dingbats: ★ ☆ ✓ ✔ ✦ ✧ ✨ ❇ ❋ ✪ …
-  '[\\u2b50-\\u2b55]', // ⭐ and stars
-  '[\\u2605\\u2606\\u221a\\u2713\\u2714\\u2611\\u2705\\u274e\\u2716]',
-  '[\\u066d\\u204e\\u2051\\u2055\\u22c6\\u235f\\u29bf\\u2731-\\u274b\\u2042\\u203b]', // ٭ ⁎ ⁑ ⁕ ⋆ ⍟ …
-  '\\u{1F31F}|\\u{1F320}|\\u{1F4AB}|\\u{1F396}|\\u{1F397}|\\u{1F3C5}|\\u{1F3C6}|\\u{1F947}|\\u{1F948}|\\u{1F949}',
-  '\\u{1F451}|\\u{1F48E}|\\u{1F6E1}|\\u{1F530}|\\u{1F5F8}|\\u{1F52F}|\\u{1F4AF}|\\u{1F3F5}|\\u{1F4DB}',
-  '[\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff\\ufe00-\\ufe0f\\u180e\\u00ad\\u034f\\u061c]',
-  '[\\u{E0000}-\\u{E007F}]|[\\u{E0100}-\\u{E01EF}]',
-].join('|'), 'gu')
-
-/** Remove from a typed name every character that could imitate the badge or hide text. */
-export function stripBadgeLookalikes(s: string): string {
-  return s.replace(BADGE_LOOKALIKES, '')
-}
 
 /** Letters from other scripts that look like Latin ones. Lower case keys, after NFKC. */
 const HOMOGLYPHS: Record<string, string> = {

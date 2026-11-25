@@ -32,6 +32,8 @@ const PERSON_NAME = '600 14px Barlow', BOT_NAME = '500 12px Barlow', NAME_SPACIN
 const PLATE_INSET = 30 // padding, border and 4 px for kerning
 /** The bot mark and its gap before a bot's name, px at the bot name's 12 px (player-marks.css: 1.1em + .3em). */
 const BOT_MARK_WIDTH = 17
+/** The creator mark and its gap before a person's 14 px name (player-marks.css: 1.15em tall, 200:128 wide, + .3em). */
+const CREATOR_MARK_WIDTH = 30
 /** The stacked count ("+2"): its font (must match nameplates.css) and its gap from the name. */
 const MORE_FONT = '500 10px Barlow', MORE_GAP = 6
 /**
@@ -80,6 +82,8 @@ export interface NameplateInfo {
   note: string
   bot: boolean
   color: string
+  /** The room's role for this player (PlayerInfo.role): 'creator' draws the creator mark. */
+  role?: 'creator'
 }
 export interface NameplateOptions {
   /** The shell supplies playing/menu state; labels never leak through a full-screen overlay. */
@@ -262,7 +266,7 @@ export class VehicleNameplates {
       const moreWidth = p.moreCount ? Math.ceil(textWidth(`+${p.moreCount}`, MORE_FONT, NAME_SPACING, 10)) + MORE_GAP : 0
       // An even width, so centring by -50% lands on whole pixels and the text stays sharp.
       const width = 2 * Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + moreWidth + Math.max(
-        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, base) + (t.bot ? BOT_MARK_WIDTH : 0), compact ? 0 : textWidth(tag, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10)))) / 2)
+        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, base) + (t.bot ? BOT_MARK_WIDTH : t.role === 'creator' ? CREATOR_MARK_WIDTH : 0), compact ? 0 : textWidth(tag, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10)))) / 2)
       const padding = moreWidth ? `${(t.bot ? 9 : 10) + moreWidth}px` : ''
       if (p.el.style.paddingRight !== padding) p.el.style.paddingRight = padding
       const height = HEIGHT[t.bot ? 'bot' : 'person'][compact || !tag ? 1 : 0]
@@ -280,8 +284,9 @@ export class VehicleNameplates {
         if (p.offered) this.candidates.push(c)
       }
       // Words and styles: written only when they change.
-      const text = t.bot ? `bot:${name}` : name
-      if (p.text !== text || (t.bot && t.color !== p.color)) { p.text = text; p.name.replaceChildren(...markedName({ name, bot: t.bot, color: t.color })) }
+      const marked = t.bot || t.role === 'creator'
+      const text = t.bot ? `bot:${name}` : t.role === 'creator' ? `creator:${name}` : name
+      if (p.text !== text || (marked && t.color !== p.color)) { p.text = text; p.name.replaceChildren(...markedName({ name, bot: t.bot, color: t.color, role: t.role })) }
       if (p.tag !== tag) { p.tag = tag; p.note.textContent = tag }
       p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-person', !t.bot); p.el.classList.toggle('is-compact', compact)
       // --vehicle-tint is the same colour under the name chat's speaker mark reads (src/ui/chat).

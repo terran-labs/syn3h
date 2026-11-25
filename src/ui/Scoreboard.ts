@@ -37,7 +37,7 @@ export class Scoreboard {
     // its release, so a click on it was lost.
     // Who each name is (the roster can learn a bot's colour after its row was drawn) is part of it.
     const roster = this.roster()
-    const rowSignature = `${rowLines.join('\n')}|${roster.map(p => `${p.id}:${p.name}:${p.bot}:${p.color ?? ''}`).join(',')}`
+    const rowSignature = `${rowLines.join('\n')}|${roster.map(p => `${p.id}:${p.name}:${p.bot}:${p.color ?? ''}:${p.role ?? ''}`).join(',')}`
     const keepRows = rowSignature === this.rowSignature && rowLines.length > 0
     this.rowSignature = rowSignature
     const before: HTMLElement[] = [], rows: HTMLElement[] = [], after: HTMLElement[] = []

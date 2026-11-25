@@ -1,3 +1,7 @@
 /* A player's marks before the name (playerMarks.ts). The bot mark sits on the text's baseline,
    at the text's size, in the player's colour; it never wraps away from the name. */
 .bot-mark { display: inline-block; flex: none; width: 1.1em; height: .95em; margin: 0 .3em 0 0; vertical-align: -.08em; overflow: visible; }
+/* The creator mark (playerMarks.ts creatorMark) shares the bot mark's slot, gap and baseline,
+   and every rule written for .bot-mark (the chat strip's included). The icon is wide, so it is
+   drawn at 1.15em tall and its own width; the creator's name starts a little right of a bot's. */
+.bot-mark.creator-mark { width: auto; height: 1.15em; aspect-ratio: 200 / 128; vertical-align: -.18em; }

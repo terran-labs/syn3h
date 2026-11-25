@@ -18,6 +18,8 @@ export interface ChatLine {
   /** The speaker's vehicle tint, a CSS colour. */
   color: string
   bot: boolean
+  /** The speaker's role in the room (PlayerInfo.role) when the line arrived; never from its text. */
+  role?: 'creator'
   text: string
   /** performance.now() when it arrived. */
   at: number
@@ -34,6 +36,8 @@ export interface ChatHost {
   selfId(): number
   nameOf(id: number): string
   colorOf(id: number): string
+  /** The room's role for a player; optional so older hosts and tests need not supply it. */
+  roleOf?(id: number): 'creator' | undefined
   connected(): boolean
   send(msg: { type: 'chat'; text: string; bot?: number }): void
 }
@@ -117,7 +121,8 @@ export class ChatChannel {
     if (!text || typeof msg.from !== 'number') return true
     const mine = msg.from === this.host.selfId()
     if (mine) this.awaitingEcho = Math.max(0, this.awaitingEcho - 1)
-    this.add({ from: msg.from, name: this.host.nameOf(msg.from), color: this.host.colorOf(msg.from), bot: isBotId(msg.from), text, mine })
+    const bot = isBotId(msg.from), role = bot ? undefined : this.host.roleOf?.(msg.from)
+    this.add({ from: msg.from, name: this.host.nameOf(msg.from), color: this.host.colorOf(msg.from), bot, ...(role ? { role } : {}), text, mine })
     return true
   }
 

@@ -526,7 +526,8 @@ export class Shell implements System {
     window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
-    this.nameInput.addEventListener('input', () => { this.nameSource = 'typed' }, { signal })
+    // Saved as it is typed, so a reload before Play keeps it (an empty field saves nothing).
+    this.nameInput.addEventListener('input', () => { this.nameSource = 'typed'; savePlayerName(this.nameInput.value, 'typed') }, { signal })
     // The public room is an empty field (placeholder "Public room"), never its internal name.
     const entryRoom = roomFromQuery(new URL(location.href).searchParams)
     this.roomInput.value = isDefaultRoom(entryRoom) ? '' : entryRoom

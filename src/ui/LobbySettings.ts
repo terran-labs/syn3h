@@ -22,6 +22,7 @@
  * the only `.world-inspector` element there.
  */
 import { glassLabels, LIQUID_TUNING_GROUPS } from './glassMaterial'
+import { creatorKey, forgetCreatorKey } from '../core/creatorKey'
 import { ACCORDION_ARROW } from './accordionArrow'
 import { params } from '../../shared/params'
 import type { QualitySource } from '../core/quality'
@@ -227,6 +228,27 @@ export class LobbySettings {
     this.inspector.addCard('play', 'Play', play, () => `Bots may play with me: ${params.get(playWithMe.def.id)?.value ? 'yes' : 'no'}`, {
       fill: () => { play.replaceChildren(this.inspector.row(playWithMe.def as PropertyDef)) },
     })
+    // Creator: only on a device holding the creator key (src/core/creatorKey.ts), to forget it.
+    if (creatorKey()) {
+      const creator = document.createElement('div')
+      let signedOut = false
+      this.inspector.addCard('creator', 'Creator', creator, () => signedOut ? 'Signed out on this device' : 'Signed in on this device', {
+        fill: () => {
+          const actions = document.createElement('div'); actions.className = 'wi-actions'
+          const button = document.createElement('button'); button.type = 'button'
+          button.textContent = signedOut ? 'Signed out' : 'Sign out of creator on this device'
+          button.disabled = signedOut
+          button.addEventListener('click', () => {
+            forgetCreatorKey(); signedOut = true
+            button.textContent = 'Signed out'; button.disabled = true
+            note.textContent = 'The creator mark leaves your name the next time you join a room.'
+          }, { signal })
+          const note = document.createElement('p'); note.className = 'wi-creator-note'
+          note.textContent = signedOut ? 'The creator mark leaves your name the next time you join a room.' : 'Your name carries the creator mark in every room you join from this device.'
+          actions.append(button); creator.replaceChildren(note, actions)
+        },
+      })
+    }
     if (options.host) {
       const room = document.createElement('div'); room.append(options.host)
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')

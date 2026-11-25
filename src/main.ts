@@ -2,6 +2,8 @@
  * Composition root. Builds the world from the four seams and starts the loop.
  * Keep this file small: features belong behind the seams, not here.
  */
+// First: takes a #creator= key out of the address before any other module can read it.
+import './core/creatorKey'
 import './core/legacyWindowNames'
 import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
@@ -436,6 +438,8 @@ async function main(): Promise<void> {
     shell.setPlayerRoster(() => [...connection.players.values()].map((p) => ({
       id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
       color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
+      // The creator mark comes from the room's role alone (server/creator.ts); bots have none.
+      ...(!p.bot && p.role === 'creator' ? { role: 'creator' as const } : {}),
     })))
     // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
     const banter = game.add(new HostBanter(game, terrain, connection, bots, environment), 'Host banter')

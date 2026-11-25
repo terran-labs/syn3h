@@ -8,6 +8,7 @@
  * storage (src/net); the name does not depend on it.
  */
 import { MAX_NAME_LENGTH } from '../../shared/protocol'
+import { stripBadgeLookalikes } from '../../shared/nameMarks'
 import { generateName, rollPlayerName } from './data/names'
 
 const NAME_KEY = 'mira.playerName'
@@ -24,7 +25,7 @@ const storage = (): Store | null => { try { return localStorage } catch { return
  * single spaces, trimmed, at most MAX_NAME_LENGTH characters. Empty when nothing is left.
  */
 export function cleanPlayerName(raw: string): string {
-  const s = raw.normalize('NFC')
+  const s = stripBadgeLookalikes(raw.normalize('NFC'))
     // Control characters and the invisible direction overrides that can scramble a label.
     .replace(/[\u0000-\u001f\u007f-\u009f​-‏‪-‮⁦-⁩﻿<>]/g, '')
     .replace(/\s+/g, ' ').trim()

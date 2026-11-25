@@ -406,8 +406,9 @@ export class ChatCard {
     }
     name.className = 'chat-name'; name.dataset.from = String(line.from); name.dataset.name = line.name
     name.style.color = legibleTint(line.color)
-    // A bot's name leads with the bot mark (playerMarks.ts), in the same colour; screen readers hear "Bot".
-    name.append(...markedName({ name: line.name, bot: line.bot, color: line.color }, line.mine ? 'You' : line.name))
+    // A bot's name leads with the bot mark (playerMarks.ts), the creator's with the creator mark,
+    // in the same colour; screen readers hear "Bot" or "Creator".
+    name.append(...markedName({ name: line.name, bot: line.bot, color: line.color, role: line.role }, line.mine ? 'You' : line.name))
     content.append(name)
     const text = document.createElement('span'); text.className = 'chat-text'; text.textContent = line.text
     const time = document.createElement('time'); time.className = 'chat-time'; time.dateTime = new Date(line.wall).toISOString(); time.textContent = timeOf(line.wall)
