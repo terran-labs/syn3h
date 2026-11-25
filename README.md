@@ -342,6 +342,18 @@ change the address and reload to change them. Two worked examples:
   Medium, stops the governor from changing anything mid test and opens Diagnostics at
   start. If WebGL 2 is clean and WebGPU is not, the fault is in the WebGPU path.
 
+### WebGPU present test page
+
+[`/webgpu-present-test.html`](https://mira.cc/webgpu-present-test.html) is a standalone WebGPU
+page with no game code, made to reproduce the flashes seen on iPhone Safari at Medium with sun
+shadows apart from the game. Each frame it submits the same work in the same order as the game:
+the canvas texture taken first, two shadow cascades each in a submit of its own, the scene, then
+the canvas pass last. The page behind it is magenta, so a magenta flash is a frame the browser
+showed with nothing drawn in it. Its switches, on the page and in the address: `shadows=0|1|2`,
+`presentHold=1`, `alpha=opaque`, `samples=1`, `late=1` (take the canvas texture only at the end
+and fill it with one copy), `fps=30`, `load=N` (fragment work, 0 to 64) and `scale=X`. Report one
+sentence: frames shown, magenta flashes seen by eye, and the settings line the page prints.
+
 ### The Diagnostics report
 
 In the game, press Esc (or open the side panel on a touch screen), open **Performance**,
