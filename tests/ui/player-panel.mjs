@@ -17,28 +17,23 @@ const only = process.env.MIRA_PANEL_SIZES?.split(',')
 const card = '.world-inspector:not(.lobby-settings) .wi-card[data-section=players]'
 const SIZES = [['1700x1100', 1700, 1100, false], ['1280x800', 1280, 800, false], ['844x390', 844, 390, true], ['390x844', 390, 844, true]]
 
-/** Roster fields the server will send, set on this page's copy, and the room's side of the panel. */
-async function mock(page, role) {
-  await page.evaluate(role => {
-    const ids = [...miraNet.players.values()].filter(p => !p.bot).map(p => p.id).sort((a, b) => a - b)
+/**
+ * The local room server has no geography and these test browsers report no device, so the
+ * roster's place and device fields (and the creator role, which needs the creator's key) are
+ * set on this page's copy, again after each roster message. Everything else is the real room.
+ */
+async function mock(page) {
+  await page.evaluate(() => {
     const people = [
-      { country: 'US', region: 'California', deviceLabel: 'Mac', name: 'Aubrey', role: 'creator' },
-      { country: 'US', region: 'Texas', deviceLabel: 'iPhone', name: 'Zepy', muted: true },
+      { country: 'US', region: 'California', deviceLabel: 'Mac', role: 'creator' },
+      { country: 'US', region: 'Texas', deviceLabel: 'iPhone' },
     ]
-    ids.forEach((id, i) => Object.assign(miraNet.players.get(id), people[i]))
-    const bots = [...miraNet.players.values()].filter(p => p.bot)
-    if (bots[0]) bots[0].kind = 'jet'
-    if (bots[1]) bots[1].kind = 'hovercraft'
-    window.panelFired = []
-    const traits = new Map()
-    mira.shell.setPlayerHooks({
-      moderation: id => id === miraNet.id ? { ok: false, reason: 'self' } : role === 'host' ? { ok: true, reason: 'host-private' } : miraNet.players.get(id)?.role === 'creator' ? { ok: false, reason: 'target-creator' } : { ok: false, reason: 'not-host' },
-      muteForAll: (id, on) => { window.panelFired.push(['muteForAll', id, on]); miraNet.players.get(id).muted = on },
-      eject: (id, stop) => window.panelFired.push(['eject', id, stop.id]),
-      botTraits: id => ({ values: { boldness: .78, curiosity: .41, sociability: .62, mischief: .3, patience: .55, ...traits.get(id) }, overridden: Object.keys(traits.get(id) ?? {}) }),
-      setBotTrait: (id, key, value) => { window.panelFired.push(['trait', id, key, value]); const t = { ...traits.get(id) }; if (value === null) delete t[key]; else t[key] = value; traits.set(id, t) },
-    })
-  }, role)
+    const apply = () => {
+      const ids = [...miraNet.players.values()].filter(p => !p.bot).map(p => p.id).sort((a, b) => a - b)
+      ids.forEach((id, i) => { const p = miraNet.players.get(id); for (const [k, v] of Object.entries(people[i] ?? {})) if (p[k] !== v) p[k] = v })
+    }
+    apply(); setInterval(apply, 100)
+  })
 }
 
 /** Boxes of explanations and controls inside the panel must not intersect. */
@@ -95,7 +90,7 @@ try {
       await host.evaluate(() => { mira.params.set('bots.keepCount', true); mira.params.set('bots.count', 2) })
       await host.waitForFunction(() => [...miraNet.players.values()].filter(p => p.bot).length === 2, null, { timeout: 60000 })
       await guest.waitForFunction(() => [...miraNet.players.values()].filter(p => p.bot).length === 2, null, { timeout: 60000 })
-      await mock(host, 'host'); await mock(guest, 'guest')
+      await mock(host); await mock(guest)
       for (const page of [host, guest]) {
         await page.evaluate(() => { mira.shell.showCard('players') })
         await page.locator(`${card}.is-open .score-row.is-rich`).first().waitFor()
@@ -126,7 +121,9 @@ try {
       await host.locator('#player-panel .pp-toggle[data-mute=me]').click()
       await host.waitForFunction(id => miraNet.chat.muted.has(id), guestId)
       await host.locator('#player-panel .pp-toggle[data-mute=all]').click()
-      assert.deepEqual(await host.evaluate(() => window.panelFired.at(-1)), ['muteForAll', guestId, false])
+      await host.waitForFunction(id => miraNet.players.get(id)?.muted === true, guestId)
+      await guest.waitForFunction(id => miraNet.players.get(id)?.muted === true, guestId)
+      await host.screenshot({ path: resolve(out, `${size}-host-muted.png`) })
 
       // Eject: the dialog, focus on Cancel, End jumps to Permanently, Escape cancels.
       await host.locator('#player-panel .pp-eject-go').click()
@@ -138,7 +135,7 @@ try {
       await host.screenshot({ path: resolve(out, `${size}-eject-permanent.png`) })
       await host.keyboard.press('Escape')
       assert.equal(await host.locator('.eject-confirm').isHidden(), true)
-      assert.ok(!(await host.evaluate(() => window.panelFired.some(f => f[0] === 'eject'))), 'Escape ejected')
+      assert.equal(await host.evaluate(id => miraNet.players.has(id), guestId), true, 'Escape ejected')
 
       // Keyboard: close, then Enter on the row opens pinned and Escape returns focus to it.
       await host.keyboard.press('Escape')
@@ -163,9 +160,13 @@ try {
       await noOverlap(guest)
       const forAll = guest.locator('#player-panel .pp-toggle[data-mute=all]')
       assert.equal(await forAll.isDisabled(), true)
+      const sent = []
+      await guest.exposeFunction('panelSent', type => sent.push(type))
+      await guest.evaluate(() => { const send = miraNet.send.bind(miraNet); miraNet.send = msg => { if (['mute', 'eject', 'bot-traits'].includes(msg.type)) window.panelSent(msg.type); return send(msg) } })
       await forAll.dispatchEvent('click')
       await guest.locator('#player-panel .pp-eject-go').dispatchEvent('click')
-      assert.deepEqual(await guest.evaluate(() => window.panelFired), [], 'a disabled control fired')
+      await guest.waitForTimeout(300)
+      assert.deepEqual(sent, [], 'a disabled control fired')
       assert.equal(await guest.locator('.eject-confirm').isHidden(), true)
       await guest.screenshot({ path: resolve(out, `${size}-guest-panel.png`) })
       // Your own panel shows what others see, without moderation.
