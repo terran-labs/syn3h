@@ -161,7 +161,8 @@ export function forgetOverflowCache(): void { flag = null }
  *    anyone while the flag is off or unknown).
  */
 async function assignPublic(env: Env, prefer: string | null, full: string | null): Promise<string | null> {
-  const returning = isPublicRoom(prefer) && prefer !== PUBLIC_BASE ? prefer : null
+  // A retry naming its own room as full is not returning there, even when the registry fails.
+  const returning = isPublicRoom(prefer) && prefer !== PUBLIC_BASE && prefer !== full ? prefer : null
   if (flag && !flag.on && Date.now() - flag.at < OFF_CACHE_MS && !returning) return PUBLIC_BASE
   let timer: ReturnType<typeof setTimeout> | undefined
   const started = Date.now()

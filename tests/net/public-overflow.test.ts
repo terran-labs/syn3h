@@ -188,6 +188,16 @@ describe('public seat assignment', () => {
     expect(r.assign({ cap: CAP, prefer: 'lobby#5' }, 1)).toBe('lobby')
   })
 
+  it('does not recreate a room that holds only expired places for a returning player', () => {
+    const r = new RoomRegistry()
+    r.report('lobby', CAP - 3, 0)
+    // The last resumable player left lobby#2: one held place, then nothing.
+    r.report('lobby#2', 0, 0, null, 1)
+    expect(r.assign({ cap: CAP, prefer: 'lobby#2' }, HELD_TTL_MS - 1)).toBe('lobby#2')
+    expect(r.assign({ cap: CAP, prefer: 'lobby#2' }, HELD_TTL_MS)).toBe('lobby')
+    expect(r.assign({ cap: CAP, prefer: 'lobby#2', open: false }, HELD_TTL_MS)).toBe('lobby')
+  })
+
   it('switched off, drains: new arrivals go to lobby, returning players keep their overflow room', () => {
     const r = new RoomRegistry()
     r.report('lobby', CAP, 0)
@@ -404,6 +414,14 @@ describe('public overflow in the Worker', () => {
     // A returning player goes back to their room: the room decides.
     await worker.fetch(join('room=lobby&assign=1&prefer=lobby%232'), down.env as never)
     expect(down.reached.map((r) => r.room)).toEqual(['lobby', 'lobby#2'])
+  })
+
+  it('a retry naming its room as full is not sent back there when the registry fails', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    const down = environment('runtime', { fetch: async () => { throw new Error('registry down') } })
+    await worker.fetch(join('room=lobby&assign=1&prefer=lobby%232&full=lobby%232'), down.env as never)
+    expect(down.reached.map((r) => r.room)).toEqual(['lobby'])
   })
 
   it('closes a new client as busy (to retry once) when overflow is on and the registry fails', async () => {

@@ -275,10 +275,11 @@ class PublicSeats {
       return room
     }
     const full = isPublicRoom(request.full, base) ? request.full : null
-    // Coming back to a room that still exists (has reported recently; counts survive a
-    // restart in storage): the room decides (its cap, the player's secret). A room that has
-    // emptied and been forgotten is not recreated for one player: a fresh assignment instead.
-    const prefer = isPublicRoom(request.prefer, base) && request.prefer !== full && (request.prefer === base || entry(request.prefer)) ? request.prefer : null
+    // Coming back to a room that is still live (a fresh report of players, or of holds that can
+    // still be held; counts survive a restart in storage): the room decides (its cap, the
+    // player's secret). A room that has emptied, or holds only expired places, is not
+    // recreated for one player: a fresh assignment instead. Same presence test as occupancy.
+    const prefer = isPublicRoom(request.prefer, base) && request.prefer !== full && (request.prefer === base || reported(request.prefer) > 0) ? request.prefer : null
     if (request.open === false) return prefer ?? base
     if (full && reported(full) >= cap - FULL_HINT_SLACK) this.refused.set(full, now + FULL_HINT_MS)
     if (prefer) return take(prefer)
