@@ -180,7 +180,10 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
 // carousel running off the screen or sitting on the logo, the X or the lobby's buttons; a caption
 // cut off; the ring turning by itself and keeping an idle lobby busy; a move gliding under reduced
 // motion. Nothing here pins a size, an angle or a duration.
-for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,390],['small-phone',320,568],['large',1700,1100]]){
+// Also (the owner, 25 November 2026): the carousel is one element among the guide's, so at the top of the
+// sheet the next section shows without scrolling (the caption and dots on a 320 px phone), and on a phone
+// held upright the Settings and Welcome pair stands centred, with or without a sheet, clear of the version.
+for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['phone-side',844,390,null],['small-phone',320,568,'dots'],['desktop',1280,800,'section'],['large',1700,1100,'section']]){
  const touch=width<600||height<500
  const browser=await(touch?webkit.launch():chromium.launch({channel:'chrome',headless:true}))
  try{
@@ -201,6 +204,28 @@ for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,39
   const titles=await ring.evaluate(r=>[...r.querySelectorAll('.welcome-ring-dot')].map(d=>d.getAttribute('aria-label').replace(/^Picture \d+ of \d+: /,'')))
   const expect=async(index,how)=>{const s=await state();assert.equal(s.front,index,`${name} ${how}: picture ${index+1} in front`);assert.equal(s.dot,index,`${name} ${how}: its dot is current`);assert.equal(s.title,titles[index],`${name} ${how}: its title shows`)}
   await expect(0,'opened')
+  if(below){
+   // At the top of the sheet: what must show without scrolling, inside the body and above its bottom fade.
+   const shown=await ring.evaluate((r,below)=>{
+    const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+28, bottom=b.bottom-44
+    const inView=(el,part=1)=>{const e=el.getBoundingClientRect();return e.top>=top-1&&e.top+e.height*part<=bottom+1}
+    const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'))}
+    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');out.card=!!card&&inView(card,0.3)}
+    return out
+   },below)
+   console.log(JSON.stringify({ring:name,atTop:shown}))
+   assert.ok(shown.scrollTop===0&&Object.entries(shown).every(([k,v])=>k==='scrollTop'||v===true),`${name}: at the top of Welcome, the caption, dots${below==='section'?' and the next section':''} show without scrolling ${JSON.stringify(shown)}`)
+  }
+  if(width<600&&height>width){
+   // The pair in the middle of the bottom edge, unless that would reach the version label.
+   const pair=async()=>page.evaluate(()=>{const r=[...document.querySelectorAll('.lobby-gear-dock .lobby-control')].filter(e=>e.getClientRects().length).map(e=>e.getBoundingClientRect()),v=document.querySelector('.lobby-version-dock .lobby-version'),vb=v&&getComputedStyle(v).visibility!=='hidden'&&!v.closest('[hidden]')?v.getBoundingClientRect():null;return{l:Math.min(...r.map(b=>b.left)),r:Math.max(...r.map(b=>b.right)),t:Math.min(...r.map(b=>b.top)),b:Math.max(...r.map(b=>b.bottom)),version:vb&&vb.width?{r:vb.right,t:vb.top,b:vb.bottom}:null,w:innerWidth}})
+   const centred=(p,what)=>{const off=(p.l+p.r)/2-p.w/2,clash=p.version&&p.l<p.version.r&&p.t<p.version.b&&p.b>p.version.t;assert.ok(!clash,`${name} ${what}: the buttons clear the version ${JSON.stringify(p)}`);const room=p.version?Math.max(0,p.version.r+4-(p.w/2-(p.r-p.l)/2)):0;assert.ok(Math.abs(off)<=8+room,`${name} ${what}: the buttons are centred (${Math.round(off)} px off) ${JSON.stringify(p)}`)}
+   centred(await pair(),'with Welcome open')
+   await page.keyboard.press('Escape');await ring.waitFor({state:'hidden'});await page.waitForTimeout(600)
+   centred(await pair(),'with no sheet open')
+   await page.locator('.lobby-gear-dock .lobby-about').click();await ring.waitFor({state:'visible'})
+   await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
+  }
   // The ring holds still by itself: an idle Welcome keeps nothing moving.
   await page.waitForTimeout(6500);await expect(0,'left alone');await settled()
   const foot=ring.locator('.welcome-ring-foot')
@@ -261,8 +286,6 @@ for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,39
    })
    console.log(JSON.stringify({ring:name,scrolled,...fit}))
    assert.deepEqual(fit.problems,[],`${name}${scrolled?' scrolled':''}: the carousel fits`)
-   // The front picture stays large: most of the column's width, or of the screen's height on a short screen.
-   assert.ok(fit.front.w>=.95*Math.min(fit.column,(height-220)*16/9),`${name}: the front picture stays large (${fit.front.w} px)`)
    await page.screenshot({path:`${out}/ring-${name}${scrolled?'-scrolled':''}.png`})
   }
   // Reduced motion: a move is instant, with nothing left gliding.
