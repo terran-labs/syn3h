@@ -1813,7 +1813,7 @@ export class Shell implements System {
     })
     captionControls.observe(this.element, { childList: true })
     this.chipSizes.observe(this.lobbySettings.dock)
-    this.chipSizes.observe(this.lobbySettings.version)
+    this.chipSizes.observe(this.lobbySettings.versionDock)
     this.abort.signal.addEventListener('abort', () => captionControls.disconnect(), { once: true })
     // The top safe area (a notch, in a home-screen app), measured once per resize.
     let safeTopPx = -1
@@ -1923,7 +1923,7 @@ export class Shell implements System {
 
         // Use the unscaled sizes from the observer. A change of scale needs no layout read.
         const layer = labels.getBoundingClientRect()
-        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
+        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.versionDock, document.getElementById('lobby-settings')]
           .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
           .map(r => ({ left: r.left - layer.left, right: r.right - layer.left, top: r.top - layer.top, bottom: r.bottom - layer.top }))
         const candidates = visible.flatMap(place => {
