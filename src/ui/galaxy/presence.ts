@@ -1,4 +1,5 @@
 import type { PresenceSnapshot } from '../../../shared/presence'
+import { lobbyTwinsEnabled } from '../../core/twinPreview'
 export type { PresenceSnapshot } from '../../../shared/presence'
 
 /** Public recipe totals only. Room identities and joining stay outside the lobby feed. */
@@ -74,7 +75,10 @@ export class PresenceFeed {
     const generation = this.generation, request = this.request = new AbortController()
     this.timeout = setTimeout(() => request.abort(), 10_000)
     try {
-      const response = await this.fetcher('/presence', { signal: request.signal, cache: 'no-store', credentials: 'same-origin' })
+      const options: RequestInit = { signal: request.signal, cache: 'no-store', credentials: 'same-origin' }
+      // The first poll can run before Shell removes the private invite from the lobby address.
+      if (lobbyTwinsEnabled()) options.referrerPolicy = 'no-referrer'
+      const response = await this.fetcher('/presence', options)
       if (!response.ok) throw new Error('Presence unavailable')
       const snapshot = readPresence(await response.json())
       if (generation !== this.generation) return
