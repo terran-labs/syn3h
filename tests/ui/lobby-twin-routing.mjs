@@ -122,7 +122,8 @@ async function assertIdle(page, level, reduced, label) {
         Date.now() - snapshot.generatedAt >= 25_000) return false
     if (!galaxy?.live) return true
     const worlds = galaxy.options.worlds
-    return galaxy.holding && !galaxy.painting && galaxy.queue.length === 0 && galaxy.wake === 0 &&
+    return galaxy.holding && galaxy.settled && galaxy.swingResting && galaxy.facingSettled &&
+      !galaxy.painting && galaxy.queue.length === 0 && galaxy.wake === 0 &&
       galaxy.painted === worlds.filter(world => !world.forming).length &&
       worlds.every((world, index) => world.forming || Boolean(galaxy.layers[index]))
   }, undefined, 120)
@@ -265,7 +266,13 @@ try {
   if (lobbyFetches.leaks.length) {
     console.error('Lobby fetches exposed the private room:', JSON.stringify(lobbyFetches.leaks))
   }
-  const minimal = await assertIdle(guest, 0, false, 'phone Minimal')
+  let minimal
+  let minimalFailure
+  try {
+    minimal = await assertIdle(guest, 0, false, 'phone Minimal')
+  } catch (error) {
+    minimalFailure = error
+  }
   await capture(guest, 'phone-minimal-twins')
 
   step = 'phone deliberately makes its own private twin'
@@ -278,10 +285,12 @@ try {
   await writeFile(join(out, 'lobby-twin-routing.json'), JSON.stringify({
     publicWelcome: true, privateWelcome: true, sameBrowserReuse: true,
     guestWelcomeAndRoster: true, independentPrivateWelcome: true,
-    lobbyFetches, reducedMotion, minimal,
+    lobbyFetches, reducedMotion, minimal: minimal ?? { error: minimalFailure.message },
   }, null, 2) + '\n')
-  step = 'the lobby fetch privacy assertion'
-  assert.deepEqual(lobbyFetches.leaks, [], 'lobby fetches must never expose the private room')
+  step = 'the independent lobby assertions'
+  const failures = minimalFailure ? [minimalFailure] : []
+  if (lobbyFetches.leaks.length) failures.push(new Error('Lobby fetches exposed the private room'))
+  if (failures.length) throw new AggregateError(failures, 'The lobby assertions failed')
   console.log('Twin routing, lobby privacy, and idle draw checks passed')
 } catch (error) {
   throw new Error(`Twin browser proof failed during ${step}`, { cause: error })
