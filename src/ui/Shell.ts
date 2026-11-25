@@ -110,6 +110,7 @@ import { keyFor } from './help/bindings'
 import { keycap } from './keycap'
 import { controlTips } from './help/params'
 import './help/help.css'
+import { startHudReveal } from './hudReveal'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -1180,7 +1181,7 @@ export class Shell implements System {
       if (ground) ground.staged = staged
       this.game.holdDraws = false
       this.dropping = false
-      this.closeMenu()
+      this.closeMenu(); startHudReveal(this.element)
       this.showHelp(false)
     }
   }
@@ -1271,7 +1272,7 @@ export class Shell implements System {
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter'); game.style.removeProperty('visibility') }
       this.game.holdDraws = false
       this.dropping = false; this.enteringByGesture = false
-      if (this.started) { this.closeMenu(); this.showHelp(false) }
+      if (this.started) { this.closeMenu(); startHudReveal(this.element); this.showHelp(false) }
       else { cancelStartupPlayRequest(); this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
   }

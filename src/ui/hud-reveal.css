@@ -1,0 +1,47 @@
+/* The HUD's entry reveal (hudReveal.ts): while the shell carries data-hud-reveal, just after a
+   world is entered, each group of the play interface fades up from nothing and slides a short
+   way in from its own edge, group by group (--reveal-at), decelerating with no overshoot.
+   Each animation has only a starting keyframe, so it ends on the element's own opacity and
+   translate, whatever its rules say then (a focused minimap's .92, the top label's centring).
+   Only opacity and translate animate.
+
+   Order, from the moment play begins:
+     0  the thumb controls (touch): fade only, from a third, so a control that takes a tap can
+        always be seen
+     1  the top label (match or world), down from above
+     2  the left column (the gear list and its rows), in from the left
+     3  the right column (the panel and the Panels control), in from the right
+     4  the minimap and the chat lines, up from below
+     5  the speed and height readouts: fade only
+     6  the help line: fade only
+   The bottom stack (the full-room notice, "Preparing world") is never held back. */
+.mira-shell[data-hud-reveal] {
+  --reveal-ease: cubic-bezier(.16, 1, .3, 1);
+  --reveal-far: 24px;
+}
+/* Hidden as well as clear at the start: a control cannot take a tap or a click while it cannot
+   be seen. It is visible from the animation's first frame on. */
+@keyframes hud-reveal { from { opacity: 0; visibility: hidden; translate: var(--reveal-from, 0 0); } }
+@keyframes hud-reveal-thumb { from { opacity: .35; } }
+.mira-shell[data-hud-reveal].is-playing :is(
+  .fh-top, .gear-selector, .hud-accessories, .hud-chat, .world-inspector, .hud-navigation,
+  .shell-minimap, .chat-strip, .focus-hud .fh-left, .focus-hud .fh-right, .spawn-help
+) {
+  /* Hidden through its wait (backwards fill): nothing can be pointed at before it shows. */
+  animation: hud-reveal var(--reveal-ms, 750ms) var(--reveal-ease) calc(var(--reveal-at, 0) * var(--reveal-step, 110ms)) backwards;
+}
+.mira-shell[data-hud-reveal].is-playing .fh-top { --reveal-at: 1; --reveal-from: -50% calc(-1 * var(--reveal-far)); }
+.mira-shell[data-hud-reveal].is-playing.has-touch .fh-top { --reveal-from: 0 calc(-1 * var(--reveal-far)); }
+.mira-shell[data-hud-reveal].is-playing :is(.gear-selector, .hud-accessories, .hud-chat) { --reveal-at: 2; --reveal-from: calc(-1 * var(--reveal-far)) 0; }
+.mira-shell[data-hud-reveal].is-playing :is(.world-inspector, .hud-navigation) { --reveal-at: 3; --reveal-from: var(--reveal-far) 0; }
+.mira-shell[data-hud-reveal].is-playing :is(.shell-minimap, .chat-strip) { --reveal-at: 4; --reveal-from: 0 var(--reveal-far); }
+.mira-shell[data-hud-reveal].is-playing .focus-hud :is(.fh-left, .fh-right) { --reveal-at: 5; }
+.mira-shell[data-hud-reveal].is-playing .spawn-help { --reveal-at: 6; }
+/* Touch: the thumb controls (the stick and buttons, the gear's own, the Panels control) are
+   there at once, faint, and come up to full; they never slide. */
+.mira-shell[data-hud-reveal].is-playing.has-touch :is(.touch-controls, .gear-actions, .hud-navigation) {
+  animation: hud-reveal-thumb var(--reveal-ms, 750ms) var(--reveal-ease) backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .mira-shell[data-hud-reveal] { --reveal-far: 0px; }
+}
