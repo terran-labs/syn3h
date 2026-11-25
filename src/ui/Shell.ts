@@ -1853,12 +1853,24 @@ export class Shell implements System {
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
+    // The top safe area (a notch, in a home-screen app), measured once per resize.
+    let safeTopPx = -1
+    const safeTop = () => {
+      if (safeTopPx < 0) { const probe = document.createElement('div'); probe.style.cssText = 'position:fixed;top:0;height:env(safe-area-inset-top,0px);visibility:hidden;pointer-events:none'; document.body.append(probe); safeTopPx = probe.getBoundingClientRect().height; probe.remove() }
+      return safeTopPx
+    }
+    window.addEventListener('resize', () => { safeTopPx = -1 }, { signal: this.abort.signal })
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       logo: () => {
         const mark = this.element.querySelector<SVGElement>('.shell-logo')!, box = mark.getBoundingClientRect(), host = this.overlay.getBoundingClientRect()
         return { box: { x: box.x - host.x, y: box.y - host.y, width: box.width, height: box.height }, level: levelNumber(graphicsLevel.value) }
       },
+      // A phone, either way up: with a sheet open the name rises to just under the top of the screen
+      // (clear of a notch), and the sheet under it gets the height (the owner, 25 November 2026:
+      // "the Mira logo should be up near the top of the screen, not jamming the rest of the
+      // contents down at the middle"). Elsewhere the usual lift.
+      liftTop: () => (innerWidth < 600 && innerHeight > innerWidth) || (innerHeight < 500 && innerWidth > innerHeight) ? safeTop() + 12 : undefined,
       presenceVisible: () => this.menuVisible && !this.attracting && !this.inviteOpen && !this.dropping,
       onPresence: values => {
         for (const world of worlds) {

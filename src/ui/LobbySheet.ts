@@ -139,7 +139,12 @@ export class LobbySheet {
       // A row (an upright phone lays the buttons side by side) by its layout, not its shape: two
       // stacked buttons are wider than they are tall.
       if (getComputedStyle(dockEl).gridAutoFlow.startsWith('column')) frame.height = Math.max(120, dock.top - 8 - frame.top)
-      else frame.width = Math.max(240, dock.left - 12 - frame.left)
+      // A column of them at the right (a phone on its side): narrower from both sides, so the sheet
+      // stays centred under the name, which is centred on the screen.
+      else {
+        const right = dock.left - 12, half = Math.max(120, right - w / 2)
+        frame.left = Math.max(phone ? 8 : 24, w / 2 - half); frame.width = Math.max(240, right - frame.left)
+      }
     }
     return frame
   }
