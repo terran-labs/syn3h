@@ -189,8 +189,21 @@
   display: inline; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: inherit; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--s3-accent-2);
 }
-/* Captured for driving, the gear's number caps and hints step out; touch never shows them. */
+/* Captured for driving, the gear's number caps step out; touch never shows them. */
 :root .mira-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
+/* Cursor captured (the owner, 25 November 2026: "Hide all of this text when the cursor is
+   locked. Continue showing the weapon switcher."): the column keeps only the drum. The rows
+   below it (Wings, Zorb, Chat: names, keys, count, nodes and line) and the detail beside the
+   selected gear (what it does, what to press) fade out, and back in when the cursor is free.
+   They keep their layout while faded, so nothing moves. A sunk buggy's Zorb cue (Shell.cueZorb)
+   keeps its rows: the cue is how that player learns the way out. Touch never captures. */
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat, .gear-selector .gs-detail) { transition: opacity .2s ease, visibility 0s; }
+:root .mira-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories:not(:has(.is-cued)), .hud-chat, .gear-selector .gs-detail) {
+  opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s;
+}
+/* The detail keeps its lines laid out under the fade (gear.css drops them while captured). */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] :is(.gs-desc, .gs-keyhint) { display: block; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] .gs-hints { display: grid; }
 :is(.hud-accessories, .hud-chat) .acc-name { flex: 1 1 auto; white-space: nowrap; }
 /* The node on the spine: a hollow ring when off, lit when on (Chat: something unread),
    filling while it moves. */
