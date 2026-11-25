@@ -13,6 +13,7 @@
  *   as a fallback), never awaited, never retried. A crash loop costs a handful of requests.
  */
 import { levelNumber, qualityLevel } from '../core/quality'
+import { cleanFrames, errorName, reduceMessage } from '../../shared/crashText'
 
 declare const __MIRA_BUILD__: string | undefined
 
@@ -99,28 +100,31 @@ export type ClientEvent = 'physics_retry' | 'physics_fail' | 'ws_fail'
 export type CrashKind = 'device_lost' | 'error' | 'rejection' | 'physics_wasm' | 'ws_connect'
 
 /** What the game can say about where it is, read when a report is made. Never throws out. */
-export interface ReportContext { backend?: string; recipe?: string; vehicle?: string }
+export interface ReportContext { backend?: string; recipe?: string; vehicle?: string; name?: string; room?: string }
 let context: () => ReportContext = () => ({})
 export function setReportContext(read: () => ReportContext): void { context = read }
 
 let crashes = 0, events = 0
 const stacksSent = new Set<string>()
-type Send = (body: string) => void
-let send: Send = (body) => {
+/** The rate key travels in the address (?k=), so the server can limit before reading a body. */
+type Send = (body: string, key: string) => void
+let send: Send = (body, key) => {
   try {
+    const url = `/e?k=${key}`
     const blob = new Blob([body], { type: 'application/json' })
-    if (typeof navigator !== 'undefined' && navigator.sendBeacon?.('/e', blob)) return
-    void fetch('/e', { method: 'POST', body, keepalive: true, headers: { 'content-type': 'application/json' } }).catch(() => {})
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon?.(url, blob)) return
+    void fetch(url, { method: 'POST', body, keepalive: true, headers: { 'content-type': 'application/json' } }).catch(() => {})
   } catch { /* never affects play */ }
 }
 /** Tests: replace the transport and reset the per-page counts. */
 export function setReportTransport(fn: Send): void { send = fn; crashes = 0; events = 0; stacksSent.clear() }
 
-function base(): Record<string, unknown> {
-  let c: ReportContext = {}
-  try { c = context() } catch { c = {} }
+function readContext(): ReportContext {
+  try { return context() } catch { return {} }
+}
+function base(c: ReportContext): { key: string; body: Record<string, unknown> } {
   const facts = clientFacts(c.backend)
-  return { key: facts.aid || PAGE_KEY, ...facts, ...(c.recipe ? { recipe: c.recipe } : {}) }
+  return { key: facts.aid || PAGE_KEY, body: { ...facts, ...(c.recipe ? { recipe: c.recipe } : {}) } }
 }
 
 /** A health event (bounded per page). */
@@ -128,7 +132,8 @@ export function reportEvent(kind: ClientEvent, attempt = 0): void {
   try {
     if (events >= EVENTS_PER_PAGE) return
     events++
-    send(JSON.stringify({ ...base(), type: 'event', kind, attempt }))
+    const { key, body } = base(readContext())
+    send(JSON.stringify({ ...body, type: 'event', kind, attempt }), key)
   } catch { /* never affects play */ }
 }
 
@@ -139,15 +144,19 @@ export function stackHash(text: string): string {
   return h.toString(16).padStart(8, '0')
 }
 
-/** The top three frames as file:line:column, with no query strings or origins. */
-export function topFrames(stack: string): string {
+/**
+ * The top three of our own frames, as same-origin paths with :line:col (shared/crashText.ts
+ * cleanFrames). A frame from any other origin, an extension or an inline script is left out.
+ */
+export function topFrames(stack: string, origin: string = typeof location === 'undefined' ? '' : location.origin): string {
   const frames: string[] = []
   for (const line of stack.split('\n')) {
-    const m = /([^\s(/@]+\.(?:js|ts|mjs|wasm))(?:\?[^:\s)]*)?:(\d+)(?::(\d+))?/.exec(line)
-    if (m) frames.push(`${m[1]}:${m[2]}${m[3] ? ':' + m[3] : ''}`)
+    const m = /(https?:\/\/[^\s/()]+)?(\/(?:assets|src)\/[A-Za-z0-9/._-]+\.(?:js|ts))(?:\?[^:\s)]*)?:(\d+)(?::(\d+))?/.exec(line)
+    if (!m || (m[1] && m[1] !== origin)) continue
+    frames.push(`${m[2]}:${m[3]}${m[4] ? ':' + m[4] : ''}`)
     if (frames.length === 3) break
   }
-  return frames.join(' < ').slice(0, 300)
+  return cleanFrames(frames.join(' < '))
 }
 
 /** A crash (bounded per page, one per distinct stack). */
@@ -161,9 +170,12 @@ export function reportCrash(kind: CrashKind, error: unknown): void {
     if (stacksSent.has(hash)) return
     stacksSent.add(hash)
     crashes++
-    let vehicle = ''
-    try { vehicle = context().vehicle ?? '' } catch { vehicle = '' }
-    send(JSON.stringify({ ...base(), type: 'crash', kind, message: message.replace(/https?:\/\/[^\s)]+/g, (u) => u.split(/[?#]/)[0]).slice(0, 160), stack: hash, frames: topFrames(stack), vehicle }))
+    const c = readContext()
+    const { key, body } = base(c)
+    send(JSON.stringify({
+      ...body, type: 'crash', kind, name: errorName((e as { name?: unknown } | null)?.name),
+      message: reduceMessage(message, { name: c.name, room: c.room }), stack: hash, frames: topFrames(stack), vehicle: c.vehicle ?? '',
+    }), key)
   } catch { /* never affects play */ }
 }
 

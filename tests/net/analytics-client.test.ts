@@ -1,13 +1,14 @@
 /**
  * Launch analytics in the browser (src/net/analytics.ts). Each test names the bug it catches.
  */
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   anonymousId, cleanRef, CRASHES_PER_PAGE, deviceClass, entryRef, EVENTS_PER_PAGE, reportCrash, reportEvent,
   setReportTransport, stackHash, topFrames,
 } from '../../src/net/analytics'
 import { LobbyAddress } from '../../src/ui/LobbyAddress'
 
+afterEach(() => vi.unstubAllGlobals())
 const memory = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, v) }, m } }
 
 describe('anonymous id and campaign tag', () => {
@@ -69,25 +70,28 @@ describe('crash and health reports', () => {
     expect(sent).toHaveLength(CRASHES_PER_PAGE + EVENTS_PER_PAGE)
   })
 
-  // Bug: a query string (tokens, room names) or the page URL inside a crash report.
-  it('strips query strings and origins from messages and frames', () => {
-    const sent: string[] = []
-    setReportTransport((b) => { sent.push(b) })
-    const e = new Error('failed https://mira.cc/assets/index-a1.js?room=secret-room#x')
-    e.stack = 'Error: failed\n    at go (https://mira.cc/assets/index-a1.js?v=1:10:20)\n    at run (https://mira.cc/assets/b.js:3:4)'
+  // Bug: a query string, a room name or another origin's script inside a crash report.
+  it('sends a structured crash: error name, reduced message, our own frames, the key in the address', () => {
+    vi.stubGlobal('location', { origin: 'http://localhost:3000', search: '' })
+    const sent: { body: string; key: string }[] = []
+    setReportTransport((body, key) => { sent.push({ body, key }) })
+    const e = new TypeError('failed loading https://mira.cc/assets/index-a1.js?room=secret-room#x for "Quentin"')
+    e.stack = 'TypeError: failed\n    at go (http://localhost:3000/assets/index-a1.js?v=1:10:20)\n    at x (https://evil.example/y.js:1:1)\n    at run (http://localhost:3000/assets/b.js:3:4)'
     reportCrash('physics_wasm', e)
-    const body = JSON.parse(sent[0])
+    const body = JSON.parse(sent[0].body)
+    expect(body.name).toBe('TypeError')
     expect(body.message).not.toContain('secret-room')
-    expect(body.frames).toBe('index-a1.js:10:20 < b.js:3:4')
+    expect(body.message).not.toContain('Quentin')
+    expect(body.frames).toBe('/assets/index-a1.js:10:20 < /assets/b.js:3:4')
     expect(body.stack).toBe(stackHash('physics_wasm\n' + e.stack))
-    expect(JSON.stringify(body)).not.toContain('?')
-    expect(body.key).toMatch(/^[0-9a-f]{16,32}$/)
+    expect(sent[0].key).toMatch(/^[0-9a-f]{16,32}$/)
+    expect(body.key).toBeUndefined()
   })
 
   it('reporting never throws, even with a failing transport', () => {
     setReportTransport(() => { throw new Error('offline') })
     expect(() => reportCrash('error', new Error('x'))).not.toThrow()
     expect(() => reportEvent('physics_retry', 1)).not.toThrow()
-    expect(topFrames('no frames here')).toBe('')
+    expect(topFrames('no frames here', 'http://localhost:3000')).toBe('')
   })
 })

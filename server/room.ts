@@ -808,7 +808,13 @@ export class Room {
     try { for (const row of endRows(s, player.droppedAt ?? this.now())) this.track(row.event, row.common, row.extra) } catch { /* never affects play */ }
   }
 
-  /** The session a transport keeps with the socket, banked to now, and its version. */
+  /** The session's version for a peer (cheap: no copy), or -1 with no session. */
+  sessionVersionOf(peer: Peer): number {
+    const p = this.players.get(peer)
+    return p?.session ? p.sessionVersion ?? 0 : -1
+  }
+
+  /** The session a transport keeps with the socket, banked to now (a copy: call only to store it). */
   sessionOf(peer: Peer): { session: SessionRecord; version: number } | null {
     const p = this.players.get(peer)
     return p?.session ? { session: sessionSnapshot(p.session, this.now()), version: p.sessionVersion ?? 0 } : null
@@ -899,6 +905,7 @@ export class Room {
       held.droppedAt = undefined
       const kept = cleanSession(session)
       if (kept) held.session = kept
+      else if (held.session) sessionPaused(held.session, this.now(), this.isPaused(held))
       return
     }
     const full: PlayerInfo = {
@@ -950,7 +957,13 @@ export class Room {
       logEvent('rejoin', { room: this.tag, player: player.info.id, from: player.heldUntil ? 'held' : 'quiet', ...(drop ? Object.fromEntries(Object.entries(drop).map(([k, v]) => [`drop${k[0].toUpperCase()}${k.slice(1)}`, v])) : {}) })
       player.heldUntil = 0
       player.droppedAt = undefined
-      if (player.session) player.session.rejoins++
+      if (player.session) {
+        player.session.rejoins++
+        // The drop stopped the active clock; restart it from the player's actual pause state
+        // (a state equal to the last one before the drop would never restart it).
+        sessionPaused(player.session, this.now(), this.isPaused(player))
+        player.sessionVersion = (player.sessionVersion ?? 0) + 1
+      }
       if (msg.play === false) player.info.play = false
       else delete player.info.play
       player.page = page

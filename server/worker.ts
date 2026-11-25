@@ -7,10 +7,10 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import type { PlayerInfo } from '../shared/protocol'
-import { ACTIVE_SAVE_MS, RoomRegistry, type RegistryEntry } from './registry'
+import { ACTIVE_SAVE_MS, RoomRegistry, type RegistryEntry, STALE_MS } from './registry'
 import {
   type AnalyticsSink, channelOf, cleanClientPost, dataPoint, endRows, GEO_HEADER, geoFromHeader, geoHeader, geoOf,
-  PostLimiter, PRESENCE_SNAPSHOT_MS, ROOM_ROWS_PER_MINUTE, RowBudget, type SessionRecord,
+  POST_MAX_BYTES, postKey, PostLimiter, PRESENCE_SNAPSHOT_MS, readCapped, ROOM_ROWS_PER_MINUTE, RowBudget, type SessionRecord,
 } from './analytics'
 import { PresenceReporter } from './presenceReporter'
 import { ATTACHMENT_PAUSE_MS, CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
@@ -129,18 +129,28 @@ export default {
 /** Per isolate, in memory only: see PostLimiter. */
 const postLimiter = new PostLimiter(() => Date.now())
 
-/** POST /e: one client crash or health report. Always 204; nothing about it reaches play. */
+/**
+ * POST /e?k=<key>: one client crash or health report. Always 204 (413 for a body declared too
+ * large); nothing about it reaches play. In order, before any body is read: analytics bound,
+ * a valid key, the declared length, the per-key and per-isolate limits. The body is then read
+ * with a hard cap that cancels the stream at POST_MAX_BYTES, so no post is ever buffered whole.
+ */
 async function clientPost(req: Request, url: URL, env: Env): Promise<Response> {
-  const done = () => new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
+  const done = (status = 204) => { void req.body?.cancel().catch(() => {}); return new Response(null, { status, headers: { 'cache-control': 'no-store' } }) }
   if (req.method !== 'POST') return new Response('POST only', { status: 405, headers: { allow: 'POST' } })
   try {
-    if (!env.ANALYTICS || Number(req.headers.get('content-length') ?? 0) > 4096) return done()
-    const text = await req.text()
-    if (text.length > 4096) return done()
-    const post = cleanClientPost(JSON.parse(text), geoOf((req as Request & { cf?: unknown }).cf, channelOf(url.hostname)), channelOf(url.hostname))
-    if (post && postLimiter.allow(post.key)) env.ANALYTICS.writeDataPoint(dataPoint(post.row.event, post.row.common, post.row.extra))
+    if (!env.ANALYTICS) return done()
+    const key = postKey(url.searchParams.get('k'))
+    if (!key) return done()
+    if (Number(req.headers.get('content-length') ?? 0) > POST_MAX_BYTES) return done(413)
+    if (!postLimiter.allow(key)) return done()
+    const text = await readCapped(req.body, POST_MAX_BYTES)
+    if (text === null) return done(413)
+    const channel = channelOf(url.hostname)
+    const post = cleanClientPost(JSON.parse(text), key, geoOf((req as Request & { cf?: unknown }).cf, channel), channel)
+    if (post) env.ANALYTICS.writeDataPoint(dataPoint(post.row.event, post.row.common, post.row.extra))
   } catch { /* a malformed post or a failed write changes nothing */ }
-  return done()
+  return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 }
 
 const PRESENT_TEST = '/webgpu-present-test.html'
@@ -376,8 +386,24 @@ export class RoomDO {
   private countsSavedAt = -Infinity
   /** Only on the registry instance: when the last presence snapshot was written (ms). */
   private presenceAt = -Infinity
-  /** Only on the registry instance, in memory: each room's channel, from its reports. */
-  private readonly channels = new Map<string, string>()
+  /**
+   * Only on the registry instance, in memory: each room's channel, from its reports, and when.
+   * Kept only with the analytics binding; a room reporting nobody is forgotten at once, and the
+   * rest are pruned by age (STALE_MS) at most once a minute, snapshot or not.
+   */
+  private readonly channels = new Map<string, { channel: string; at: number }>()
+  private channelsPrunedAt = 0
+
+  private noteChannel(room: string, players: number, channel: unknown): void {
+    if (!this.env.ANALYTICS) return
+    const now = Date.now()
+    if (players <= 0) this.channels.delete(room)
+    else if (channel === 'beta' || channel === 'production') this.channels.set(room, { channel, at: now })
+    if (now - this.channelsPrunedAt >= 60_000) {
+      this.channelsPrunedAt = now
+      for (const [r, c] of this.channels) if (now - c.at > STALE_MS) this.channels.delete(r)
+    }
+  }
   /** On a room: the channel its latest connection came through (GEO_HEADER). */
   private channel = ''
 
@@ -395,12 +421,11 @@ export class RoomDO {
       // One row per planet and channel (the channel each room's players connected through).
       const groups = new Map<string, { recipe: string; channel: string; players: number; active: number; rooms: number }>()
       for (const [room, e] of registry.live(now)) {
-        const channel = this.channels.get(room) ?? '', recipe = e.recipeId ?? ''
+        const channel = this.channels.get(room)?.channel ?? '', recipe = e.recipeId ?? ''
         const g = groups.get(`${recipe} ${channel}`) ?? { recipe, channel, players: 0, active: 0, rooms: 0 }
         g.players += e.players; g.active += e.active ?? e.players; g.rooms++
         groups.set(`${recipe} ${channel}`, g)
       }
-      for (const room of this.channels.keys()) if (!registry.has(room)) this.channels.delete(room)
       for (const g of [...groups.values()].slice(0, 50)) {
         this.env.ANALYTICS.writeDataPoint(dataPoint('presence', { channel: g.channel, build: '', recipe: g.recipe, roomKind: '', device: '', backend: '', country: '', continent: '', aid: '' },
           { players: g.players, active: g.active, rooms: g.rooms }))
@@ -420,7 +445,7 @@ export class RoomDO {
       const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown; channel?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
         const durability = registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
-        if (body.channel === 'beta' || body.channel === 'production') this.channels.set(body.room, body.channel)
+        this.noteChannel(body.room, body.players, body.channel)
         this.presenceSnapshot(registry)
         if (durability === 'save' || (durability === 'later' && Date.now() - this.countsSavedAt >= ACTIVE_SAVE_MS)) {
           this.countsSavedAt = Date.now()
@@ -460,19 +485,24 @@ export class RoomDO {
       this.report(room)
       this.keepClock(room)
       const att = ws.deserializeAttachment() as Attachment
-      const kept = room.sessionOf(peer)
       if (!att.info) {
         const info = room.info(peer)
         if (info) {
+          const kept = room.sessionOf(peer)
           ws.serializeAttachment({ ...att, info, token: room.token(peer), ...(room.pausedOf(peer) ? { paused: true } : {}), ...(kept ? { session: kept.session, sv: kept.version } : {}) } satisfies Attachment)
         }
-      } else if ((room.pausedOf(peer) !== Boolean(att.paused) || (kept && kept.version !== att.sv)) && Date.now() - (this.pauseWrittenAt.get(ws) ?? 0) >= ATTACHMENT_PAUSE_MS) {
-        // Pausing, resuming or a vehicle change: kept with the socket for a hibernation wake.
-        // At most one rewrite per socket per ATTACHMENT_PAUSE_MS, however fast a client flips;
-        // the latest value goes with the first message after that (a paused page sends one a second).
-        const { paused: _was, session: _s, sv: _v, ...rest } = att
-        ws.serializeAttachment({ ...rest, ...(room.pausedOf(peer) ? { paused: true } : {}), ...(kept ? { session: kept.session, sv: kept.version } : {}) } satisfies Attachment)
-        this.pauseWrittenAt.set(ws, Date.now())
+      } else {
+        // Cheap checks first (a bit and a number); the session is copied only when a rewrite is due.
+        const version = room.sessionVersionOf(peer)
+        if ((room.pausedOf(peer) !== Boolean(att.paused) || (version >= 0 && version !== att.sv)) && Date.now() - (this.pauseWrittenAt.get(ws) ?? 0) >= ATTACHMENT_PAUSE_MS) {
+          // Pausing, resuming or a vehicle change: kept with the socket for a hibernation wake.
+          // At most one rewrite per socket per ATTACHMENT_PAUSE_MS, however fast a client flips;
+          // the latest value goes with the first message after that (a paused page sends one a second).
+          const kept = room.sessionOf(peer)
+          const { paused: _was, session: _s, sv: _v, ...rest } = att
+          ws.serializeAttachment({ ...rest, ...(room.pausedOf(peer) ? { paused: true } : {}), ...(kept ? { session: kept.session, sv: kept.version } : {}) } satisfies Attachment)
+          this.pauseWrittenAt.set(ws, Date.now())
+        }
       }
     } catch (error) {
       // Logged, then thrown on as before: the runtime's handling of a failed event is unchanged.
@@ -625,7 +655,8 @@ export class RoomDO {
     if (this.room) return this.room
     const room = new Room(name, {
       onPersist: (s) => void this.state.storage.put('room', s),
-      analytics: (event, common, extra) => { this.rows.write(event, common, extra) },
+      // No binding, no analytics work at all: no sessions, copies or extra roster saves.
+      analytics: this.env.ANALYTICS ? (event, common, extra) => { this.rows.write(event, common, extra) } : undefined,
     })
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {

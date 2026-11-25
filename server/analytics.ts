@@ -26,12 +26,14 @@
  * Columns (Analytics Engine: blob1..20, double1..20, index1). index1 and blob1 are the event.
  *   blob2 channel, blob3 build, blob4 world recipe, blob5 room kind, blob6 device, blob7
  *   backend, blob8 country, blob9 continent, blob10 anonymous id, blob11 vehicle or kind,
- *   blob12 message, blob13 stack hash, blob14 top frames, blob15 vehicle (crash), blob16 ref.
+ *   blob12 message, blob13 stack hash, blob14 top frames, blob15 vehicle (crash), blob16 ref,
+ *   blob17 error name (shared/crashText.ts: crash rows are structured, never free text).
  *   double1 seconds, double2 active seconds, double3 quality level, double4 count,
  *   double5 players, double6 active players, double7 rooms.
  * Every count must be read as sum(_sample_interval) (Analytics Engine samples under load).
  */
 import { VEHICLE_KINDS } from '../shared/protocol'
+import { cleanFrames, errorName, reduceMessage } from '../shared/crashText'
 
 /** The binding as this code uses it. */
 export interface AnalyticsSink {
@@ -61,6 +63,7 @@ export interface Extra {
   frames?: string
   crashVehicle?: string
   ref?: string
+  errorName?: string
   seconds?: number
   activeSeconds?: number
   quality?: number
@@ -76,7 +79,7 @@ export function dataPoint(event: EventName, c: Common, x: Extra = {}): { blobs: 
   return {
     indexes: [event],
     blobs: [event, c.channel, c.build, c.recipe, c.roomKind, c.device, c.backend, c.country, c.continent, c.aid,
-      x.vehicle ?? '', x.message ?? '', x.stack ?? '', x.frames ?? '', x.crashVehicle ?? '', x.ref ?? ''],
+      x.vehicle ?? '', x.message ?? '', x.stack ?? '', x.frames ?? '', x.crashVehicle ?? '', x.ref ?? '', x.errorName ?? ''],
     doubles: [n(x.seconds), n(x.activeSeconds), n(x.quality), n(x.count), n(x.players), n(x.active), n(x.rooms)],
   }
 }
@@ -280,11 +283,6 @@ export const CLIENT_POSTS_PER_KEY_PER_MINUTE = 10
 /** All keys together, per isolate, per minute. */
 export const CLIENT_POSTS_PER_MINUTE = 300
 
-/** Strip URLs' query strings and fragments, keep it short, and keep no control characters. */
-export function scrub(text: unknown, max: number): string {
-  if (typeof text !== 'string') return ''
-  return text.replace(/[?#][^\s)'"]*/g, '').replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, max)
-}
 
 export interface ClientPost {
   key: string
@@ -295,9 +293,9 @@ export interface ClientPost {
  * A client's POST /e body, cleaned to a row, or null. Accepts only known event and crash types;
  * every field is checked or dropped. Geography and channel come from the Worker, not the body.
  */
-export function cleanClientPost(body: unknown, geo: Geo, channel: string): ClientPost | null {
+export function cleanClientPost(body: unknown, rawKey: unknown, geo: Geo, channel: string): ClientPost | null {
   const b = (body ?? {}) as Record<string, unknown>
-  const key = word(b.key, /^[0-9a-f]{16,32}$/)
+  const key = postKey(rawKey)
   if (!key) return null
   const facts = cleanFacts(b)
   const common: Common = {
@@ -308,8 +306,8 @@ export function cleanClientPost(body: unknown, geo: Geo, channel: string): Clien
     const kind = word(b.kind, new RegExp(`^(${CRASH_TYPES.join('|')})$`))
     if (!kind) return null
     return { key, row: { event: 'crash', common, extra: {
-      vehicle: kind, message: scrub(b.message, 160), stack: word(b.stack, /^[0-9a-f]{8}$/), frames: scrub(b.frames, 300),
-      crashVehicle: word(b.vehicle, /^[a-z-]{1,20}$/), quality: facts.quality,
+      vehicle: kind, errorName: errorName(b.name), message: reduceMessage(b.message), stack: word(b.stack, /^[0-9a-f]{8}$/),
+      frames: cleanFrames(b.frames), crashVehicle: word(b.vehicle, /^[a-z-]{1,20}$/), quality: facts.quality,
     } } }
   }
   if (b.type === 'event') {
@@ -319,6 +317,38 @@ export function cleanClientPost(body: unknown, geo: Geo, channel: string): Clien
     return { key, row: { event: 'client', common, extra: { vehicle: kind, seconds: attempt } } }
   }
   return null
+}
+
+/** The client's rate key (?k= on /e): its anonymous id or its page's own random key. */
+export function postKey(v: unknown): string {
+  return word(v, /^[0-9a-f]{16,32}$/)
+}
+
+/** A client post's body is read only up to this many bytes; longer posts are abandoned. */
+export const POST_MAX_BYTES = 4096
+
+/**
+ * The body as text, stopping and cancelling the stream at `max` bytes: null if it is longer.
+ * Never buffers more than `max` plus one chunk.
+ */
+export async function readCapped(body: ReadableStream<Uint8Array> | null, max = POST_MAX_BYTES): Promise<string | null> {
+  if (!body) return ''
+  const reader = body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > max) { await reader.cancel().catch(() => {}); return null }
+      chunks.push(value)
+    }
+  } finally { reader.releaseLock() }
+  const all = new Uint8Array(size)
+  let at = 0
+  for (const c of chunks) { all.set(c, at); at += c.byteLength }
+  return new TextDecoder().decode(all)
 }
 
 /**

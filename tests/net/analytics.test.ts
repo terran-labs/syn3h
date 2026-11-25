@@ -9,6 +9,7 @@ import {
 } from '../../server/analytics'
 import { type Peer, Room, type RoomSnapshot } from '../../server/room'
 import worker, { RoomDO } from '../../server/worker'
+import { sessionPaused } from '../../server/analytics'
 import { encodeState, PROTOCOL_VERSION } from '../../shared/protocol'
 import { REJOIN_GRACE } from '../../src/modes/params'
 import { emptyInputLike } from './helpers'
@@ -263,16 +264,29 @@ describe('sessions: start, active time, vehicles, every ordinary ending', () => 
 })
 
 describe('client posts and the Worker', () => {
-  // Bug: a crash report carrying a URL's query string, free text or an unknown type.
-  it('cleans a crash post to known types, short scrubbed text, and the Worker\'s own geography', () => {
+  // Bug: a crash row carrying a player's name, a chat line, a private room, an email or a URL,
+  // even from a client that sends them raw (shared/crashText.ts, applied again on the server).
+  it('keeps crash rows structured: nothing a person typed survives on the server', () => {
     const geo = geoOf({ country: 'DE', continent: 'EU' }, 'beta')
-    const post = cleanClientPost({ key: 'abcdef0123456789', type: 'crash', kind: 'error', message: 'boom at https://mira.cc/assets/x.js?token=secret#frag ' + 'x'.repeat(400), stack: 'deadbeef', frames: 'index-abc.js:1:2 < x.js?q=1:3', vehicle: 'jet', country: 'US' }, geo, 'beta')!
-    expect(post.row.event).toBe('crash')
-    expect(post.row.extra.message!.length).toBeLessThanOrEqual(160)
-    expect(post.row.extra.message).not.toContain('secret')
-    expect(post.row.extra.frames).not.toContain('q=1')
+    const secrets = ['Quentin', 'Marmalade', 'pineapple', 'umbrella', 'p-a1b2c3d4e5f6g7h8i9j0kl', 'quentin@example.com', 'example.com', 'mira.cc', 'secret-room', 'token=abc']
+    const raw = {
+      type: 'crash', kind: 'error', name: 'TypeError', stack: 'deadbeef', vehicle: 'jet',
+      message: 'Cannot read properties of undefined (reading \'Quentin Marmalade\') chat "pineapple umbrella secret" ' +
+        'room p-a1b2c3d4e5f6g7h8i9j0kl mail quentin@example.com at https://mira.cc/?room=secret-room&token=abc#x Quentin Marmalade pineapple umbrella 1234567890',
+      frames: '/assets/index-a1.js:10:20 < https://evil.example/x.js:1:2 < /assets/b.js?room=secret-room:3:4 < quentin@example.com:1:1 < /src/net/index.ts:5:6',
+    }
+    const post = cleanClientPost(raw, 'abcdef0123456789', geo, 'beta')!
+    const stored = JSON.stringify(post.row)
+    for (const secret of secrets) expect(stored).not.toContain(secret)
+    expect(post.row.extra.message).toMatch(/^Cannot read properties of undefined/)
+    expect(post.row.extra.message!.length).toBeLessThanOrEqual(120)
+    expect(post.row.extra.message).toMatch(/^[A-Za-z0-9 .,:_'-]*$/)
+    expect(post.row.extra.frames).toBe('/assets/index-a1.js:10:20 < /src/net/index.ts:5:6')
+    expect(post.row.extra.errorName).toBe('TypeError')
+    expect(cleanClientPost({ ...raw, name: 'Quentin Marmalade' }, 'abcdef0123456789', geo, 'beta')!.row.extra.errorName).toBe('Error')
     expect(post.row.common.country).toBe('DE')
-    for (const bad of [{ key: 'abcdef0123456789', type: 'crash', kind: 'nuke' }, { key: 'x', type: 'crash', kind: 'error' }, { key: 'abcdef0123456789', type: 'shout' }]) expect(cleanClientPost(bad, geo, 'beta')).toBeNull()
+    for (const bad of [{ type: 'crash', kind: 'nuke' }, { type: 'shout' }]) expect(cleanClientPost(bad, 'abcdef0123456789', geo, 'beta')).toBeNull()
+    expect(cleanClientPost(raw, 'not-a-key', geo, 'beta')).toBeNull()
   })
 
   // Bug: a crash loop flooding /e; or the limiter keyed on the network address.
@@ -302,16 +316,36 @@ describe('client posts and the Worker', () => {
   // Bug: /e failing loudly, writing malformed posts, or affecting anything when analytics is off.
   it('POST /e writes one cleaned point, answers 204 for anything, and never throws', async () => {
     const { rows, sink } = recorder()
-    const post = (body: string, env: object) => worker.fetch(new Request('https://mira.cc/e', { method: 'POST', body }), env as never)
-    expect((await post(JSON.stringify({ key: 'abcdef0123456789', type: 'event', kind: 'physics_retry', attempt: 2 }), { ANALYTICS: sink })).status).toBe(204)
+    const post = (body: string, env: object, key = 'abcdef0123456789') => worker.fetch(new Request(`https://mira.cc/e?k=${key}`, { method: 'POST', body }), env as never)
+    expect((await post(JSON.stringify({ type: 'event', kind: 'physics_retry', attempt: 2 }), { ANALYTICS: sink })).status).toBe(204)
     expect(rows).toHaveLength(1)
     expect(rows[0].blobs[10]).toBe('physics_retry')
     expect((await post('not json', { ANALYTICS: sink })).status).toBe(204)
-    expect((await post('{"type":"crash","kind":"error"}', { ANALYTICS: sink })).status).toBe(204)
+    expect((await post('{"type":"crash","kind":"error"}', { ANALYTICS: sink }, 'nokey')).status).toBe(204)
     expect(rows).toHaveLength(1)
-    expect((await post(JSON.stringify({ key: 'abcdef0123456789', type: 'event', kind: 'ws_fail' }), {})).status).toBe(204)
+    expect((await post(JSON.stringify({ type: 'event', kind: 'ws_fail' }), {})).status).toBe(204)
     const throwing: AnalyticsSink = { writeDataPoint: () => { throw new Error('dataset down') } }
-    expect((await post(JSON.stringify({ key: 'abcdef0123456789', type: 'event', kind: 'ws_fail' }), { ANALYTICS: throwing })).status).toBe(204)
+    expect((await post(JSON.stringify({ type: 'event', kind: 'ws_fail' }), { ANALYTICS: throwing }, 'abcdef0123456780')).status).toBe(204)
+  })
+
+  // Bug: a huge post buffered whole before any limit (memory on the Worker), with or without
+  // a declared length.
+  it('POST /e never reads past its cap: a declared large body is refused unread, an undeclared one is cut off', async () => {
+    const { rows, sink } = recorder()
+    const declared = new Request('https://mira.cc/e?k=abcdef0123456781', { method: 'POST', body: 'x'.repeat(10), headers: { 'content-length': String(8 * 1024 * 1024) } })
+    expect((await worker.fetch(declared, { ANALYTICS: sink } as never)).status).toBe(413)
+    let pulled = 0, cancelled = false
+    const chunk = new Uint8Array(64 * 1024).fill(120)
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) { pulled += chunk.byteLength; if (pulled > 8 * 1024 * 1024) controller.close(); else controller.enqueue(chunk) },
+      cancel() { cancelled = true },
+    })
+    const undeclared = new Request('https://mira.cc/e?k=abcdef0123456782', { method: 'POST', body: endless, duplex: 'half' } as RequestInit)
+    const res = await worker.fetch(undeclared, { ANALYTICS: sink } as never)
+    expect([204, 413]).toContain(res.status)
+    expect(cancelled).toBe(true)
+    expect(pulled).toBeLessThanOrEqual(4 * chunk.byteLength) // stopped at the first chunk past 4 KiB
+    expect(rows).toHaveLength(0)
   })
 
   // Bug: an analytics failure breaking a room.
@@ -349,5 +383,101 @@ describe('the registry presence snapshot', () => {
     await report('lobby', 4, 'production')
     const latest = by(rows, 'presence').slice(1)
     expect(latest.map((r) => [r.blobs[1], r.blobs[3], r.doubles[4]]).sort()).toEqual([['beta', 'alpine', 2], ['production', 'alpine', 4]])
+  })
+})
+
+describe('the review\'s other findings', () => {
+  // Bug: a structuredClone of the session on every inbound message (320 a second in a full room).
+  it('copies a session only when an attachment rewrite is due, not per message', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    let clock = 7_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const { sink } = recorder()
+    const ws = { attachment: { room: 'lobby', at: clock } as unknown, send() {}, close() {}, serializeAttachment(v: unknown) { this.attachment = v }, deserializeAttachment() { return this.attachment } }
+    const s0 = {
+      storage: { get: async () => undefined, put: async () => {}, deleteAll: async () => {}, setAlarm: async () => {} },
+      waitUntil: () => {}, acceptWebSocket: () => {}, getWebSockets: () => [ws], blockConcurrencyWhile: async <T>(fn: () => Promise<T>) => fn(),
+    }
+    const durable = new RoomDO(s0 as never, { ANALYTICS: sink, ROOMS: { idFromName: () => ({}), get: () => ({ fetch: async () => new Response(null, { status: 204 }) }) } } as never)
+    await Promise.resolve(); await Promise.resolve()
+    durable.webSocketMessage(ws as never, hello('A'))
+    const copies = vi.spyOn(Room.prototype, 'sessionOf')
+    for (let i = 0; i < 1000; i++) { clock += 50; durable.webSocketMessage(ws as never, state(false) as never) }
+    expect(copies).not.toHaveBeenCalled()
+    clock += 50; durable.webSocketMessage(ws as never, state(true) as never) // a pause: one rewrite is due
+    expect(copies).toHaveBeenCalledTimes(1)
+  })
+
+  // Bug: analytics work (sessions, copies, extra roster saves) running where there is no binding.
+  it('does no analytics work at all without the binding', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    let clock = 8_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    let puts = 0
+    const ws = { attachment: { room: 'lobby', at: clock } as unknown, send() {}, close() {}, serializeAttachment(v: unknown) { this.attachment = v }, deserializeAttachment() { return this.attachment } }
+    const s0 = {
+      storage: { get: async () => undefined, put: async (k: string) => { if (k === 'room') puts++ }, deleteAll: async () => {}, setAlarm: async () => {} },
+      waitUntil: () => {}, acceptWebSocket: () => {}, getWebSockets: () => [ws], blockConcurrencyWhile: async <T>(fn: () => Promise<T>) => fn(),
+    }
+    const durable = new RoomDO(s0 as never, { ROOMS: { idFromName: () => ({}), get: () => ({ fetch: async () => new Response(null, { status: 204 }) }) } } as never)
+    await Promise.resolve(); await Promise.resolve()
+    durable.webSocketMessage(ws as never, hello('A', { resume: TOKEN }))
+    const copies = vi.spyOn(Room.prototype, 'sessionOf')
+    const after = puts
+    for (let i = 0; i < 20 * 120; i++) { clock += 50; durable.webSocketMessage(ws as never, state(false) as never) } // two minutes of Explore
+    expect(copies).toHaveBeenCalledTimes(0)
+    // The room has no analytics writer, so its analytics-only roster save cannot fire; the saves
+    // seen are the room's own activity saves (at most one per ACTIVE_PERSIST_MS, 30 s).
+    expect((durable as unknown as { room: { analytics?: unknown } }).room.analytics).toBeUndefined()
+    expect(puts - after).toBeLessThanOrEqual(4)
+    expect((ws.attachment as { session?: unknown }).session).toBeUndefined()
+  })
+
+  // Bug: the registry's channel memory growing without bound on a warm registry.
+  it('forgets a room\'s channel when it reports nobody, and keeps none without the binding', async () => {
+    let clock = 9_500_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const make = (env: object) => {
+      const s0 = {
+        storage: { get: async () => undefined, put: async () => {}, deleteAll: async () => {}, setAlarm: async () => {} },
+        waitUntil: () => {}, acceptWebSocket: () => {}, getWebSockets: () => [], blockConcurrencyWhile: async <T>(fn: () => Promise<T>) => fn(),
+      }
+      return new RoomDO(s0 as never, env as never)
+    }
+    const report = (r: RoomDO, room: string, players: number) =>
+      r.fetch(new Request('https://registry/report', { method: 'POST', body: JSON.stringify({ room, players, active: players, recipeId: 'alpine', channel: 'beta' }) }))
+    const size = (r: RoomDO) => (r as unknown as { channels: Map<string, unknown> }).channels.size
+    const bare = make({})
+    for (let i = 0; i < 100; i++) await report(bare, 'room' + i, 1)
+    expect(size(bare)).toBe(0)
+    const { sink } = recorder()
+    const bound = make({ ANALYTICS: sink })
+    for (let i = 0; i < 100; i++) await report(bound, 'room' + i, 1)
+    expect(size(bound)).toBe(100)
+    for (let i = 0; i < 50; i++) await report(bound, 'room' + i, 0)
+    expect(size(bound)).toBe(50)
+    clock += 11 * 60_000
+    await report(bound, 'fresh', 1)
+    expect(size(bound)).toBe(1) // the rest aged out
+  })
+
+  // Bug: driving after a rejoin not counted as active time until the next pause and resume.
+  it('restarts the active clock on a rejoin from the player\'s actual pause state', () => {
+    const clock = { now: 1_000_000 }
+    const { room, rows } = analyticsRoom('lobby', clock)
+    const a = peer(), b = peer()
+    room.connect(a); room.receive(a, hello('A', { resume: TOKEN }))
+    room.receive(a, state(false))
+    clock.now += 60_000; room.disconnect(a) // 60 s active, then dropped
+    clock.now += 10_000
+    room.connect(b); room.receive(b, hello('A', { resume: TOKEN })) // rejoins, still driving
+    room.receive(b, state(false)) // equal to the last state before the drop
+    clock.now += 60_000; room.receive(b, state(false))
+    clock.now += 0; room.disconnect(b)
+    clock.now += (REJOIN_GRACE + 1) * 1000; room.tick()
+    const end = by(rows, 'session_end')[0]
+    expect(end.doubles[0]).toBe(130) // connected: to the second drop
+    expect(end.doubles[1]).toBe(120) // active: both minutes of driving, not the 10 s away
+    expect(sessionPaused).toBeTypeOf('function')
   })
 })

@@ -32,7 +32,7 @@ export function eventSql(event, since, channel) {
   if (!/^[a-z_]+$/.test(event)) throw new Error('bad event')
   const ch = channel === 'all' ? '' : ` AND blob2 = '${channel === 'beta' ? 'beta' : 'production'}'`
   return `SELECT timestamp, _sample_interval AS si, blob3 AS build, blob4 AS recipe, blob5 AS roomKind, blob6 AS device, blob7 AS backend, ` +
-    `blob8 AS country, blob9 AS continent, blob10 AS aid, blob11 AS kind, blob12 AS message, blob13 AS stack, blob16 AS ref, ` +
+    `blob8 AS country, blob9 AS continent, blob10 AS aid, blob11 AS kind, blob12 AS message, blob13 AS stack, blob16 AS ref, blob17 AS errorName, ` +
     `double1 AS seconds, double2 AS activeSeconds, double4 AS count, double5 AS players, double6 AS active, double7 AS rooms ` +
     `FROM ${DATASET} WHERE blob1 = '${event}' AND timestamp >= ${sinceSql(since)}${ch} LIMIT 200000 FORMAT JSON`
 }
@@ -82,7 +82,7 @@ export function summarize(rows, firstSeen = new Map()) {
     add(continents, r.continent, w(r)); add(countries, r.country, w(r)); add(devices, r.device, w(r))
     add(backends, r.backend, w(r)); add(kinds, r.roomKind, w(r)); add(refs, r.ref, w(r))
   }
-  for (const r of rows.crash ?? []) add(crashes, `${r.kind} @ ${r.build || '(frozen)'}`, w(r))
+  for (const r of rows.crash ?? []) add(crashes, `${r.kind} ${r.errorName || 'Error'} @ ${r.build || '(frozen)'}`, w(r))
   for (const r of rows.client ?? []) add(health, r.kind, w(r))
   add(health, 'room_full (handoff to a universe)', (rows.room_full ?? []).reduce((a, r) => a + w(r), 0))
   add(health, 'rejoins', ends.reduce((a, r) => a + Number(r.count) * w(r), 0))
@@ -126,6 +126,8 @@ export function format(r, window) {
     ...table('Room kinds (sessions)', r.roomKinds), ...table('Came from (?ref=, sessions)', r.refs),
     'Unique and returning players by day:', ...(r.days.length ? r.days.map((d) => `  ${d.day}  ${n(d.uniques)} unique, ${n(d.returning)} seen on an earlier day`) : ['  (none)']),
     ...table('Health', r.health), ...table('Crashes by type and version', r.crashes),
+    'Crash and health rows are reported by clients to an open endpoint and are not authenticated: read them as indications.',
+    'Each row carries its channel; this report shows one channel at a time (--channel).',
   ].join('\n')
 }
 

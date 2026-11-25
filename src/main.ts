@@ -153,6 +153,11 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
+  // From here a crash report can also blank out the player's own name and room (shared/crashText.ts).
+  setReportContext(() => ({
+    backend: game.backend, vehicle: slot.current.kind, recipe: recipeIdForLook(params.get('terrain.look')?.value) ?? undefined,
+    name: shell.playerName, room: shell.room || roomFromQuery(query),
+  }))
   if (glass) shell.driveGlassFrame = glass.driveFrame
   let postCheckQueued = false
   const materialChanged = params.onChange((id) => {
