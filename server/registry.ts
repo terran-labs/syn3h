@@ -30,6 +30,9 @@ export const PRESENCE_REFRESH_MS = 30_000
  * bounded per room (server/presenceReporter.ts ACTIVE_REPORT_MS), pausing and resuming
  * anywhere costs the shared registry at most two storage writes a minute. Cost: after an
  * eviction, a planet's active count may be up to this old until its rooms report again.
+ * Known limit, accepted: if a pause is acknowledged as 'later', the paused page then freezes
+ * (sending nothing more) and the registry is evicted before this save, the reloaded counts
+ * show that player as active until the room's silent socket closes (SILENT_MS, 3 min).
  */
 export const ACTIVE_SAVE_MS = 30_000
 /** What a report means for the stored counts: write now, write within ACTIVE_SAVE_MS, nothing. */
