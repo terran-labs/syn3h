@@ -19,6 +19,7 @@
  * here in HTML, CSS and SVG.
  */
 import { aboutLinksHtml, licencesHtml } from '../data/credits'
+import { NEWSLETTER_URL } from '../newsletter'
 import { ACCORDION_ARROW } from '../accordionArrow'
 import { frozenResourceURL } from '../../core/frozenResources'
 import { GEAR_DESCRIPTIONS, GEAR_LABELS } from '../../weapons/Gear'
@@ -169,6 +170,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
 <h3>Made, not shipped</h3>
 <p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play.</p>
 <p class="welcome-close">Land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>
+<p class="welcome-newsletter">Want news about Mira? <a class="welcome-newsletter-link" href="${NEWSLETTER_URL}" target="_blank" rel="noopener noreferrer">Join the newsletter</a></p>
 ${aboutLinksHtml}
 ${licencesHtml}
 <p class="welcome-privacy">Mira keeps anonymous counts of things like which worlds and vehicles get played, and crash reports, so we can make it better. No accounts, no ads, nothing sold.</p>

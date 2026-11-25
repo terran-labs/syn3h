@@ -245,3 +245,12 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 /* What the game keeps, last, in the credits' small type (the owner, 25 November 2026: "simple.
    Nothing ominous"). No heading or box; room for a second sentence later. */
 .mira-shell .welcome-body.welcome-body p.welcome-privacy, .welcome-body p.welcome-privacy { margin-top: 20px; max-width: 62ch; font-size: 13.5px; line-height: 1.5; color: var(--w-soft); }
+
+/* The newsletter: one warm line and a pill that opens Terran Labs' signup in a new tab. No field. */
+.mira-shell .welcome-body.welcome-body p.welcome-newsletter, .welcome-body p.welcome-newsletter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 48px; max-width: none; color: var(--w-ink); font-size: 16px; }
+.welcome-body .welcome-newsletter-link {
+  display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 0 20px; border: 1px solid var(--w-line); border-radius: 999px;
+  color: var(--w-ink); font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-decoration: none;
+}
+.welcome-body .welcome-newsletter-link:is(:hover, :focus-visible) { border-color: var(--w-ink); background: rgb(255 255 255 / .06); }
+.welcome-body .welcome-newsletter-link:focus-visible { outline: 2px solid var(--w-ink); outline-offset: 2px; }

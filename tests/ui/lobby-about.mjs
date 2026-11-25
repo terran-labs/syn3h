@@ -101,6 +101,10 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   assert.equal(await about.locator('.panel-back').count(),0,'no Back button')
   assert.deepEqual(await about.locator('button').evaluateAll(bs=>bs.filter(b=>/close/i.test(b.getAttribute('aria-label')??'')).length),1,'one close control')
   assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('lobby-sheet-close')),true,'focus starts on the X')
+  // The newsletter: Terran Labs' signup in a new tab, nothing collected here. Bug caught: a link that
+  // replaces the game, leaks the referrer or opens the wrong page.
+  assert.deepEqual(await about.locator('.welcome-newsletter-link').evaluate(a=>({href:a.href,target:a.target,rel:a.rel})),{href:'https://terranlabs.com/?signup=1&ref=mira',target:'_blank',rel:'noopener noreferrer'},'the newsletter link opens the signup in a new tab')
+  assert.equal(await about.locator('.welcome-body input').count(),0,'no field in the guide')
   // The licences, wherever the guide keeps them, point at the pinned copies.
   for(const href of await about.locator('a[href*="/brand/licenses/"]').evaluateAll(as=>as.map(a=>a.getAttribute('href')))) assert.match(href,/\/brand\/licenses\//)
   await page.screenshot({path:`${out}/${mode}-about-top.png`})
