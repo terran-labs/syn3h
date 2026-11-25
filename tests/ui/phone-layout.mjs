@@ -231,28 +231,92 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await fits('join-qr'); await page.evaluate(() => window.mira.shell.closeJoin())
   // On to driving: a tap on the world's label drops straight in.
   await page.evaluate(() => window.mira.shell.showPanel('index')); await settle('index'); await fits('index')
-  // The index is the galaxy: every world's label and the links are on the screen.
-  await page.waitForTimeout(1500)
-  // The closer default view lets the outer orbit run off the edges, and captions never move, so
-  // a planet off screen takes its caption with it. What a player could hit: every caption shown
-  // sits centred under its own planet, and none is shown apart from one. The links stay on screen.
-  const captions = await page.evaluate(gap => {
-    const host = document.querySelector('.galaxy-ui').getBoundingClientRect(), faults = []
-    const onScreen = p => p.visible && p.x >= 0 && p.x <= innerWidth && p.y >= 0 && p.y <= innerHeight
-    for (const chip of document.querySelectorAll('.galaxy-label:not([hidden])')) {
-      if (Number(getComputedStyle(chip).opacity) < 0.05) continue
-      const p = window.mira.shell.galaxy.screen.find(s => s.id === chip.dataset.world), r = chip.getBoundingClientRect()
-      if (!p || !onScreen(p)) { if (r.right > 0 && r.left < innerWidth && r.bottom > 0 && r.top < innerHeight) faults.push(`${chip.dataset.world}: a caption on screen without its planet`); continue }
-      const dx = r.left + r.width / 2 - (host.left + p.x), top = host.top + p.y + p.radius + gap
-      if (Math.abs(dx) > 2) faults.push(`${chip.dataset.world}: caption ${dx.toFixed(1)} px off its planet's centre`)
-      if (r.top < top - 3 || r.top > top + 12) faults.push(`${chip.dataset.world}: caption ${(r.top - top).toFixed(1)} px from under its planet`)
+  await page.waitForFunction(() => !window.mira.shell.galaxy.opening &&
+    [...document.querySelectorAll('.galaxy-label:not([hidden]):not(.is-suppressed)')]
+      .some(chip => Number(getComputedStyle(chip).opacity) > 0), null, { timeout: 30000 })
+  // Projected discs and printed rows share the same CSS-pixel coordinate space. The whole
+  // caption may clamp to an edge or shift sideways to clear the dock.
+  const captions = await page.evaluate(() => {
+    const { galaxy } = window.mira.shell
+    const host = document.querySelector('.galaxy-canvas').getBoundingClientRect()
+    const layer = document.querySelector('.galaxy-labels').getBoundingClientRect()
+    const view = { left: Math.max(0, layer.left), right: Math.min(innerWidth, layer.right), top: Math.max(0, layer.top), bottom: Math.min(innerHeight, layer.bottom) }
+    const faults = [], shown = []
+    const epsilon = 1
+    const fits = box => box.left >= view.left - epsilon && box.right <= view.right + epsilon &&
+      box.top >= view.top - epsilon && box.bottom <= view.bottom + epsilon
+    const intersects = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
+    const blockers = [...document.querySelectorAll('.lobby-gear-dock, .lobby-version-dock, #lobby-settings')]
+      .filter(el => getComputedStyle(el).visibility === 'visible')
+      .map(el => ({ name: el.id || el.className, box: el.getBoundingClientRect() }))
+      .filter(({ box }) => box.width > 0 && box.height > 0)
+    for (const chip of document.querySelectorAll('.galaxy-label:not([hidden]):not(.is-suppressed)')) {
+      const style = getComputedStyle(chip)
+      if (style.visibility !== 'visible' || Number(style.opacity) <= 0) continue
+      const id = chip.dataset.world, box = chip.getBoundingClientRect()
+      const rows = [...chip.querySelector('.galaxy-caption-text').children]
+        .filter(row => row.textContent.trim()).map(row => row.getBoundingClientRect())
+      if (rows.length === 0 || rows.some(row => row.width <= 0 || row.height <= 0 || !fits(row))) {
+        faults.push(`${id}: caption text is clipped or missing`)
+      }
+      const place = galaxy.screen.find(planet => planet.id === id)
+      const x = host.left + (place?.x ?? Infinity), y = host.top + (place?.y ?? Infinity), radius = place?.radius ?? 0
+      const dx = x - clamp(x, view.left, view.right), dy = y - clamp(y, view.top, view.bottom)
+      if (!place?.visible || Math.hypot(dx, dy) >= radius) {
+        faults.push(`${id}: drawn caption without an on-screen disc`)
+      } else {
+        // A dock nudge is at most half the caption's measured width after edge clamping.
+        // Keep the six-pixel edge inset in the nominal position, with one pixel for rounding.
+        const half = box.width / 2, inset = 6
+        const centre = clamp(x, view.left + inset + half, view.right - inset - half)
+        if (Math.abs(box.left + half - centre) > half + epsilon) faults.push(`${id}: caption too far from its disc horizontally`)
+        // A caption belongs beneath the limb, within one drawn line of it, except where
+        // there is only room above the viewport's bottom edge.
+        const bottomLimit = view.bottom - inset - box.height
+        const earliest = clamp(y + radius, view.top + inset, bottomLimit)
+        const latest = clamp(y + radius + (rows[0]?.height ?? 0), view.top + inset, bottomLimit)
+        if (box.top < earliest - epsilon || box.top > latest + epsilon) faults.push(`${id}: caption too far from its disc vertically`)
+        for (const front of [...galaxy.screen.filter(planet => planet.visible), galaxy.sunScreen]) {
+          if (front.depth >= place.depth) continue
+          const fx = host.left + front.x, fy = host.top + front.y
+          if (rows.some(row => Math.hypot(fx - clamp(fx, row.left, row.right), fy - clamp(fy, row.top, row.bottom)) < front.radius - epsilon)) {
+            faults.push(`${id}: caption text overlaps ${front.id ?? 'the sun'}`)
+          }
+        }
+      }
+      for (const other of [...shown, ...blockers]) {
+        if (intersects(box, other.box)) faults.push(`${id}: caption overlaps ${other.name}`)
+      }
+      shown.push({ name: id, box })
     }
-    for (const b of document.querySelectorAll('.galaxy-links button')) { const r = b.getBoundingClientRect(); if (r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight) faults.push(`${b.textContent.trim()} off the screen`) }
+    if (shown.length === 0) faults.push('no drawn captions')
+    for (const button of document.querySelectorAll('.galaxy-links button')) {
+      if (!fits(button.getBoundingClientRect())) faults.push(`${button.textContent.trim()} off the screen`)
+    }
     return faults
-  }, 5)
+  })
   check(captions.length === 0, `${view.name}: in the galaxy: ${captions.join('; ')}`)
-  // A tap on the world is the whole way in: no form between the galaxy and the ground.
-  await page.locator('.galaxy-label[data-world=alpine]').dispatchEvent('click')
+  // Hit the invited world's printed caption with a real touch. A suppressed button still
+  // exists in the DOM, so a synthetic click could pass while the guest cannot use it.
+  const alpine = await page.waitForFunction(() => {
+    const { galaxy } = window.mira.shell
+    const chip = document.querySelector('.galaxy-label[data-world=alpine]')
+    const place = galaxy.screen.find(planet => planet.id === 'alpine')
+    if (!place?.visible || !chip || chip.hidden || chip.classList.contains('is-suppressed')) return
+    const name = chip.querySelector('strong').getBoundingClientRect()
+    const x = name.left + name.width / 2, y = name.top + name.height / 2
+    if (document.elementFromPoint(x, y)?.closest('.galaxy-label') !== chip) return
+    const host = document.querySelector('.galaxy-canvas').getBoundingClientRect()
+    const blocked = [...galaxy.screen.filter(planet => planet.visible), galaxy.sunScreen]
+      .some(other => other.depth < place.depth && Math.hypot(x - host.left - other.x, y - host.top - other.y) < other.radius)
+    if (blocked) return
+    galaxy.clockHold = true
+    return { x, y }
+  }, null, { timeout: 30000 })
+  const target = await alpine.jsonValue()
+  await page.touchscreen.tap(target.x, target.y)
+  await page.evaluate(() => { window.mira.shell.galaxy.clockHold = false })
   await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-playing') && window.miraNet?.connected, null, { timeout: 60000 })
   await page.waitForTimeout(2500)
   const playing = await g(), driving = await world()

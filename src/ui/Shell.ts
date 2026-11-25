@@ -1788,6 +1788,8 @@ export class Shell implements System {
       // picture): the world's name, its biome in small lower case under it, then how many are
       // online. The caption and the planet both lead to the same world.
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
+      // A live caption becomes interactive once its first placement succeeds.
+      chip.disabled = true
       this.chipSizes.observe(chip)
       chip.innerHTML = '<span class="galaxy-caption-text"><strong></strong><small class="galaxy-biome"></small></span>'
       const caption = chip.firstElementChild!
@@ -1935,7 +1937,9 @@ export class Shell implements System {
         })
         const strengths = captionLayout(candidates, blockers)
         for (const [id, chip] of chips) {
-          chip.classList.toggle('is-suppressed', !strengths.get(id))
+          const suppressed = !strengths.get(id)
+          chip.classList.toggle('is-suppressed', suppressed)
+          if (chip.disabled !== suppressed) chip.disabled = suppressed
           const tabIndex = strengths.get(id) ? 0 : -1
           if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
         }
@@ -1956,6 +1960,7 @@ export class Shell implements System {
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
+    if (!this.galaxy.live) for (const chip of chips.values()) chip.disabled = false
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
