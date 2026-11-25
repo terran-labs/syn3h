@@ -12,7 +12,16 @@
  * over the World, Performance and Chat headers, so Field switches and Copy diagnostics could not
  * be reached (v26.11.2308). It hides the moment the panels open over it, as their `inert` flips,
  * before the next tap can land, and returns when they close. On a wide screen the rail stands
- * to the right, clear of the box, and the box stays. Otherwise it
+ * to the right, clear of the box, and the box stays.
+ *
+ * The bottom stack's notices win (v26.11.2403: on a 320 by 568 phone the real two-line running-
+ * slow offer met the box and covered its own text). While a shown item of the bottom stack
+ * (bottom-stack.css) would meet the box, the box gives way, in the same task the item appears in
+ * (a mutation observer on the stack), before it is painted: first its row of test controls goes,
+ * which leaves every counter where it was and readable; if the counters' own lines would still
+ * meet the item, the whole box hides, as it does for the panels. It comes back whole when the item
+ * goes. Its top never moves for this, so nothing on screen jumps. Where nothing in the stack
+ * reaches it (a 390 by 844 phone) nothing changes. Otherwise it
  * stands centred a third of the way down: clear of the gear list on the left, the speed and
  * altitude on either side and the thumb controls below (checked at 390 by 844 both ways up).
  * Read four times a second from the counters; nothing is read from the page per frame.
@@ -74,6 +83,24 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
     const a = lastRect, b = rail.getBoundingClientRect()
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   }
+  // The bottom stack's shown items, as boxes (bottom-stack.css owns that strip).
+  const stackItems = () => [...document.querySelectorAll<HTMLElement>('.bottom-stack > *')].filter(el => {
+    if (el.hidden) return false
+    const s = getComputedStyle(el)
+    return s.display !== 'none' && s.visibility !== 'hidden'
+  }).map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0)
+  const meets = (a: { left: number; right: number; top: number; bottom: number }, b: DOMRect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  /** Whole, without its test controls, or hidden: whatever keeps it clear of the bottom stack. Measured whole, in this task, so nothing flickers. */
+  const giveWay = () => {
+    tests.style.display = 'flex'
+    const items = stackItems()
+    if (!items.length) return
+    const whole = box.getBoundingClientRect()
+    if (!items.some(item => meets(whole, item))) return
+    const lines = { left: whole.left, right: whole.right, top: whole.top, bottom: text.getBoundingClientRect().bottom + 4 }
+    if (items.some(item => meets(lines, item))) box.hidden = true
+    else tests.style.display = 'none'
+  }
   const update = () => {
     const r = withRecorder ? recorder() : null, c = canary(), p = probe(), play = inPlay() && !overPanels()
     if (box.hidden === play) box.hidden = !play
@@ -87,6 +114,7 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
     const line = lines.join('\n')
     if (line !== shown) text.textContent = shown = line
     place()
+    giveWay()
   }
   // Just below whatever stands above the box's own column: the gear list, or on a narrow phone the
   // speed and altitude readouts only if the box is wider than the gap between them. Measured each
@@ -106,6 +134,16 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
   // The panels opening or closing flips `inert` on the rail at once: follow it now, not at the next tick.
   const railWatch = new MutationObserver(update)
   railWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['inert'] })
+  // A notice arriving in or leaving the bottom stack: give way, or come back, before it is painted.
+  // Only an item arriving or leaving, or one of its own attributes: not text changing inside an item
+  // (the race status rewrites its text often).
+  const stackWatch = new MutationObserver(records => {
+    const stack = document.querySelector('.bottom-stack')
+    if (records.some(m => m.target === stack || m.target.parentElement === stack)) update()
+  })
+  const watchStack = () => { const stack = document.querySelector('.bottom-stack'); if (stack) stackWatch.observe(stack, { subtree: true, childList: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] }); return !!stack }
+  let stackWatched = watchStack()
+  const timer2 = stackWatched ? undefined : setInterval(() => { if (!stackWatched && (stackWatched = watchStack())) clearInterval(timer2) }, 250)
   update()
-  return () => { clearInterval(timer); railWatch.disconnect(); box.remove() }
+  return () => { clearInterval(timer); clearInterval(timer2); railWatch.disconnect(); stackWatch.disconnect(); box.remove() }
 }

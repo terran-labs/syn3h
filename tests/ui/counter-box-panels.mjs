@@ -10,12 +10,27 @@
 // realistic numbers (five-digit frame counts, three-digit counts, a last bad frame each), no text
 // overflows its line or the box, the box is on screen, and it clears the speed and altitude, the
 // thumb controls, the minimap, Show panels and whatever the bottom stack holds.
-//   MIRA_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/counter-box-panels.mjs
+// And the bottom stack's notices win (v26.11.2403: the real two-line running-slow offer met the box
+// at 320 by 568 and the box covered its text). With the game's own offer showing, at 390 by 844 and
+// 320 by 568: the box meets no shown stack item, the offer's text is fully visible and both its
+// buttons take a tap, the box's top never moves, at 390 the box does not change at all, and after
+// a real tap dismisses the offer the box is back whole where it was.
+//   MIRA_URL=http://127.0.0.1:5187/ tools/heavy.sh node tests/ui/counter-box-panels.mjs [shot dir]
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
 const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5187/'
+const out = process.argv[2]
+if (out) (await import('node:fs')).mkdirSync(out, { recursive: true })
+/** Wait until `ready` holds and the counter box and the bottom stack have not moved for 6 animation frames. */
+const steady = (page, ready, what) => page.waitForFunction(([ready]) => {
+  const w = window, look = el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return [r.left, r.top, r.width, r.height].map(Math.round).join() + s.opacity + s.visibility + s.display + el.hidden }
+  const now = [...document.querySelectorAll('.flash-counter, .flash-counter > *, .bottom-stack > *')].map(look).join('|')
+  if (!new Function(`return (${ready})()`)()) { w.__steady = 0; w.__look = null; return false }
+  w.__steady = now === w.__look ? (w.__steady ?? 0) + 1 : 0; w.__look = now
+  return w.__steady >= 6
+}, [ready.toString()], { polling: 'raf', timeout: 60000 }).catch(error => { throw new Error(`${what}: never steady (${error.message.split('\n')[0]})`) })
 const overlaps = (a, b) => !!a && !!b && a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
 // On a phone an open panel's own X goes back to driving; with the list showing, Close panels does.
 async function closePanels(page) {
@@ -105,20 +120,52 @@ try {
     assert.ok(fit.onScreen, `${width}x${height}: the box is on screen`)
     assert.deepEqual(fit.clashes, [], `${width}x${height}: the box clears the readouts, the thumb controls, the minimap and the bottom stack`)
     assert.match(fit.text, /98765/, 'the numbers are in the box')
-    // A notice in the bottom stack (the slow-frames offer sits above the thumbs on a phone) must
-    // not meet the box either: put one there and measure again.
-    const withNotice = await p.evaluate(async () => {
-      const notice = document.createElement('div')
-      notice.className = 'performance-recommendation'
-      notice.style.cssText = 'display:block;min-height:44px;width:260px;background:#333'
-      notice.textContent = 'Running slow at Medium. Try fewer bots?'
-      document.querySelector('.bottom-stack').append(notice)
-      await new Promise(r => setTimeout(r, 400))
-      const a = document.querySelector('.flash-counter').getBoundingClientRect(), n = notice.getBoundingClientRect()
-      notice.remove()
-      return { box: [Math.round(a.top), Math.round(a.bottom)], notice: [Math.round(n.top), Math.round(n.bottom)], clear: a.bottom <= n.top || a.top >= n.bottom || a.right <= n.left || a.left >= n.right }
+    // The game's own running-slow offer in the bottom stack (two lines on a 320 px phone): the
+    // stack's notices win. Shown the way the game shows it, a recommendation in the performance
+    // history, held there after each sample until the player dismisses it (as the history does).
+    const before = await p.evaluate(() => { const box = document.querySelector('.flash-counter'), b = box.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom].map(Math.round).concat(getComputedStyle(box.lastElementChild).display) })
+    await p.evaluate(() => {
+      const quality = window.mira.game.quality, history = quality.history, level = quality.governor.level
+      const offer = Object.freeze({ level, targetLevel: Math.max(0, level - 1), observedFps: 24, bots: 4, fewerBots: false })
+      const sample = history.sample.bind(history)
+      history.sample = (...args) => { const changed = sample(...args); if (!history.ignored) history.recommendation = offer; return changed }
+      history.recommendation = offer
+      quality.publishPerformance()
     })
-    assert.ok(withNotice.clear, `${width}x${height}: the box clears a bottom-stack notice ${JSON.stringify(withNotice)}`)
+    await steady(p, () => { const o = document.querySelector('.bottom-stack > .performance-recommendation'); return !!o && !o.hidden && Number(getComputedStyle(o).opacity) === 1 }, `${width}x${height} with the offer`)
+    const offered = await p.evaluate(() => {
+      const box = document.querySelector('.flash-counter'), shownBox = !box.hidden && box.getClientRects().length > 0
+      const b = box.getBoundingClientRect(), rect = r => [r.left, r.top, r.right, r.bottom].map(Math.round)
+      const items = [...document.querySelectorAll('.bottom-stack > *')].filter(e => !e.hidden && getComputedStyle(e).display !== 'none' && getComputedStyle(e).visibility !== 'hidden' && e.getBoundingClientRect().height > 0)
+      const met = shownBox ? items.filter(e => { const r = e.getBoundingClientRect(); return b.left < r.right && b.right > r.left && b.top < r.bottom && b.bottom > r.top }).map(e => e.className.split(' ')[0]) : []
+      const offer = document.querySelector('.bottom-stack > .performance-recommendation'), line = offer.querySelector('p'), l = line.getBoundingClientRect()
+      // The offer's words: on screen, inside the offer, and under no part of the box. (On touch the
+      // words let drags through, pointer-events none, so a hit test cannot see them; geometry can.)
+      const o = offer.getBoundingClientRect(), hidden = []
+      if (l.left < 0 || l.top < 0 || l.right > innerWidth || l.bottom > innerHeight) hidden.push('off screen')
+      if (l.left < o.left - 0.5 || l.right > o.right + 0.5 || l.top < o.top - 0.5 || l.bottom > o.bottom + 0.5) hidden.push('outside the offer')
+      if (shownBox && b.left < l.right && b.right > l.left && b.top < l.bottom && b.bottom > l.top) hidden.push('under the box')
+      const buttons = [...offer.querySelectorAll('button')].filter(btn => !btn.hidden && btn.getClientRects().length)
+      const untappable = buttons.filter(btn => { const r = btn.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) !== btn }).map(btn => btn.textContent)
+      return { shownBox, box: shownBox ? rect(b) : null, tests: getComputedStyle(box.lastElementChild).display, offer: rect(offer.getBoundingClientRect()), text: line.textContent, met, hidden, overflow: line.scrollWidth > line.clientWidth + 1, buttons: buttons.map(btn => btn.textContent), untappable }
+    })
+    console.log(`${width}x${height} with the offer: ${JSON.stringify(offered)}`)
+    if (out) await p.screenshot({ path: `${out}/${width}x${height}-offer.png` })
+    assert.deepEqual(offered.met, [], `${width}x${height}: the box meets no shown bottom-stack item`)
+    assert.deepEqual(offered.hidden, [], `${width}x${height}: the offer's text is fully visible`)
+    assert.ok(!offered.overflow, `${width}x${height}: the offer's text fits its line`)
+    assert.equal(offered.buttons.length, 2, `${width}x${height}: the offer shows two buttons`)
+    assert.deepEqual(offered.untappable, [], `${width}x${height}: both offer buttons take a tap`)
+    // Giving way never moves the box: where it still shows, its top is where it was.
+    if (offered.shownBox) assert.equal(offered.box[1], before[1], `${width}x${height}: the box's top does not move`)
+    // On the owner's 390 px iPhone the box was already clear: nothing about it changes.
+    if (width === 390) assert.ok(offered.shownBox && JSON.stringify(offered.box.concat(offered.tests)) === JSON.stringify(before), `${width}x${height}: the box is unchanged with the offer (${JSON.stringify([before, offered.box, offered.tests])})`)
+    // Dismissed by a real tap on the offer's first button (Keep): the box comes back whole.
+    await p.locator('.bottom-stack > .performance-recommendation button:not([hidden])').first().tap()
+    await steady(p, () => { const o = document.querySelector('.bottom-stack > .performance-recommendation'); const box = document.querySelector('.flash-counter'); return o.hidden && !box.hidden && getComputedStyle(box.lastElementChild).display !== 'none' }, `${width}x${height} after dismissal`)
+    const back = await p.evaluate(() => { const box = document.querySelector('.flash-counter'), b = box.getBoundingClientRect(); return [b.left, b.top, b.right, b.bottom].map(Math.round).concat(getComputedStyle(box.lastElementChild).display) })
+    if (out) await p.screenshot({ path: `${out}/${width}x${height}-dismissed.png` })
+    assert.deepEqual(back, before, `${width}x${height}: the box is back whole where it was`)
     await phone.close()
   }
   console.log(`ok${webgpu ? '' : ' (Test black not tried: WebGL 2)'}`)
