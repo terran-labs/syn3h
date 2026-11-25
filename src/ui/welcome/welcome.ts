@@ -160,10 +160,10 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
 <p>Every room has its own link. ${k('J')} or <em>Invite players</em> shows it with a QR code a phone can scan from across the sofa. Everyone in a room shares one world: the same terrain, the same weather, the same waves.</p>
 <h3>Settings worth knowing</h3>
 <ul class="welcome-settings">
-  <li><strong>Units.</strong> Metric or imperial, for speed, height and distance. Settings, then Controls.</li>
-  <li><strong>Sound on silent.</strong> Mira asks an iPhone to play its sound even with the silent switch on. To make it obey the switch: Settings, then Sound, then Advanced.</li>
+  <li><strong>Units.</strong> Metric or imperial, for speed, height and distance. In a world: Panels, then Me, then Interface.</li>
+  <li><strong>Sound on silent.</strong> Mira asks an iPhone to play its sound even with the silent switch on. To make it obey the switch, in a world: Panels, then Me, then Audio, and turn off <em>Play when the phone is on silent</em>.</li>
   <li><strong>Quality.</strong> The game picks a level for your device and adjusts as you play. Set it yourself in Settings, then Graphics.</li>
-  <li><strong>Left-handed touch.</strong> Swaps the driving thumb to the right. Settings, then Controls.</li>
+  <li><strong>Left-handed touch.</strong> Swaps the driving thumb to the right. In a world: Panels, then Me, then Input.</li>
 </ul>
 <h3>Made, not shipped</h3>
 <p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play.</p>
