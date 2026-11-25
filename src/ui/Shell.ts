@@ -33,7 +33,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionBlocked, captionHidden, captionMask, type ScreenBox } from './galaxy/labels'
+import { captionBox, captionClearance, captionHidden, captionLayout, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -1786,20 +1786,35 @@ export class Shell implements System {
     for (const world of worlds) {
       // A caption on the scene, not a plate (the owner, 16 November 2026: the lobby is a quiet
       // picture): the world's name, its biome in small lower case under it, then how many are
-      // online. Set under its planet; the planet takes the taps, the caption takes focus.
+      // online. The caption and the planet both lead to the same world.
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       this.chipSizes.observe(chip)
-      chip.innerHTML = '<strong></strong><small class="galaxy-biome"></small>'
+      chip.innerHTML = '<span class="galaxy-caption-text"><strong></strong><small class="galaxy-biome"></small></span>'
+      const caption = chip.firstElementChild!
+      this.chipSizes.observe(caption)
       const text = planetLabelText(world)
       chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
       // A whisper of the planet's own colour in the near-white type.
       if (!world.forming) chip.style.setProperty('--caption-tint', plateTint(world.recipe ?? world.id.split('~')[0]))
       chip.style.setProperty('--caption-accent', captionAccent(world))
-      if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
+      if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; caption.append(count) }
       if (!world.forming) chip.title = `A day lasts ${formatDayLength(planetDayLength(world.recipe ?? world.id))}.`
-      chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
+      chip.addEventListener('click', event => {
+        // Galaxy handles pointer gestures, including drags that begin on a caption.
+        if (event.detail === 0 || !this.galaxy?.live) this.galaxy?.activate(world.id)
+      })
       labels.append(chip); chips.set(world.id, chip)
     }
+    // Settings mounts outside the galaxy overlay. Wake the held view when its box changes.
+    const captionControls = new MutationObserver(() => {
+      const settings = document.getElementById('lobby-settings')
+      if (settings) this.chipSizes.observe(settings)
+      this.galaxy?.refreshCaptions()
+    })
+    captionControls.observe(this.element, { childList: true })
+    this.chipSizes.observe(this.lobbySettings.dock)
+    this.chipSizes.observe(this.lobbySettings.version)
+    this.abort.signal.addEventListener('abort', () => captionControls.disconnect(), { once: true })
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       logo: () => {
@@ -1825,7 +1840,7 @@ export class Shell implements System {
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
-      // A planet pointed at (hovered, or a finger on it) shows its label, faded or not.
+      // A hovered or pressed world gets first claim on caption space.
       onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
       // The lobby at rest: a planet breathing its glow lifts its caption the same way a hover does,
       // by the same amount at its peak share (shell.css --caption-pulse).
@@ -1880,46 +1895,60 @@ export class Shell implements System {
           }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
-        // Each caption sits centred under its planet, a fixed gap below the limb: a pure function
-        // of where the planet is this frame, so it never moves against it. Captions may overlap
-        // each other and other planets; that is accepted. Only their strength changes: with the
-        // opening, with depth (behind the sun or a nearer planet they fade, a far one is a little
-        // fainter), and brighter while pointed at or focused, or for the world in play.
-        for (const [id, chip] of chips) if (chip.classList.contains('is-chosen') !== (id === chosen)) chip.classList.toggle('is-chosen', id === chosen)
-        const current = currentPlanet().id, near = Math.min(...places.filter(p => p.visible).map(p => p.depth)), far = Math.max(...places.filter(p => p.visible).map(p => p.depth))
-        // Nearer, larger planets get larger captions (captionScale.ts); the gap below the limb grows with them.
-        const short = Math.min(innerWidth, innerHeight)
-        // The lobby's own controls, read once before this frame's writes: a caption that would
-        // touch one fades out (captionBlocked). Captions are placed in the label layer's space.
-        const layer = chips.values().next().value?.parentElement?.getBoundingClientRect()
-        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
-          .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
-          .map(r => ({ left: r.left - (layer?.left ?? 0), right: r.right - (layer?.left ?? 0), top: r.top - (layer?.top ?? 0), bottom: r.bottom - (layer?.top ?? 0) }))
+        const visible = places.filter(place => place.visible)
+        const near = Math.min(...visible.map(place => place.depth)), far = Math.max(...visible.map(place => place.depth))
+        const current = currentPlanet().id, short = Math.min(innerWidth, innerHeight)
+        const sun = this.galaxy?.sunScreen
         for (const place of places) {
           const chip = chips.get(place.id)!
           chip.hidden = !place.visible
-          if (!place.visible) continue
-          const scale = captionScale(place.radius, short), gap = CAPTION_GAP * scale
-          const scaleText = scale.toFixed(2)
-          if (chip.style.getPropertyValue('--caption-scale') !== scaleText) chip.style.setProperty('--caption-scale', scaleText)
-          this.placeChip(chip, place.x, place.y + place.radius + gap)
-          // The caption's box: centred under its planet, its size as last laid out (chipSizes).
-          const size = this.chipSize.get(chip), top = place.y + place.radius + gap
-          const blocked = !!size && captionBlocked({ left: place.x - size.width / 2, right: place.x + size.width / 2, top, bottom: top + size.height }, blockers)
-          if (chip.classList.contains('is-blocked') !== blocked) { chip.classList.toggle('is-blocked', blocked); chip.tabIndex = blocked ? -1 : 0 }
-          const away = blocked || (!!chosen && place.id !== chosen) || place.labelled === false || captionHidden(place, places, this.galaxy?.sunScreen)
+          chip.classList.toggle('is-chosen', place.id === chosen)
+          if (place.visible) {
+            const scale = captionScale(place.radius, short).toFixed(2)
+            if (chip.style.getPropertyValue('--caption-scale') !== scale) chip.style.setProperty('--caption-scale', scale)
+          }
+        }
+
+        // Use the unscaled sizes from the observer. A change of scale needs no layout read.
+        const layer = labels.getBoundingClientRect()
+        const blockers: ScreenBox[] = [this.lobbySettings.dock, this.lobbySettings.version, document.getElementById('lobby-settings')]
+          .map(el => el?.getBoundingClientRect()).filter((r): r is DOMRect => !!r && r.width > 0 && r.height > 0)
+          .map(r => ({ left: r.left - layer.left, right: r.right - layer.left, top: r.top - layer.top, bottom: r.bottom - layer.top }))
+        const candidates = visible.flatMap(place => {
+          const chip = chips.get(place.id)!
+          if ((chosen && place.id !== chosen) || place.labelled === false) return []
+          const highlighted = place.id === chosen || chip.classList.contains('is-pointed') || chip === document.activeElement
+          if (!highlighted && captionHidden(place, places, sun)) return []
+          const scale = Number(chip.style.getPropertyValue('--caption-scale'))
+          const size = this.chipSize.get(chip)
+          if (!size?.width || !size.height) return []
+          const box = captionBox(place, place.y + place.radius + CAPTION_GAP * scale, { width: size.width * scale, height: size.height * scale }, layer.width, layer.height, blockers)
+          const text = this.chipSize.get(chip.firstElementChild!)
+          if (!box || !text?.width || !text.height) return []
+          const center = (box.left + box.right) / 2, halfText = text.width * scale / 2
+          const foregroundGap = captionClearance({ left: center - halfText, right: center + halfText, top: box.top, bottom: box.top + text.height * scale }, place, places, sun)
+          // Leave space for the half-pixel placement tolerance and the limb's antialiasing.
+          if (foregroundGap <= 1) return []
+          const foregroundStrength = Math.min(1, foregroundGap / 8)
+          const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
+          return [{ id: place.id, place, chip, box, priority, foregroundStrength }]
+        })
+        const strengths = captionLayout(candidates, blockers)
+        for (const [id, chip] of chips) {
+          chip.classList.toggle('is-suppressed', !strengths.get(id))
+          const tabIndex = strengths.get(id) ? 0 : -1
+          if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
+        }
+        for (const { id, place, chip, box, foregroundStrength } of candidates) {
+          const clearance = strengths.get(id)
+          if (!clearance) continue
+          const center = (box.left + box.right) / 2
+          this.placeChip(chip, center, box.top)
           const depth = far > near ? (place.depth - near) / (far - near) : 0
-          // Pointing and focus lift it in the stylesheet (.is-pointed, :focus), at once, even
-          // while the galaxy is holding still and not drawing.
-          const strength = away ? '0' : (1 - 0.25 * depth + (place.id === current ? 0.2 : 0)).toFixed(2)
+          const strength = (clearance * (1 - 0.25 * depth + (id === current ? 0.2 : 0))).toFixed(2)
           if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
-          // In the scene's depth: nearer captions over farther ones, and every nearer body (a
-          // planet, the sun) cuts the text where its disc covers it, as if the caption stood at
-          // its own planet's depth.
-          const z = String(1000 - Math.round(place.depth * 10))
-          if (chip.style.zIndex !== z) chip.style.zIndex = z
-          const mask = captionMask(place, places, this.galaxy?.sunScreen, place.y + place.radius + gap, scale)
-          if (this.chipMask.get(chip) !== mask) { this.chipMask.set(chip, mask); chip.style.setProperty('mask-image', mask); chip.style.setProperty('-webkit-mask-image', mask) }
+          const foreground = foregroundStrength.toFixed(2)
+          if (chip.style.getPropertyValue('--caption-foreground') !== foreground) chip.style.setProperty('--caption-foreground', foreground)
         }
       },
     })
@@ -1939,13 +1968,15 @@ export class Shell implements System {
     this.chipDrawn.set(chip, last)
     if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
   }
-  /** Each caption's laid-out size, kept by a ResizeObserver so the per-frame pass never measures. */
+  /** ResizeObserver measures each caption before the CSS scale is applied. */
   private readonly chipSize = new WeakMap<Element, { width: number; height: number }>()
   private readonly chipSizes = new ResizeObserver(entries => {
-    for (const entry of entries) { const box = entry.borderBoxSize?.[0]; this.chipSize.set(entry.target, box ? { width: box.inlineSize, height: box.blockSize } : { width: entry.contentRect.width, height: entry.contentRect.height }) }
+    for (const entry of entries) {
+      const box = entry.borderBoxSize?.[0]
+      this.chipSize.set(entry.target, box ? { width: box.inlineSize, height: box.blockSize } : { width: entry.contentRect.width, height: entry.contentRect.height })
+    }
+    this.galaxy?.refreshCaptions()
   })
-  /** Each caption's last mask, so it is written only when it changes. */
-  private readonly chipMask = new WeakMap<HTMLButtonElement, string>()
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
