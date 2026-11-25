@@ -189,6 +189,16 @@ describe('host changes and room mute', () => {
 
 describe('bot personality overrides', () => {
   const botState = (id: number) => encodeState({ id, t: clock / 1000, p: [1, 0, 1], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], input: emptyInputLike(), bot: true } as WireState)
+  it('puts the host\'s own values on the bot\'s roster entry, overrides on top, and takes them from the host only', () => {
+    make('friends')
+    const host = join('Host'), other = join('Other')
+    send(other.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'buggy', traits: { boldness: 0.9 } })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'buggy', traits: { boldness: 0.2, curiosity: 0.4, sociability: 0.6, mischief: 0.8, patience: 1.5 } })
+    room.receive(host.peer, botState(BOT_ID_BASE))
+    expect(roster(other.peer, BOT_ID_BASE)?.traits).toEqual({ boldness: 0.2, curiosity: 0.4, sociability: 0.6, mischief: 0.8, patience: 1 })
+    send(host.peer, { type: 'bot-traits', bot: BOT_ID_BASE, traits: { mischief: 0 } })
+    expect(roster(other.peer, BOT_ID_BASE)?.traits).toMatchObject({ boldness: 0.2, mischief: 0 })
+  })
   it('clamps to 0..1, drops unknown traits, and keeps them across a host change', () => {
     make('friends')
     const host = join('Host'), other = join('Other')

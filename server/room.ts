@@ -596,6 +596,7 @@ export class Room {
         break
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
+        this.onBotBase(player, msg.id, msg.traits)
         break
       case 'bot-leave':
         this.onBotLeave(player, msg.bot)
@@ -1208,7 +1209,7 @@ export class Room {
     let bot = this.bots.get(state.id)
     if (!bot) {
       const n = state.id - BOT_ID_BASE
-      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: this.botKinds.get(state.id) ?? 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true })
+      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: this.botKinds.get(state.id) ?? 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true, ...this.effectiveTraits(state.id) })
       // Bots appear and vanish with a slider; they do not get a newcomer's grace period.
       bot.lastTag = -Infinity
       this.bots.set(state.id, bot)
@@ -1251,7 +1252,7 @@ export class Room {
     this.removeBot(id, bot)
     this.botKinds.delete(id)
     // A bot the host let go: whoever takes its place later starts with its own nature.
-    this.botTraits.delete(id)
+    this.botTraits.delete(id); this.botBase.delete(id)
   }
 
   private expireBots(): void {
@@ -1991,18 +1992,35 @@ export class Room {
     targetPeer?.close(CLOSE_EJECTED, 'ejected')
   }
 
+  /** The host's own values for a bot's personality, as it announces the bot (each 0..1). */
+  private readonly botBase = new Map<number, BotTraits>()
+  private onBotBase(sender: Player, id: unknown, raw: unknown): void {
+    if (sender.info.id !== this.host || typeof id !== 'number' || !isBotId(id) || !raw || typeof raw !== 'object') return
+    this.botBase.set(id, cleanTraits(raw))
+    this.refreshBotTraits(id)
+  }
+  private effectiveTraits(id: number): { traits?: BotTraits } {
+    const t = { ...this.botBase.get(id), ...this.botTraits.get(id) }
+    return Object.keys(t).length ? { traits: t } : {}
+  }
+  /** Put a bot's effective traits on its roster entry, and tell everyone when they changed. */
+  private refreshBotTraits(id: number): void {
+    const bot = this.bots.get(id)
+    if (!bot) return
+    const next = this.effectiveTraits(id).traits
+    if (JSON.stringify(next) === JSON.stringify(bot.info.traits)) return
+    if (next) bot.info.traits = next; else delete bot.info.traits
+    this.broadcast({ type: 'profile', player: bot.info })
+  }
   private onBotTraits(actor: Player, botId: unknown, raw: unknown): void {
     const bot = typeof botId === 'number' ? this.bots.get(botId) : undefined
     if (!bot || !raw || typeof raw !== 'object' || !canModerate(this.moderator(actor), this.moderator(bot), this.kind()).ok) return
-    const traits: BotTraits = { ...this.botTraits.get(bot.info.id) }
-    for (const key of BOT_TRAITS) {
-      const v = (raw as Record<string, unknown>)[key]
-      if (typeof v === 'number' && Number.isFinite(v)) traits[key] = Math.min(1, Math.max(0, v))
-    }
+    const traits: BotTraits = { ...this.botTraits.get(bot.info.id), ...cleanTraits(raw) }
     if (!Object.keys(traits).length) return
     this.botTraits.set(bot.info.id, traits)
     this.noteCreator('bot-traits', actor)
     this.broadcast({ type: 'bot-traits', bot: bot.info.id, traits })
+    this.refreshBotTraits(bot.info.id)
     this.persist()
   }
 
@@ -2514,4 +2532,14 @@ function deviceOf(msg: { deviceLabel?: unknown; deviceModel?: unknown }): Pick<P
 export function locationOf(geo: Geo | undefined): Pick<PlayerInfo, 'country' | 'region'> {
   if (!geo?.country) return {}
   return { country: geo.country, ...(geo.region ? { region: geo.region } : {}) }
+}
+
+/** Known traits only, each a finite number clamped to 0..1. */
+function cleanTraits(raw: object): BotTraits {
+  const out: BotTraits = {}
+  for (const key of BOT_TRAITS) {
+    const v = (raw as Record<string, unknown>)[key]
+    if (typeof v === 'number' && Number.isFinite(v)) out[key] = Math.min(1, Math.max(0, v))
+  }
+  return out
 }

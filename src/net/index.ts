@@ -130,6 +130,8 @@ export interface NetBots extends RaceBots {
   setBotTraits?(index: number, traits: BotTraits): void
   /** A moderator ejected the bot at this place: the host drops that very one. */
   ejectBot?(index: number): void
+  /** The personality of the bot at this place, as it drives now (the host knows it). */
+  traitsOf?(index: number): BotTraits | undefined
   /** Whether a vehicle may be gone after in a game now (not materializing, paused or just tagged). */
   gameAvailable?: (vehicle: Vehicle) => boolean
 }
@@ -157,6 +159,8 @@ export interface NetContext {
   onJoinStatus?(message: string): void
   /** Each welcome into the room (first entry and every rejoin). */
   onWelcome?(): void
+  /** The host changed: the new host's id, the previous host's and why (newer rooms say). Once per change. */
+  onHostChange?(id: number, from?: number, reason?: 'left' | 'away' | 'ejected'): void
   /** This player was ejected (or turned away as banished) from this world: the UI takes them to the lobby. */
   onEjected?(notice: { by: string; banish: BanishChoice; seconds: number | null }): void
   /** For moderators: this world's banishes, after asking (requestBanishes) or lifting one. */
@@ -1501,7 +1505,9 @@ export class NetClient implements System {
     // (a mixed fleet), so guests build the same one.
     if (this.botKinds.get(id) !== bot.kind) {
       this.botKinds.set(id, bot.kind)
-      this.send({ type: 'bot', id, kind: bot.kind })
+      // With its personality, so every screen can show it (only this host can know it: the seed is local).
+      const traits = this.ctx.bots?.traitsOf?.(id - BOT_ID_BASE)
+      this.send({ type: 'bot', id, kind: bot.kind, ...(traits ? { traits } : {}) })
     }
     const s = bot.getState()
     this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
@@ -2113,6 +2119,7 @@ export class NetClient implements System {
         const from = msg.from ? this.departed.get(msg.from) ?? this.nameOf(msg.from) : ''
         const why = msg.reason === 'away' ? `${from} is away. ` : msg.reason === 'ejected' ? `${from} was ejected. ` : from ? `${from} left. ` : ''
         this.event(msg.actor === this.id ? `${why}You are now the host of this world.` : `${a} is now the host.`)
+        try { this.ctx.onHostChange?.(msg.actor ?? 0, msg.from, msg.reason) } catch (error) { console.error('Mira: the host change hook failed', error) }
         // The room's bot overrides outlast the host: the new host's bots take them on.
         if (msg.actor === this.id) for (const [id, traits] of this.botTraits) this.ctx.bots?.setBotTraits?.(id - BOT_ID_BASE, traits)
         break

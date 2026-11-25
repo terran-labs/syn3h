@@ -252,6 +252,10 @@ export class BotManager implements System {
    */
   /** Personality overrides by place in the line-up (network bot id minus BOT_ID_BASE), from the room. */
   private readonly traitOverrides = new Map<number, BotTraits>()
+  traitsOf(index: number): BotTraits | undefined {
+    const p = this.brains[index]?.mind?.personality
+    return p ? { boldness: p.boldness, curiosity: p.curiosity, sociability: p.sociability, mischief: p.mischief, patience: p.patience } : undefined
+  }
   setBotTraits(index: number, traits: BotTraits): void {
     this.traitOverrides.set(index, traits)
     const mind = this.brains[index]?.mind

@@ -222,6 +222,8 @@ export interface PlayerInfo {
    * A general field so later roles (a moderator, say) need no protocol change.
    */
   role?: PlayerRole
+  /** A bot's personality as it drives now: the host's values with any moderator overrides on top, each 0..1. */
+  traits?: BotTraits
 }
 
 /** Roles the room may assert on a PlayerInfo. Kept equal to server/creator.ts ROLES. */
@@ -500,7 +502,7 @@ export type ClientMessage =
   /** Put the shared world back to defaults (allowed whenever moving a shared slider is). */
   | { type: 'reset' }
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
-  | { type: 'bot'; id: number; kind: string }
+  | { type: 'bot'; id: number; kind: string; traits?: BotTraits }
   /**
    * The host stopped simulating this bot (fewer bots asked for, quality shedding, a new world):
    * the room drops it now and tells everyone with the usual leave, instead of after
