@@ -5,6 +5,8 @@
  * with one gap, so no two can overlap and no notice can cover a control. Each keeps its own look.
  *
  * Who lives here, top to bottom (`order`, so arrival order never matters):
+ *   0  where the player is (.room-notice: a full room, a parallel universe; Shell.showRoomNotice):
+ *      at the top, so its arrival moves nothing already shown.
  *   1  "New build available" (the dev server's button, tools/manual-reload.mjs): an action the
  *      player chooses; above everything, nearest the eye.
  *   2  race status (.race-hud)
@@ -33,6 +35,7 @@ html .mira-shell > .bottom-stack > * {
 }
 /* Higher than the rules each item brought with it (the build notice's is an id rule). */
 html .mira-shell > .bottom-stack > #mira-build-notice { position: relative; inset: auto; transform: none; order: 1; z-index: auto; }
+html .mira-shell > .bottom-stack > .room-notice { order: 0; }
 html .mira-shell > .bottom-stack > .race-hud { order: 2; }
 html .mira-shell > .bottom-stack > .performance-recommendation { order: 3; }
 html .mira-shell > .bottom-stack > .entry-warm-progress { order: 4; }

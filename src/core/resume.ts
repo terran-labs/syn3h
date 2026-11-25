@@ -19,6 +19,7 @@ export interface ResumeSnapshot {
   wingsOpen: boolean; special: boolean; cameraMode: number; timeOfDay: number
 }
 import { canonicalRoom, roomFromQuery } from './roomAddress'
+import { sessionStore } from './safeStorage'
 export { canonicalRoom }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const vector = (v: unknown, count: number, max: number): v is number[] => Array.isArray(v) && v.length === count && v.every(n => finite(n) && Math.abs(n) <= max)
@@ -47,7 +48,8 @@ export function parseResume(raw: string | null, room?: string, seed?: number, no
  * An explicit room, seed or different vehicle in the URL wins over the saved session. No ?room=
  * is the public room, explicitly: a clean link never resumes a private room saved in this tab.
  */
-export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'getItem'> = sessionStorage): ResumeSnapshot | null {
+export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'getItem'> | null = sessionStore()): ResumeSnapshot | null {
+  if (!storage) return null
   let saved: ResumeSnapshot | null
   try { saved = parseResume(storage.getItem(RESUME_KEY), roomFromQuery(query)) } catch { return null }
   if (!saved) return null
