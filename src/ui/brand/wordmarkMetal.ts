@@ -11,7 +11,7 @@
 import { defineParam } from '../../../shared/params'
 
 const knob = (id: string, label: string, value: number, min: number, max: number, step = 0.01) =>
-  defineParam({ id: `lobby.logo.${id}`, label, group: 'Lobby logo', scope: 'client', default: value, min, max, step })
+  defineParam({ id: `lobby.logo.${id}`, label, lobbyGroup: 'Mira name', group: 'Lobby logo', scope: 'client', default: value, min, max, step })
 
 /** Defaults are the owner's first approved settings (24 November 2026): a pale, mostly white gold, softly lit, with broad slow ripples and strong light from the shafts. */
 export const METAL = {

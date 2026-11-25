@@ -112,6 +112,12 @@ interface RowReset {
   /** Has been in the page; a row that leaves after that is dropped. */
   seen: boolean
 }
+interface RowChoices {
+  name: string
+  options: readonly { value: number; label: string }[]
+  selected?(value: number): number
+}
+
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
   if (def.id === 'game.mode') return { name: 'Mode', options: modeChoices }
@@ -695,13 +701,14 @@ export class Inspector {
     }
   }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
-  row(def: PropertyDef, options: { reset?: ResetTarget } = {}): HTMLElement {
+  row(def: PropertyDef, options: { reset?: ResetTarget; choices?: RowChoices } = {}): HTMLElement {
+    const explicitChoices = options.choices
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
     if (def.id === 'post.giRadius') def = { ...def, label: 'GI light reach (m)' }
     const row = document.createElement('div'); row.className = 'wi-row'; row.dataset.id = def.id
     const label = document.createElement('span'); label.className = 'wi-label'
     const output = document.createElement('output')
-    const param = params.get(def.id)!, choices = choicesOf(def)
+    const param = params.get(def.id)!, choices = explicitChoices ?? choicesOf(def)
     let sync: (value: ParamValue) => void
     /** The default written as this row writes values, for the reset's label. */
     let format: (value: ParamValue) => string = value => show(value, def)
@@ -760,7 +767,14 @@ export class Inspector {
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }
       format = value => choices.options.find(option => option.value === Math.round(Number(value)))?.label ?? show(value, def)
       row.classList.add('is-choice'); row.append(label, seg)
-      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) { const on = Number(button.dataset.value) === Math.round(Number(value)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } }
+      sync = value => {
+        const selected = explicitChoices?.selected?.(Number(value)) ?? Math.round(Number(value))
+        for (const button of seg.querySelectorAll<HTMLElement>('button')) {
+          const on = Number(button.dataset.value) === selected
+          button.classList.toggle('is-on', on)
+          button.setAttribute('aria-pressed', String(on))
+        }
+      }
     } else if (typeof def.default === 'boolean') {
       label.textContent = def.label
       // The standard switch (switch.ts): role switch, aria-checked, Space and Enter toggle.
@@ -820,9 +834,9 @@ export class Inspector {
     this.resets.set(row, { def, target, control, name, format, notch, track, run, seen: false })
     this.queueResets()
     sync(param.value)
-    row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
-    row.addEventListener('focusin', () => this.detail(def))
-    row.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.detail(def) })
+    row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def, explicitChoices) })
+    row.addEventListener('focusin', () => this.detail(def, explicitChoices))
+    row.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.detail(def, explicitChoices) })
     row.addEventListener('pointerleave', () => { this.tooltipTimer = setTimeout(() => this.hideTooltip(), 160) })
     row.addEventListener('focusout', event => { if (!row.contains(event.relatedTarget as Node)) this.hideTooltip() })
     for (const control of row.querySelectorAll('input, button')) control.setAttribute('aria-describedby', 'setting-tooltip')
@@ -954,13 +968,13 @@ export class Inspector {
     for (const { row } of this.rows.values()) row.classList.remove('is-selected')
   }
   /** A contextual tooltip beside the control, or above it when the viewport is narrow. */
-  private detail(def: PropertyDef): void {
+  private detail(def: PropertyDef, explicitChoices?: RowChoices): void {
     clearTimeout(this.tooltipTimer)
     if (this.selected === def.id && !this.tooltip.hidden) return
     this.selected = def.id
     for (const { row } of this.rows.values()) row.classList.toggle('is-selected', row.dataset.id === def.id)
     const pane = this.tooltip, value = params.get(def.id)?.value ?? def.default, at = fraction(def, value), home = fraction(def, def.default)
-    const choices = choicesOf(def)
+    const choices = explicitChoices ?? choicesOf(def)
     pane.replaceChildren()
     const head = document.createElement('div'); head.className = 'wi-detail-head'
     const name = document.createElement('strong'); name.textContent = choices?.name ?? def.label
@@ -975,7 +989,10 @@ export class Inspector {
       if (home !== null) bar.querySelector<HTMLElement>('u')!.style.left = `${home * 100}%`
       pane.append(bar)
     }
-    const small = document.createElement('small'); small.textContent = limits(def); pane.append(small)
+    const small = document.createElement('small')
+    const defaultChoice = explicitChoices?.options.find(option => option.value === def.default)
+    small.textContent = defaultChoice ? `Default: ${defaultChoice.label} · yours only` : limits(def)
+    pane.append(small)
     pane.hidden = false
     const row = this.rows.get(def.id)!.row.getBoundingClientRect()
     const width = Math.min(280, innerWidth - 24)

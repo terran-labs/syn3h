@@ -10,7 +10,7 @@ import { defineParam } from '../../../shared/params'
 
 /** The largest caption, for the nearest planets, as a multiple of the original size. 1 keeps every caption at the original size. */
 export const captionCeiling = defineParam({
-  id: 'lobby.captionScale', label: 'Lobby planet captions: size for the nearest planets (times the smallest)', group: 'Graphics', scope: 'client',
+  id: 'lobby.captionScale', lobbyGroup: 'Planets', label: 'Lobby planet captions: size for the nearest planets (times the smallest)', group: 'Graphics', scope: 'client',
   default: 1.9, min: 1, max: 3, step: 0.05,
 })
 

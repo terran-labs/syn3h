@@ -30,17 +30,17 @@ import { FIELD_GLSL } from './wordmarkField'
 import { wordmarkContours } from './wordmarkMesh'
 
 export const wordmarkPlacement = defineParam({
-  id: 'lobby.wordmark', label: 'Lobby wordmark: 7 along an orbit (the lobby); 0 flat, 1 behind the sun, 2 in front, 3 lit by the rays, 4 rays far, 6 standing', group: 'Graphics', scope: 'client',
+  id: 'lobby.wordmark', lobbyGroup: 'Mira name', label: 'Lobby wordmark: 7 along an orbit (the lobby); 0 flat, 1 behind the sun, 2 in front, 3 lit by the rays, 4 rays far, 6 standing', group: 'Graphics', scope: 'client',
   default: 7, min: 0, max: 7, step: 1,
 })
 /** The in-space letters drawn at the screen's full resolution by their own pass (WordmarkCrisp). */
-export const wordmarkCrispPass = defineParam({ id: 'lobby.wordmarkCrisp', label: 'Lobby wordmark in space at full resolution', group: 'Graphics', scope: 'client', default: true })
+export const wordmarkCrispPass = defineParam({ id: 'lobby.wordmarkCrisp', lobbyGroup: 'Mira name', label: 'Lobby wordmark in space at full resolution', group: 'Graphics', scope: 'client', default: true })
 /**
  * The in-space letters as a solid face lit by the sun, with the shafts as highlights (the owner's
  * direction of 23 November 2026). Off, they are the earlier veil that takes the shafts' colour,
  * which reads as an outline on a mark that is one large block.
  */
-export const wordmarkSolid = defineParam({ id: 'lobby.wordmarkSolid', label: 'Lobby wordmark as a solid lit face', group: 'Graphics', scope: 'client', default: true })
+export const wordmarkSolid = defineParam({ id: 'lobby.wordmarkSolid', lobbyGroup: 'Mira name', label: 'Lobby wordmark as a solid lit face', group: 'Graphics', scope: 'client', default: true })
 /**
  * Placements' names, for the preview chooser, by value. 5 (lying on the plane) and 8 (inscribed
  * round the rim) were tried and removed: at the lobby's tilt, text lying in the plane is too
@@ -84,7 +84,7 @@ export const BAR_LINE: number = (() => {
  * 4.3 times as wide as tall. The Mira mark is about twice as wide as tall (its star adds height),
  * so at 0.72 it drew at under half the width.
  */
-export const wordmarkSize = defineParam({ id: 'lobby.logo.size', label: 'Size of the name', group: 'Lobby logo', scope: 'client', default: 1, min: 0.5, max: 1.8, step: 0.01 })
+export const wordmarkSize = defineParam({ id: 'lobby.logo.size', lobbyGroup: 'Mira name', label: 'Size of the name', group: 'Lobby logo', scope: 'client', default: 1, min: 0.5, max: 1.8, step: 0.01 })
 /** How high the name's middle stands above the plane, in its own heights. */
 /**
  * How the name follows the view as it is turned (the owner, 25 November 2026: "more like it's on
@@ -97,7 +97,7 @@ export const logoDamping = defineParam({ id: 'lobby.logo.damping', label: 'Name 
 export const logoLag = defineParam({ id: 'lobby.logo.lag', label: 'Name follow: most it trails a turn (radians, soft)', group: 'Lobby logo', scope: 'client', default: 0.18, min: 0.02, max: 0.5, step: 0.01 })
 /** The name never goes below the orbits' plane: it fades out over this many CSS px instead. */
 export const logoPlaneFade = defineParam({ id: 'lobby.logo.planeFade', label: 'Name below the plane: fade band (px)', group: 'Lobby logo', scope: 'client', default: 14, min: 2, max: 60, step: 1 })
-export const wordmarkRise = defineParam({ id: 'lobby.logo.rise', label: 'Height of the name above the plane', group: 'Lobby logo', scope: 'client', default: 0.6, min: 0.2, max: 0.9, step: 0.01 })
+export const wordmarkRise = defineParam({ id: 'lobby.logo.rise', lobbyGroup: 'Mira name', label: 'Height of the name above the plane', group: 'Lobby logo', scope: 'client', default: 0.6, min: 0.2, max: 0.9, step: 0.01 })
 /** Where the wordmark stands for a placement, seen from `view` (the rig, not the live camera). */
 export function placeWordmark(mode: number, view: View, box: ScreenBox, system = 10, below = false): Placement {
   if (mode >= 4) return placeInSystem(mode, view, system, below)

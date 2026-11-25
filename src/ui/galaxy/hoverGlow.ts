@@ -10,8 +10,8 @@
  */
 import { defineParam } from '../../../shared/params'
 
-export const hoverGlowIntensity = defineParam({ id: 'lobby.hoverGlow', label: 'Lobby planet glow: intensity (0 off)', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 2, step: 0.05 })
-export const hoverGlowSpeed = defineParam({ id: 'lobby.hoverGlowSpeed', label: 'Lobby planet glow: speed', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 3, step: 0.05 })
+export const hoverGlowIntensity = defineParam({ id: 'lobby.hoverGlow', lobbyGroup: 'Planets', label: 'Lobby planet glow: intensity (0 off)', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 2, step: 0.05 })
+export const hoverGlowSpeed = defineParam({ id: 'lobby.hoverGlowSpeed', lobbyGroup: 'Planets', label: 'Lobby planet glow: speed', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 3, step: 0.05 })
 
 /** Seconds to come in, and to go. */
 const IN_SECONDS = 0.12, OUT_SECONDS = 0.28

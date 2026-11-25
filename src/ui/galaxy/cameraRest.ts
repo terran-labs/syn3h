@@ -12,11 +12,11 @@ import { defineParam } from '../../../shared/params'
 
 const P = { group: 'Graphics', scope: 'client' } as const
 /** The default view's distance as a share of the fitted one: below 1 is closer. Desktop and landscape. */
-export const lobbyZoom = defineParam({ ...P, id: 'lobby.zoom', label: 'Lobby default zoom (share of the whole-system distance)', default: 0.6, min: 0.4, max: 1.5, step: 0.01 })
+export const lobbyZoom = defineParam({ ...P, id: 'lobby.zoom', lobbyGroup: 'Camera', label: 'Lobby default zoom (share of the whole-system distance)', default: 0.6, min: 0.4, max: 1.5, step: 0.01 })
 /** The same on a phone held upright, where the wordmark and the inner planets must stay on screen. */
-export const lobbyZoomPortrait = defineParam({ ...P, id: 'lobby.zoomPortrait', label: 'Lobby default zoom on a portrait phone', default: 0.68, min: 0.4, max: 1.5, step: 0.01 })
+export const lobbyZoomPortrait = defineParam({ ...P, id: 'lobby.zoomPortrait', lobbyGroup: 'Camera', label: 'Lobby default zoom on a portrait phone', default: 0.68, min: 0.4, max: 1.5, step: 0.01 })
 /** Seconds without input before the view starts back to its default. */
-export const returnDelay = defineParam({ ...P, id: 'lobby.returnDelay', label: 'Lobby view: seconds before it returns to rest', default: 4, min: 0, max: 60, step: 0.5 })
+export const returnDelay = defineParam({ ...P, id: 'lobby.returnDelay', lobbyGroup: 'Camera', label: 'Lobby view: seconds before it returns to rest', default: 4, min: 0, max: 60, step: 0.5 })
 /**
  * Let go, and the tilt returns to the resting view's at once, on the rotation's own time (the owner,
  * 25 November 2026: "much faster than it currently does ... at around the same rate that the
@@ -24,7 +24,7 @@ export const returnDelay = defineParam({ ...P, id: 'lobby.returnDelay', label: '
  */
 export const pitchReturn = defineParam({ ...P, id: 'lobby.pitchReturn', label: 'Lobby view: tilt return time as a share of the spin-down', default: 1, min: 0.25, max: 4, step: 0.05 })
 /** Seconds the return takes to settle (within 1%). */
-export const returnTime = defineParam({ ...P, id: 'lobby.returnTime', label: 'Lobby view: seconds to return to rest', default: 25, min: 1, max: 90, step: 1 })
+export const returnTime = defineParam({ ...P, id: 'lobby.returnTime', lobbyGroup: 'Camera', label: 'Lobby view: seconds to return to rest', default: 25, min: 1, max: 90, step: 1 })
 
 /**
  * How much light the planets' night sides catch (the owner, 17 November 2026: the camera looks
@@ -32,7 +32,7 @@ export const returnTime = defineParam({ ...P, id: 'lobby.returnTime', label: 'Lo
  * soft cool fill from the camera's side, as starlight and light reflected off the system would
  * give, plus a slightly wider terminator; the day side is unchanged. 0 is the earlier shading.
  */
-export const nightSide = defineParam({ ...P, id: 'lobby.nightSide', label: 'Lobby planets: night side light (0 as before)', default: 1, min: 0, max: 3, step: 0.05 })
+export const nightSide = defineParam({ ...P, id: 'lobby.nightSide', lobbyGroup: 'Planets', label: 'Lobby planets: night side light (0 as before)', default: 1, min: 0, max: 3, step: 0.05 })
 
 /** The spring's rate for a settle time: critically damped, 1% left after about 6.6 / omega. */
 export const returnOmega = (seconds: number) => 6.64 / Math.max(0.1, seconds)
