@@ -62,6 +62,14 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
     return null
   }, hour)
   if (!spot) { errors.push(`${tag}: no open water`); await page.close(); continue }
+  // Out at the spot first and let the world there finish arriving (a jump of up to 3 km from the
+  // spawn draws black for a second or so).
+  await page.evaluate((spot) => {
+    const s = window.syn3h, V = s.game.camera.position.constructor
+    s.player.teleport({ x: spot.x, y: spot.surface + 3, z: spot.z }, 0)
+    s.camera.setCinematicPose(new V(spot.x - 4, spot.surface + 5, spot.z + 22), new V(spot.x - 4, spot.surface + 1.5, spot.z))
+  }, spot)
+  await page.waitForTimeout(2500)
   if (zorb) {
     // Ball on (the Zorb key), grown before the scene starts.
     await page.evaluate((spot) => window.syn3h.player.teleport({ x: spot.x, y: spot.surface + 3, z: spot.z }, 0), spot)
