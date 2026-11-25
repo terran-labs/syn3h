@@ -91,6 +91,7 @@ import './phone-panels.css'
 import './pause-screen.css'
 import './card-chrome.css'
 import './bottom-stack.css'
+import './room-notice.css'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 
 /**
@@ -370,7 +371,7 @@ export class Shell implements System {
     const railTop = this.inspector.element.querySelector('.wi-top')!
     // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute"><div class="card-actions rail-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute"><div class="card-actions rail-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div><div class="rail-universe" hidden></div>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     // The summary is read every frame while the panels show: a live collection, not a query.
     const scoreRows = players.querySelector('.hud-scoreboard')!.getElementsByClassName('score-row')
@@ -1290,6 +1291,58 @@ export class Shell implements System {
   private performancePanel!: PerformancePanel
   /** The one owner of the bottom-centre strip (bottom-stack.css). */
   private readonly bottomStack = document.createElement('div')
+  /** The room line in the bottom stack (a full room, a parallel universe): see showRoomNotice. */
+  private roomNotice?: HTMLElement
+  private roomNoticeTimer?: ReturnType<typeof setTimeout>
+  /**
+   * One calm line about where the player is, with round pills, in the bottom stack (bottom-stack.css,
+   * order 0: the top of the column, so nothing already there moves). It fades in, stays 20 seconds
+   * and goes; the Players & session card keeps the same actions (setUniverse).
+   */
+  showRoomNotice(text: string, actions: { label: string; run(): void }[]): void {
+    const notice = this.roomNotice ??= document.createElement('aside')
+    notice.className = 'room-notice'
+    notice.setAttribute('role', 'status')
+    notice.replaceChildren(Object.assign(document.createElement('p'), { textContent: text }))
+    if (actions.length) {
+      const row = document.createElement('div'); row.className = 'room-notice-actions'
+      for (const action of actions) {
+        const b = Object.assign(document.createElement('button'), { type: 'button', className: 'panel-action', textContent: action.label })
+        b.addEventListener('click', () => action.run())
+        row.append(b)
+      }
+      notice.append(row)
+    }
+    if (notice.parentElement !== this.bottomStack) this.bottomStack.append(notice)
+    notice.hidden = false
+    clearTimeout(this.roomNoticeTimer)
+    this.roomNoticeTimer = setTimeout(() => { notice.hidden = true }, 20000)
+  }
+  /**
+   * The Players & session card's room block. In the public room: Enter a parallel universe and
+   * what that is. In a parallel universe: that it is one, Copy link and Return to the main world.
+   */
+  setUniverse(state: { kind: 'public'; enter(): void } | { kind: 'parallel'; copy(): void; back(): void } | null): void {
+    const block = this.inspector.element.querySelector<HTMLElement>('.rail-universe')
+    if (!block) return
+    block.hidden = !state
+    if (!state) { block.replaceChildren(); return }
+    const note = Object.assign(document.createElement('p'), { className: 'rail-universe-note' })
+    const row = document.createElement('div'); row.className = 'card-actions rail-actions'
+    const button = (label: string, run: () => void) => { const b = Object.assign(document.createElement('button'), { type: 'button', className: 'panel-action', textContent: label }); b.addEventListener('click', run); row.append(b) }
+    if (state.kind === 'public') {
+      button('Enter a parallel universe', state.enter)
+      note.textContent = 'Your own copy of this planet. Only people with your link can join.'
+      block.replaceChildren(row, note)
+    } else {
+      note.textContent = "You're in a parallel universe of this planet. Only people with your link can join."
+      button('Copy link', state.copy)
+      button('Return to the main world', state.back)
+      block.replaceChildren(note, row)
+    }
+  }
+  /** Copy this room's invite link, as the invite view's Copy does. */
+  copyRoomLink(): void { void this.copyInvite() }
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   /** True from the click or key press that enters a world until play begins or the entry is abandoned. */
   private enteringByGesture = false

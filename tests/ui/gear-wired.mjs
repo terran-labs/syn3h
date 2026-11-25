@@ -1,7 +1,7 @@
 // The gear drum and the Zorb row, wired into the real shell. Bugs it catches: gear missing
 // from the drum, a click not picking gear, hints not following the gear in hand, the arrow
 // keys stepping through gear while driving, the Zorb row not following X or a click, and on
-// touch the Grapple's extra actions missing their buttons. Hidden in the lobby.
+// touch the equipped gear showing the wrong action or the Grapple duplicating buttons. Hidden in the lobby.
 //
 //   node tests/ui/gear-wired.mjs      (game on MIRA_URL)
 import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
@@ -35,6 +35,7 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden && document.querySelector('.gear-selector').dataset.mode === 'locked')
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
+    assert.equal(await page.locator('.touch-actions [data-action=fire]').isVisible(), false, 'desktop has no touch gear control')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), true, 'Zorb control shows while driving')
     // Driving: no gear hints (the owner, 17 November 2026).
     // Zorb's key shows while driving too, to the right of its name (the owner, 18 November 2026).
@@ -95,18 +96,42 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
   } finally { await browser.close() }
 }
 
-for (const [name, device] of [['phone', devices['iPhone 14']], ['landscape', { ...devices['iPhone 14 landscape'] }]]) {
+for (const [name, device, viewport] of [
+  ['phone', devices['iPhone 14'], { width: 390, height: 844 }],
+  ['landscape', devices['iPhone 14 landscape'], { width: 844, height: 390 }],
+]) {
   const browser = await webkit.launch({ headless: true })
   try {
-    const page = await browser.newPage({ ...device })
+    const page = await browser.newPage({ ...device, viewport })
     const errors = watch(page)
     await page.goto(`${base}?room=gear-wired-${name}-${Date.now()}&autoplay=1`)
     await page.waitForFunction(() => window.mira?.shell.playing && !mira.shell.dropping && window.miraNet?.gear, null, { timeout: 120000 })
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden)
-    await page.evaluate(() => miraNet.gear.select('bungee'))
-    await page.waitForFunction(() => miraNet.gear.current === 'bungee')
+    await page.evaluate(() => document.fonts.ready.then(() => null))
+    const actionButton = page.locator('.touch-actions [data-action=fire]')
+    const actions = [
+      ['beam', 'TAG', 'Tag with Plasma Tag'],
+      ['red', 'CHARGE', 'Charge Plasma Thunder'],
+      ['pester', 'SEND', 'Send a Chaser'],
+      ['yoink', 'GRAB', 'Grab with Yoink'],
+      ['bungee', 'HOOK', 'Hook with Grapple'],
+    ]
+    for (const [gear, text, accessibleName] of actions) {
+      await page.evaluate(id => miraNet.gear.select(id), gear)
+      const action = page.getByRole('button', { name: accessibleName, exact: true }).and(actionButton)
+      await action.waitFor({ state: 'visible' })
+      assert.equal((await action.innerText()).trim(), text)
+      assert.ok(await action.evaluate(button => {
+        const range = document.createRange()
+        range.selectNodeContents(button.querySelector('.glass-press-label') ?? button)
+        const label = range.getBoundingClientRect()
+        const disc = button.getBoundingClientRect()
+        return range.getClientRects().length === 1 && label.width > 0 && label.left > disc.left && label.right < disc.right
+      }), `${name}: ${text} fits on one line in the disc`)
+      if (gear === 'red') await page.screenshot({ path: `${out}/${name}-charge.png`, scale: 'css' })
+    }
     await page.waitForTimeout(500)
-    await page.screenshot({ path: `${out}/${name}-grapple.png` })
+    await page.screenshot({ path: `${out}/${name}-grapple.png`, scale: 'css' })
     // The old LET OUT and LET GO stay hidden: the rack supplies the extra buttons now.
     for (const action of ['letOut', 'letGo']) assert.equal(await page.locator(`.touch-actions [data-action="${action}"]`).isVisible(), false, `${action} duplicate stays hidden`)
     assert.equal(await page.locator('.touch-actions [data-action="zorb"]').isVisible(), true, 'touch keeps its ZORB button')

@@ -97,7 +97,10 @@ export class RowBudget {
   private tokens: number
   private at: number
   private dropped = 0
-  constructor(private readonly perMinute: number, private readonly now: () => number, private readonly sink: AnalyticsSink | undefined) {
+  /** Told of the first failed write only (a log line; a failing dataset must not flood logs). */
+  private failed = false
+  constructor(private readonly perMinute: number, private readonly now: () => number, private readonly sink: AnalyticsSink | undefined,
+    private readonly onFirstFailure: (error: unknown) => void = () => {}) {
     this.tokens = perMinute
     this.at = now()
   }
@@ -117,8 +120,11 @@ export class RowBudget {
       this.tokens--
       this.sink.writeDataPoint(dataPoint(event, c, x))
       return true
-    } catch {
-      return false // Analytics never affects play.
+    } catch (error) {
+      // Analytics never affects play. The first failure is reported once, so a binding that
+      // does not work (on a room object, say) shows in the logs instead of losing rows silently.
+      if (!this.failed) { this.failed = true; try { this.onFirstFailure(error) } catch { /* nothing */ } }
+      return false
     }
   }
 }

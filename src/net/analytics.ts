@@ -13,6 +13,7 @@
  *   as a fallback), never awaited, never retried. A crash loop costs a handful of requests.
  */
 import { levelNumber, qualityLevel } from '../core/quality'
+import { localStore, sessionStore } from '../core/safeStorage'
 import { cleanFrames, errorName, reduceMessage } from '../../shared/crashText'
 
 declare const __MIRA_BUILD__: string | undefined
@@ -43,12 +44,9 @@ export function anonymousId(storage: Pick<Storage, 'getItem' | 'setItem'> | null
   return id
 }
 
-function safeLocal(): Storage | null {
-  try { return typeof localStorage === 'undefined' ? null : localStorage } catch { return null }
-}
-function safeSession(): Storage | null {
-  try { return typeof sessionStorage === 'undefined' ? null : sessionStorage } catch { return null }
-}
+/** The shared safe wrappers (src/core/safeStorage.ts): blocked storage reads as none. */
+const safeLocal = localStore
+const safeSession = sessionStore
 
 /** A campaign tag from an entry query, cleaned; '' when absent or not of the allowed shape. */
 export function cleanRef(raw: string | null | undefined): string {

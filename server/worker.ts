@@ -435,7 +435,8 @@ export class RoomDO {
 
   /** Launch analytics rows this room object writes, bounded per minute (server/analytics.ts). */
   // (Class fields initialise before the constructor's parameters are assigned: read env late.)
-  private readonly rows = new RowBudget(ROOM_ROWS_PER_MINUTE, () => Date.now(), { writeDataPoint: (p) => this.env.ANALYTICS?.writeDataPoint(p) })
+  private readonly rows = new RowBudget(ROOM_ROWS_PER_MINUTE, () => Date.now(), { writeDataPoint: (p) => this.env.ANALYTICS?.writeDataPoint(p) },
+    (error) => logError('error', error, { where: 'analytics', room: this.tag() }))
 
   /** The registry instance's two requests; see REGISTRY_ID. */
   private async registryFetch(req: Request, path: string): Promise<Response> {
