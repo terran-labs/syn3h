@@ -28,7 +28,10 @@ try {
           return location
         }
         WebGL2RenderingContext.prototype.uniform1f = function (location, value) {
-          if (locations.has(location)) window.lastLobbyRays = value
+          if (locations.has(location)) {
+            window.lastLobbyRays = value
+            window.lobbyRayDraws = (window.lobbyRayDraws ?? 0) + 1
+          }
           uniform1f.call(this, location, value)
         }
       })
@@ -40,26 +43,48 @@ try {
       const gear = page.getByRole('button', { name: 'Settings', exact: true })
       await gear.click()
       const panel = page.locator('#lobby-settings')
-      const groups = panel.locator('.lobby-scene-group')
-      assert.equal(await groups.locator('.wi-head[aria-expanded=true]').count(), 0)
+      const card = panel.locator('[data-section=lobby-scene]')
+      const header = card.getByRole('button', { name: 'Lobby scene' })
+      assert.equal(await header.getAttribute('aria-expanded'), 'false')
+      await header.click()
+      const groups = card.locator('.lobby-scene-group')
+      assert.ok(await groups.evaluateAll(folds => folds.every(fold => !fold.open)))
 
       const registry = await page.evaluate(() => window.mira.params.all()
         .filter(({ def }) => def.lobbyGroup)
         .map(({ def }) => ({ id: def.id, scope: def.scope, group: def.lobbyGroup })))
-      assert.ok(registry.length > 0)
+      assert.equal(registry.length, 49)
       assert.ok(registry.every(({ scope }) => scope === 'client'))
       const rendered = await groups.locator('.wi-row').evaluateAll(rows => rows.map(row => ({
-        id: row.dataset.id, scope: 'client', group: row.closest('.wi-card').querySelector('h3').textContent,
+        id: row.dataset.id, scope: 'client', group: row.closest('details').dataset.group,
       })))
       const byId = (a, b) => a.id.localeCompare(b.id)
       assert.deepEqual(rendered.sort(byId), registry.sort(byId))
-      assert.equal(await groups.locator('.lobby-scene-reset button').count(), registry.length)
+      for (const [group, ids] of Object.entries({
+        Orbits: ['lobby.orbitInnerRadius', 'lobby.orbitGapTaper', 'lobby.orbitMinGap'],
+        Camera: ['lobby.pitchReturn'],
+        'Mira name': ['lobby.logo.spring', 'lobby.logo.damping', 'lobby.logo.lag', 'lobby.logo.planeFade'],
+      })) {
+        for (const id of ids) assert.ok(rendered.some(row => row.id === id && row.group === group), id)
+      }
+      await page.screenshot({ path: `${out}/${width}x${height}-settled.png`, animations: 'disabled' })
+      assert.equal(await groups.locator('.wi-row > .wi-reset-row').count(), registry.length)
       assert.equal(await page.locator('.world-inspector:not(.lobby-settings) .lobby-scene-group').count(), 0)
 
-      const sun = groups.filter({ has: page.getByRole('heading', { name: 'Sun', exact: true }) })
-      await sun.locator('.wi-head').click()
+      const sun = card.locator('[data-group="Sun"]')
+      await sun.locator('summary').click()
       const ray = sun.locator('input[type=range]')
       await ray.waitFor({ state: 'visible' })
+      if (phone) {
+        // Wait for a run of frames without a Galaxy draw before changing the slider.
+        await page.waitForFunction(() => {
+          const draws = window.lobbyRayDraws
+          const previous = window.lobbyRayCheck
+          const frames = previous?.draws === draws ? previous.frames + 1 : 0
+          window.lobbyRayCheck = { draws, frames }
+          return frames >= 5
+        })
+      }
       const original = await page.evaluate(() => window.lastLobbyRays)
       await ray.evaluate(input => {
         input.value = '0'
@@ -70,18 +95,20 @@ try {
       await page.waitForFunction(value => window.lastLobbyRays === value, original)
       await page.screenshot({ path: `${out}/${width}x${height}-sun.png` })
 
-      const name = groups.filter({ has: page.getByRole('heading', { name: 'Mira name', exact: true }) })
-      await name.locator('.wi-head').click()
+      await sun.locator('summary').click()
+      const name = card.locator('[data-group="Mira name"]')
+      await name.locator('summary').click()
       const placement = name.getByRole('group', { name: 'Name placement' })
       assert.deepEqual((await placement.locator('button').evaluateAll(buttons => buttons.map(button => Number(button.dataset.value)))).sort(), [0, 1, 2, 3, 4, 6, 7])
       await placement.getByRole('button', { name: 'Flat', exact: true }).click()
       assert.equal(await page.evaluate(() => window.mira.params.get('lobby.wordmark').value), 0)
-      await name.getByRole('button', { name: 'Reset Name placement' }).click()
+      await name.getByRole('button', { name: /^Reset Name placement to / }).click()
       assert.equal(await placement.getByRole('button', { name: 'Along an orbit' }).getAttribute('aria-pressed'), 'true')
       await page.screenshot({ path: `${out}/${width}x${height}-name.png` })
 
-      const opening = groups.filter({ has: page.getByRole('heading', { name: 'Opening', exact: true }) })
-      await opening.locator('.wi-head').click()
+      await name.locator('summary').click()
+      const opening = card.locator('[data-group="Opening"]')
+      await opening.locator('summary').click()
       const preview = opening.getByRole('group', { name: 'Opening preview' })
       assert.equal(await preview.getByRole('button', { name: 'Off' }).getAttribute('aria-pressed'), 'true')
       await preview.getByRole('button', { name: 'On' }).click()

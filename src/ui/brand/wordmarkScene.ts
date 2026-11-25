@@ -92,11 +92,11 @@ export const wordmarkSize = defineParam({ id: 'lobby.logo.size', lobbyGroup: 'Mi
  * the view on a stiff, slightly underdamped spring, and how far it can trail is a soft limit
  * (a tanh), approached with rising resistance, never hit.
  */
-export const logoSpring = defineParam({ id: 'lobby.logo.spring', label: 'Name follow: spring stiffness (radians per second)', group: 'Lobby logo', scope: 'client', default: 14, min: 4, max: 40, step: 0.5 })
-export const logoDamping = defineParam({ id: 'lobby.logo.damping', label: 'Name follow: damping ratio (1 settles without bouncing past)', group: 'Lobby logo', scope: 'client', default: 0.85, min: 0.5, max: 1.2, step: 0.01 })
-export const logoLag = defineParam({ id: 'lobby.logo.lag', label: 'Name follow: most it trails a turn (radians, soft)', group: 'Lobby logo', scope: 'client', default: 0.18, min: 0.02, max: 0.5, step: 0.01 })
+export const logoSpring = defineParam({ id: 'lobby.logo.spring', lobbyGroup: 'Mira name', label: 'Name follow: spring stiffness (radians per second)', group: 'Lobby logo', scope: 'client', default: 14, min: 4, max: 40, step: 0.5 })
+export const logoDamping = defineParam({ id: 'lobby.logo.damping', lobbyGroup: 'Mira name', label: 'Name follow: damping ratio (1 settles without bouncing past)', group: 'Lobby logo', scope: 'client', default: 0.85, min: 0.5, max: 1.2, step: 0.01 })
+export const logoLag = defineParam({ id: 'lobby.logo.lag', lobbyGroup: 'Mira name', label: 'Name follow: most it trails a turn (radians, soft)', group: 'Lobby logo', scope: 'client', default: 0.18, min: 0.02, max: 0.5, step: 0.01 })
 /** The name never goes below the orbits' plane: it fades out over this many CSS px instead. */
-export const logoPlaneFade = defineParam({ id: 'lobby.logo.planeFade', label: 'Name below the plane: fade band (px)', group: 'Lobby logo', scope: 'client', default: 14, min: 2, max: 60, step: 1 })
+export const logoPlaneFade = defineParam({ id: 'lobby.logo.planeFade', lobbyGroup: 'Mira name', label: 'Name below the plane: fade band (px)', group: 'Lobby logo', scope: 'client', default: 14, min: 2, max: 60, step: 1 })
 export const wordmarkRise = defineParam({ id: 'lobby.logo.rise', lobbyGroup: 'Mira name', label: 'Height of the name above the plane', group: 'Lobby logo', scope: 'client', default: 0.6, min: 0.2, max: 0.9, step: 0.01 })
 /** Where the wordmark stands for a placement, seen from `view` (the rig, not the live camera). */
 export function placeWordmark(mode: number, view: View, box: ScreenBox, system = 10, below = false): Placement {

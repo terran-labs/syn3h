@@ -42,14 +42,7 @@ import { communityNav } from './communityLinks'
 import { PLACEMENTS, placementOf } from './brand/wordmarkScene'
 import { introMode } from './galaxy/opening'
 
-const SCENE_GROUPS = [
-  ['scene-sun', 'Sun'],
-  ['scene-planets', 'Planets'],
-  ['scene-camera', 'Camera'],
-  ['scene-name', 'Mira name'],
-  ['scene-opening', 'Opening'],
-  ['scene-music', 'Lobby music'],
-] as const satisfies readonly (readonly [string, LobbySettingsGroup])[]
+const SCENE_GROUPS = ['Sun', 'Planets', 'Orbits', 'Camera', 'Mira name', 'Opening', 'Lobby music'] as const satisfies readonly LobbySettingsGroup[]
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -255,6 +248,38 @@ export class LobbySettings {
       const room = document.createElement('div'); room.append(options.host)
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
+    const replayActions = document.createElement('div')
+    replayActions.className = 'wi-actions'
+    this.replay.type = 'button'
+    this.replay.textContent = 'Replay opening'
+    this.replay.addEventListener('click', () => {
+      if (this.replay.disabled) return
+      this.close()
+      this.options.replayOpening?.(Math.round(introMode.value))
+    }, { signal })
+    replayActions.append(this.replay)
+    const replayNote = document.createElement('p')
+    replayNote.className = 'wi-blurb'
+    replayNote.textContent = 'Replay the opening visuals for this visit.'
+    const scene = document.createElement('div')
+    this.inspector.addCard('lobby-scene', 'Lobby scene', scene, () => '', {
+      fill: () => {
+        const defs = params.all().map(param => param.def).filter(def => def.scope === 'client' && !def.hidden)
+        const groups = SCENE_GROUPS.map(group => {
+          const rows = defs.filter(def => def.lobbyGroup === group)
+          const fold = this.inspector.fold(group, rows.length, false)
+          fold.classList.add('lobby-scene-group')
+          fold.append(...rows.map(def => this.sceneRow(def)))
+          if (group === 'Opening') fold.append(replayNote, replayActions)
+          return fold
+        })
+        scene.replaceChildren(...groups)
+      },
+    })
+    const syncReplay = () => this.syncReplay()
+    signal.addEventListener('abort', params.onChange(id => { if (id === introMode.def.id) syncReplay() }), { once: true })
+    this.reducedMotion.addEventListener('change', syncReplay, { signal })
+
     // Creator key, last and collapsed: the creator's way to sign in by pasting the key
     // (creatorKeyRow.ts). Not there at all for anyone else: only with a key stored on this
     // device, or after the hidden gesture on the version label (creatorReveal.ts).
@@ -270,35 +295,6 @@ export class LobbySettings {
     }
     syncCreator()
     window.addEventListener(CREATOR_KEY_EVENT, syncCreator, { signal })
-
-    const replayActions = document.createElement('div')
-    replayActions.className = 'wi-actions'
-    this.replay.type = 'button'
-    this.replay.textContent = 'Replay opening'
-    this.replay.addEventListener('click', () => {
-      if (this.replay.disabled) return
-      this.close()
-      this.options.replayOpening?.(Math.round(introMode.value))
-    }, { signal })
-    replayActions.append(this.replay)
-    const replayNote = document.createElement('p')
-    replayNote.className = 'wi-blurb'
-    replayNote.textContent = 'Replay the opening visuals for this visit.'
-    for (const [id, group] of SCENE_GROUPS) {
-      const scene = document.createElement('div')
-      this.inspector.addCard(id, group, scene, () => '', {
-        fill: () => {
-          const defs = params.all()
-            .map(param => param.def)
-            .filter(def => def.scope === 'client' && !def.hidden && def.lobbyGroup === group)
-          scene.replaceChildren(...defs.map(def => this.sceneRow(def)))
-          if (group === 'Opening') scene.append(replayNote, replayActions)
-        },
-      }).classList.add('lobby-scene-group')
-    }
-    const syncReplay = () => this.syncReplay()
-    signal.addEventListener('abort', params.onChange(id => { if (id === introMode.def.id) syncReplay() }), { once: true })
-    this.reducedMotion.addEventListener('change', syncReplay, { signal })
 
     this.gear.addEventListener('click', () => { if (this.shown) this.close(); else this.open() }, { signal })
     // Tap outside closes; that tap does nothing else (it does not also pick a planet).
@@ -331,17 +327,7 @@ export class LobbySettings {
       options: [{ value: 0, label: 'Off' }, { value: 2, label: 'On' }],
       selected: (value: number) => Math.round(value) > 0 ? 2 : 0,
     } : undefined
-    const row = this.inspector.row(def, { choices })
-    const actions = document.createElement('div')
-    actions.className = 'wi-actions lobby-scene-reset'
-    const reset = document.createElement('button')
-    reset.type = 'button'
-    reset.textContent = 'Reset'
-    reset.setAttribute('aria-label', 'Reset ' + (choices?.name ?? def.label))
-    reset.addEventListener('click', () => params.set(def.id, def.default))
-    actions.append(reset)
-    row.append(actions)
-    return row
+    return this.inspector.row(def, { choices })
   }
 
   private syncReplay(): void {

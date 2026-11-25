@@ -13,7 +13,7 @@
 
 export type ParamValue = number | boolean
 
-export type LobbySettingsGroup = 'Sun' | 'Planets' | 'Camera' | 'Mira name' | 'Opening' | 'Lobby music'
+export type LobbySettingsGroup = 'Sun' | 'Planets' | 'Orbits' | 'Camera' | 'Mira name' | 'Opening' | 'Lobby music'
 
 export interface ParamDef<T extends ParamValue = ParamValue> {
   /** Unique dotted id, e.g. 'buggy.traction'. Also the wire key. */

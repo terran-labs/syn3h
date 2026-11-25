@@ -22,7 +22,7 @@ export const returnDelay = defineParam({ ...P, id: 'lobby.returnDelay', lobbyGro
  * 25 November 2026: "much faster than it currently does ... at around the same rate that the
  * current rotational drag spins down"): its time constant is this ratio times the coast's (SWING.coast).
  */
-export const pitchReturn = defineParam({ ...P, id: 'lobby.pitchReturn', label: 'Lobby view: tilt return time as a share of the spin-down', default: 1, min: 0.25, max: 4, step: 0.05 })
+export const pitchReturn = defineParam({ ...P, id: 'lobby.pitchReturn', lobbyGroup: 'Camera', label: 'Lobby view: tilt return time as a share of the spin-down', default: 1, min: 0.25, max: 4, step: 0.05 })
 /** Seconds the return takes to settle (within 1%). */
 export const returnTime = defineParam({ ...P, id: 'lobby.returnTime', lobbyGroup: 'Camera', label: 'Lobby view: seconds to return to rest', default: 25, min: 1, max: 90, step: 1 })
 

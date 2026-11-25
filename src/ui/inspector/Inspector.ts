@@ -462,7 +462,7 @@ export class Inspector {
     }
   }
   /** A collapsible group: the shared accordion summary (name and count) over its rows. */
-  private fold(name: string, count: number, open: boolean): HTMLDetailsElement {
+  fold(name: string, count: number, open: boolean): HTMLDetailsElement {
     const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = name; fold.open = open
     const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
     summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(count)

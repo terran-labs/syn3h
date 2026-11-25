@@ -77,7 +77,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     // Only what acts in the lobby. Not in a room here, so the Room section hides.
     const cardOrder = await panel.locator('.wi-card').evaluateAll((cards) => cards.filter((c) => c.getClientRects().length).map((c) => c.dataset.section))
     assert.deepEqual(cardOrder.slice(0, 4), ['performance', 'sound', 'glass', 'play'])
-    assert.ok(cardOrder.includes('scene-sun') && cardOrder.includes('scene-name'), `${mode}: advanced scene settings follow the common cards`)
+    assert.ok(cardOrder.includes('lobby-scene'), `${mode}: advanced scene settings follow the common cards`)
     assert.match(await panel.locator('.wi-card[data-section=sound] .wi-sum').textContent(), /Music \d+% · Master \d+%/)
 
     const panelFilters = await panel.evaluate(el => {
