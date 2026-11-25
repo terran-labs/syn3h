@@ -52,6 +52,6 @@ required = ["CREATOR_KEY_SHA256"]
 
 # Names only the creator may take (server/creator.ts), comma separated; empty reserves none.
 # Applies only while the CREATOR_KEY_SHA256 secret is set (`wrangler secret put`, see
-# tools/creator-key.mjs). Supplied by the owner.
+# tools/creator-key.mjs). The owner: "I will be the only Aubrey" (25 Nov 2026).
 [vars]
-CREATOR_RESERVED_NAMES = ""
+CREATOR_RESERVED_NAMES = "Aubrey"

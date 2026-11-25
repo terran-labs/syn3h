@@ -3,10 +3,14 @@
  * whose SHA-256 it was configured with, and protects reserved names from everyone else.
  */
 import { createHash, randomBytes } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { type Peer, Room } from '../../server/room'
 import { isReservedName, parseReservedNames, KEY_FAILURES_PER_MINUTE } from '../../server/creator'
-import { PROTOCOL_VERSION, RENAME_INTERVAL_MS, type PlayerInfo, type ServerMessage } from '../../shared/protocol'
+import { BOT_ID_BASE, PROTOCOL_VERSION, encodeState, type PlayerInfo, type ServerMessage } from '../../shared/protocol'
+import { generateName, uniqueBotName } from '../../src/ui/data/names'
+
+const emptyInput = { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false }
 
 class FakePeer implements Peer {
   raw: string[] = []
@@ -20,6 +24,9 @@ class FakePeer implements Peer {
 const KEY = randomBytes(24).toString('base64url')
 const HASH = createHash('sha256').update(KEY).digest('hex')
 const WRONG = randomBytes(24).toString('base64url')
+/** The reserved names as deployed: both Workers' configs, which must agree. */
+const configured = (file: string) => /^CREATOR_RESERVED_NAMES = "([^"]*)"/m.exec(readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8'))![1]
+const RESERVED = configured('wrangler.toml')
 
 let clock = 0
 let room: Room
@@ -43,7 +50,7 @@ function seen(viewer: FakePeer, id: number): PlayerInfo | undefined {
 
 beforeEach(() => {
   clock = 100_000
-  room = new Room('test', { now: () => clock, maxPlayers: 200, creatorKeySha256: HASH, reservedNames: 'Aubrey, Mira Creator,' })
+  room = new Room('test', { now: () => clock, maxPlayers: 200, creatorKeySha256: HASH, reservedNames: RESERVED })
   logs = []
   vi.spyOn(console, 'log').mockImplementation((...a) => { logs.push(a.join(' ')) })
   vi.spyOn(console, 'error').mockImplementation((...a) => { logs.push(a.join(' ')) })
@@ -92,7 +99,10 @@ describe('creator role', () => {
 
   // Bug: someone impersonates the creator by name, or with a lookalike of it.
   it('keeps reserved names and their lookalikes from anyone without the role', () => {
-    const lookalikes = ['Aubrey', 'aubrey', 'AUBR3Y', 'Aubrеy', 'A u b r e y', '​Aubrey‮', 'Aubrey 2', 'Aubrey!!', 'Aubrey ~*~', '4ubrey', 'Αubrey', 'ＡＵＢＲＥＹ', 'mira creator', 'M1ra-Creat0r']
+    // As deployed: the owner's one reserved name, the same on staging and production.
+    expect(RESERVED).toBe('Aubrey')
+    expect(configured('wrangler.staging.toml')).toBe(RESERVED)
+    const lookalikes = ['Aubrey', 'aubrey', 'AUBR3Y', 'Aubr\u0435y', 'A u b r e y', '\u200bAubrey\u202e', 'Aubrey 2', 'Aubrey!!', 'Aubrey ~*~', '4ubrey', '\u0391ubrey', '\uff21\uff35\uff22\uff32\uff25\uff39', 'Aubrey \u2605', 'aubrey\ufe0f']
     for (const name of lookalikes) {
       const p = join(name)
       expect(p.peer.last('welcome')!.players.find(x => x.id === p.id)!.name, name).toBe(`Player ${p.id}`)
@@ -109,9 +119,26 @@ describe('creator role', () => {
     // The creator takes it.
     const c = join('Aubrey', { creator: KEY })
     expect(seen(c.peer, c.id)!.name).toBe('Aubrey')
-    clock += RENAME_INTERVAL_MS
-    send(c.peer, { type: 'profile', name: 'Mira Creator' })
-    expect(seen(r.peer, c.id)!.name).toBe('Mira Creator')
+    // A second reserved name in a list works the same.
+    expect(isReservedName('M1ra-Creat0r', parseReservedNames('Aubrey, Mira Creator,'))).toBe(true)
+  })
+
+  // Bug: a bot (or a generated name) wears the creator's name, or a host makes a bot the creator.
+  it('never names a bot Aubrey or gives a bot the role', () => {
+    const reserved = parseReservedNames(RESERVED)
+    for (let seed = 0; seed < 20000; seed++) {
+      for (const name of [generateName(seed, 'bot'), uniqueBotName(seed, new Set()), generateName(seed, 'player')]) {
+        if (isReservedName(name, reserved)) throw new Error(`generated ${name}`)
+      }
+    }
+    // The room names a bot itself, from the host's state alone, and never with a role.
+    const host = join('Host')
+    room.receive(host.peer, encodeState({ id: BOT_ID_BASE, t: 0, p: [0, 1, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], input: emptyInput, bot: true }))
+    const watcher = join('Ann')
+    const bot = watcher.peer.last('welcome')!.players.find(p => p.id === BOT_ID_BASE)
+    expect(bot).toBeDefined()
+    expect(bot!.role).toBeUndefined()
+    expect(isReservedName(bot!.name, reserved)).toBe(false)
   })
 
   // Bug: with no key configured, the reserved list blocks names for no reason.

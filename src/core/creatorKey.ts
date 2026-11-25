@@ -7,6 +7,13 @@
  * request log. The key goes only into hello (src/net/index.ts), over the room's wss connection.
  *
  * Storage: localStorage `mira.creatorKey`, which nothing else reads. Never print or log it.
+ *
+ * The link is the secondary route; pasting the key in Settings (src/ui/creatorKeyRow.ts) is the
+ * primary one. Measured 25 Nov 2026 with a throwaway key: Chrome keeps the #creator= address in
+ * its History database, session files and favicons after replaceState (and syncs history), and a
+ * landing page that location.replace()s does not prevent it. Follow-up, not built: a one-time
+ * activation code in the link that the room exchanges for the key, so a recorded address is
+ * useless after its first use. It needs server-side storage of issued codes.
  */
 import { localStore } from './safeStorage'
 

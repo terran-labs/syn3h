@@ -22,8 +22,9 @@
  * the only `.world-inspector` element there.
  */
 import { glassLabels, LIQUID_TUNING_GROUPS } from './glassMaterial'
-import { creatorKey } from '../core/creatorKey'
-import { creatorKeyRow } from './creatorKeyRow'
+import { CREATOR_KEY_EVENT, creatorKey } from '../core/creatorKey'
+import { creatorKeyRowVisible } from './creatorReveal'
+import { PORTAL_TITLE, creatorKeyRow } from './creatorKeyRow'
 import { ACCORDION_ARROW } from './accordionArrow'
 import { params } from '../../shared/params'
 import type { QualitySource } from '../core/quality'
@@ -233,11 +234,21 @@ export class LobbySettings {
       const room = document.createElement('div'); room.append(options.host)
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
-    // Creator key, last and collapsed: a second way to sign in as the creator (creatorKeyRow.ts).
+    // Creator key, last and collapsed: the creator's way to sign in by pasting the key
+    // (creatorKeyRow.ts). Not there at all for anyone else: only with a key stored on this
+    // device, or after the hidden gesture on the version label (creatorReveal.ts).
     const creator = document.createElement('div')
-    this.inspector.addCard('creator', 'Creator key', creator, () => creatorKey() ? 'Signed in on this device' : '', {
-      fill: () => { creator.replaceChildren(creatorKeyRow(signal, { folded: false })) },
-    })
+    let creatorShown = false
+    const syncCreator = () => {
+      if (creatorKeyRowVisible() === creatorShown) return
+      creatorShown = !creatorShown
+      if (!creatorShown) { this.inspector.removeCard('creator'); return }
+      this.inspector.addCard('creator', PORTAL_TITLE, creator, () => creatorKey() ? 'Open on this device' : '', {
+        fill: () => { creator.replaceChildren(creatorKeyRow(signal, { folded: false })) },
+      })
+    }
+    syncCreator()
+    window.addEventListener(CREATOR_KEY_EVENT, syncCreator, { signal })
 
     this.gear.addEventListener('click', () => { if (this.shown) this.close(); else this.open() }, { signal })
     // Tap outside closes; that tap does nothing else (it does not also pick a planet).

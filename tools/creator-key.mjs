@@ -4,11 +4,12 @@
  *   npx wrangler secret put CREATOR_KEY_SHA256                       (production)
  *   npx wrangler secret put CREATOR_KEY_SHA256 -c wrangler.staging.toml   (staging, beta.mira.cc)
  * and writes the activation links, which hold the key itself, to
- * ~/.config/syn3h/creator-links.txt (mode 600). The owner opens a link once on each device;
- * the page stores the key and removes it from the address bar. The file also holds the bare key
- * for Settings > Creator key, the way in for an iPhone Home Screen app. The key is never printed.
+ * ~/.config/syn3h/creator-links.txt (mode 600): first the bare key, to paste into Settings >
+ * Dimensional portal (revealed by five taps on the lobby's version label), the primary route and the
+ * only one into an iPhone Home Screen app; then the links, which work but stay in that browser's
+ * history and history sync. The key is never printed.
  *
- * Rotation: rerun this, set the new hash on both Workers, and open the new link on each device.
+ * Rotation: rerun this, set the new hash on both Workers, and paste the new key on each device.
  * Devices holding the old key lose the badge at their next join.
  *
  *   node tools/creator-key.mjs
@@ -27,15 +28,17 @@ const dir = join(homedir(), '.config', 'syn3h')
 mkdirSync(dir, { recursive: true, mode: 0o700 })
 const file = join(dir, 'creator-links.txt')
 const body = [
-  `# Mira creator links, made ${new Date().toISOString()}. Private: anyone with a link can wear the badge.`,
-  '# Open one once on each of your devices; the page keeps the key and clears it from the address bar.',
+  `# Mira creator key, made ${new Date().toISOString()}. Private: anyone with it can wear the creator mark.`,
   `# Key SHA-256 (the CREATOR_KEY_SHA256 secret): ${hash}`,
-  ...HOSTS.map((host) => `${host}/#creator=${key}`),
   '',
-  '# Or paste this key into Settings > Creator key (the Me card in play). Use this on an iPhone',
-  '# Home Screen app, which keeps its own storage apart from Safari, and on any browser whose',
-  '# history syncs: an opened link stays in the browser history, a pasted key does not.',
+  '# Paste it in: tap the version label five times in the lobby, then open Settings >',
+  '# Dimensional portal, paste and press Open. Once on each device, the iPhone Home Screen app too.',
   `Key: ${key}`,
+  '',
+  '# Links, the second way. A link leaves the key in that browser\'s history, and in history',
+  '# sync if it is on: use one only on a browser you do not sync, and delete the history entry',
+  '# afterwards. A Home Screen app cannot be reached by a link at all.',
+  ...HOSTS.map((host) => `${host}/#creator=${key}`),
   '',
 ].join('\n')
 writeFileSync(file, body, { mode: 0o600 })
