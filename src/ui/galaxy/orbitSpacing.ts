@@ -15,4 +15,7 @@ export const orbitGapTaper = defineParam({
 })
 
 /** Physical gap between neighboring lane envelopes, including their moons. */
-export const orbitMinGap = 0.02
+export const orbitMinGap = defineParam({
+  ...P, id: 'lobby.orbitMinGap', label: 'Lobby orbits: minimum physical gap',
+  default: 0.02, min: 0.005, max: 0.05, step: 0.001,
+})

@@ -32,9 +32,28 @@ function laneGaps(bodies: PlanetBody[]): number[] {
   return shells.slice(1).map((shell, i) => shell.inner - shells[i].outer)
 }
 
+/** The former packing recurrence is the compatibility reference for the outer camera and silhouette. */
+function referenceOuterOrbit(bodies: PlanetBody[]) {
+  const planets = bodies.filter(body => body.parent === undefined || !bodies.some(parent =>
+    parent.id === body.parent && parent.parent === undefined)).sort((a, b) => b.heat - a.heat)
+  let reach = 0, orbit = 0, eccentricity = 0
+  for (const [lane, body] of planets.entries()) {
+    const radius = worldRadius(body.size)
+    const moons = bodies.filter(moon => body.id !== undefined && moon.parent === body.id)
+    const span = Math.max(radius, ...moons.map((moon, k) => {
+      const moonRadius = worldRadius(moon.size)
+      return radius + 2 * moonRadius + Math.max(0.16, radius * 0.4) + k * 0.6
+    }))
+    eccentricity = orbitShape(lane).eccentricity
+    orbit = (lane === 0 ? 1.4 : reach + span + 0.08) / (1 - eccentricity)
+    reach = orbit * (1 + eccentricity) + span
+  }
+  return { orbit, eccentricity, reach }
+}
+
 describe('galaxy layout', () => {
-  it('keeps a physical gap between all lane envelopes, including moons, at every phase and tuning extreme', () => {
-    const originalRadius = orbitInnerRadius.value, originalTaper = orbitGapTaper.value
+  it('keeps the tuned physical gap between lane envelopes and the same framing at every phase and tuning extreme', () => {
+    const originalRadius = orbitInnerRadius.value, originalTaper = orbitGapTaper.value, originalGap = orbitMinGap.value
     try {
       for (const requestedRadius of [-100, 100, originalRadius]) {
         params.set(orbitInnerRadius.def.id, requestedRadius)
@@ -44,29 +63,38 @@ describe('galaxy layout', () => {
           params.set(orbitGapTaper.def.id, requestedTaper)
           expect(orbitGapTaper.value).toBeGreaterThanOrEqual(orbitGapTaper.def.min!)
           expect(orbitGapTaper.value).toBeLessThanOrEqual(orbitGapTaper.def.max!)
-          for (const bodies of systems()) {
-            const gaps = laneGaps(bodies)
-            for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(orbitMinGap - 1e-10)
-            for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThan(gaps[i - 1])
+          for (const requestedGap of [-1, 100, originalGap]) {
+            params.set(orbitMinGap.def.id, requestedGap)
+            expect(orbitMinGap.value).toBeGreaterThanOrEqual(orbitMinGap.def.min!)
+            expect(orbitMinGap.value).toBeLessThanOrEqual(orbitMinGap.def.max!)
+            for (const bodies of systems()) {
+              const gaps = laneGaps(bodies)
+              for (const gap of gaps) expect(gap).toBeGreaterThanOrEqual(orbitMinGap.value - 1e-10)
+              for (let i = 1; i < gaps.length; i++) expect(gaps[i]).toBeLessThan(gaps[i - 1])
+              const places = orbitLayout(bodies, 0)
+              for (const place of places) if (place.path) expect(place.orbit * (1 - place.path.eccentricity)).toBeGreaterThan(0)
+              expect(Math.max(...places.map(place => place.reach))).toBeCloseTo(referenceOuterOrbit(bodies).reach, 12)
+            }
           }
         }
       }
     } finally {
       params.set(orbitInnerRadius.def.id, originalRadius)
       params.set(orbitGapTaper.def.id, originalTaper)
+      params.set(orbitMinGap.def.id, originalGap)
     }
   })
   it('opens the inner radius while preserving the exact outer Ice orbit and camera reach', () => {
     const places = orbitLayout(recipeBodies, 0)
     const volcanic = places[recipeBodies.findIndex(body => body.id === 'volcanic')]
     const ice = places[recipeBodies.findIndex(body => body.id === 'ice')]
+    const reference = referenceOuterOrbit(recipeBodies)
     expect(volcanic.orbit).toBeCloseTo(orbitInnerRadius.value, 12)
     expect(volcanic.path?.eccentricity).toBe(0)
-    expect(ice.path?.eccentricity).toBe(orbitShape(7).eccentricity)
-    // The original semimajor axis and outer edge are compatibility constraints for Ice and framing.
-    expect(ice.orbit).toBeCloseTo((13.907832740566956 - ice.radius) / (1 + orbitShape(7).eccentricity), 12)
-    expect(ice.reach).toBeCloseTo(13.907832740566956, 12)
-    expect(fitDistance(recipeBodies)).toBeCloseTo(13.907832740566956 * 1.08 / 0.62, 12)
+    expect(ice.path?.eccentricity).toBe(reference.eccentricity)
+    expect(ice.orbit).toBeCloseTo(reference.orbit, 12)
+    expect(ice.reach).toBeCloseTo(reference.reach, 12)
+    expect(fitDistance(recipeBodies)).toBeCloseTo(reference.reach * 1.08 / 0.62, 12)
   })
   it('contains the previously visible public discs on the portrait resting view within the approved crop', () => {
     const width = 390, height = 844

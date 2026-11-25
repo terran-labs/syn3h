@@ -193,7 +193,9 @@ function spaceOrbits(lanes: readonly OrbitLane[], eccentricities: readonly numbe
     gapScale = gapScale * ratio + gapWeight(i)
   }
   const budget = outerNear - shells
-  const minGapScale = orbitMinGap / gapWeight(outer)
+  // At the registry limits this scale stays below the legacy gap. Each effective ellipse
+  // is also no more eccentric than its reference, so the original inner radius always fits.
+  const minGapScale = orbitMinGap.value / gapWeight(outer)
   let near = Math.min(orbitInnerRadius.value, (budget - minGapScale * gapScale) / innerScale)
   const gap = (budget - near * innerScale) / gapScale
   return lanes.map(({ span }, i) => {
