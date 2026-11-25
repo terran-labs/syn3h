@@ -295,7 +295,7 @@ html[data-glass-material] .mira-shell.exploration-ui[data-ui-frost="off"] > .wor
 .mira-shell.exploration-ui .world-inspector [data-section="world"] .wi-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Personal identity stays compact beside its two vehicle colour samples. */
-.mira-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.mira-shell .wi-card[data-section="game"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .mira-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
 .mira-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(242 242 242 / .65); }
 

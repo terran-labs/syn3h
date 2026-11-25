@@ -3,7 +3,7 @@ import { params } from '../../shared/params'
 import { presetFor, QUALITY, type QualitySource, type QualityState } from '../core/quality'
 import type { PerformanceSnapshot, PerformanceSource } from '../core/performance'
 import type { Inspector } from './inspector/Inspector'
-import type { PropertyDef } from './inspector/model'
+import { SETTINGS_TITLE, type PropertyDef } from './inspector/model'
 import { createSwitch, type Switch } from './inspector/switch'
 import { resetButton, type ResetButton } from './resetControl'
 import { recordBlankFrames } from '../core/blankFrames'
@@ -93,6 +93,7 @@ export class PerformancePanel {
         <small class="wi-res-size"></small></div>
       <p class="performance-quality wi-blurb" aria-live="polite"></p><p class="performance-quality-detail"></p>
       <div class="wi-fine"></div>
+      <div class="wi-registry"></div>
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
@@ -195,7 +196,7 @@ export class PerformancePanel {
       finally { check.disabled = false }
     }, { signal })
     if (quality) this.configureQuality(quality)
-    inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
+    inspector?.addCard(PerformancePanel.CARD, SETTINGS_TITLE, this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
       { after: 'world', owns: () => this.owned(), fill: () => this.fill() })
   }
 

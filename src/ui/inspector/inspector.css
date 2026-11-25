@@ -69,7 +69,11 @@ html[data-gfx="0"] .mira-shell[data-glass] .wi-glass { -webkit-backdrop-filter: 
 .mira-shell .wi-seg { display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .mira-shell .world-inspector .wi-seg button { padding: 3px 9px; font-size: 12.5px; }
 .mira-shell .wi-foot { margin-top: 10px; }
-.mira-shell.is-locked .wi-card[data-section]:not([data-section="you"]) .wi-row { opacity: .6; }
+/* A locked world dims the rows it locks: shared ones. Your own settings stay as they are. */
+.mira-shell.is-locked .wi-card[data-section] .wi-row[data-scope="world"] { opacity: .6; }
+/* World is mostly shared with the room; the few rows that change only your own view say so
+   (the Foreman, 25 November 2026). Text, no icon: it reads the same in every glass style. */
+.mira-shell .wi-card[data-section="world"] .wi-row[data-scope="client"] > .wi-label::after { content: "only you"; margin-left: .5em; font-size: .86em; letter-spacing: .02em; opacity: .62; white-space: nowrap; }
 
 /* The detail pane: what the property under the pointer is for, and its limits. */
 .mira-shell .wi-detail { flex: none; padding: 11px 14px 12px; }

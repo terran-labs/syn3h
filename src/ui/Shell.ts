@@ -382,7 +382,7 @@ export class Shell implements System {
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     // The summary is read every frame while the panels show: a live collection, not a query.
     const scoreRows = players.querySelector('.hud-scoreboard')!.getElementsByClassName('score-row')
-    this.inspector.addCard('players', 'Players & session', players, () => {
+    this.inspector.addCard('players', 'Players', players, () => {
       const count = scoreRows.length
       return count > 1 ? `${count} players` : count ? 'Just you' : ''
     }, { after: 'game' })
@@ -846,9 +846,9 @@ export class Shell implements System {
       const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
       return `${currentWorldName()} · ${currentPlanet().label} · ${time}`
     }
-    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${modeName(playing)}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
-    if (id === 'you') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return `${this.playerName} · ${PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? ''}` }
-    return id === 'vehicles' ? 'Handling and tuning' : ''
+    // Game: who you are and what is being played, "Ada · Buggy · Explore".
+    if (id === 'game') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; const playing = Number(params.get('game.mode')?.value ?? 2); return [this.playerName, PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? '', modeName(playing)].filter(Boolean).join(' · ') }
+    return ''
   }
   /**
    * Change vehicle in play. The game builds its vehicle once at start, so this saves the
