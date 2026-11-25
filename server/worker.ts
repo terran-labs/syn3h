@@ -9,7 +9,7 @@
 import type { PlayerInfo } from '../shared/protocol'
 import { RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
-import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
+import { ATTACHMENT_PAUSE_MS, CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
 import { logError, logEvent } from './log'
@@ -302,6 +302,8 @@ export class RoomDO {
   private room: Room | null = null
   private snapshot: RoomSnapshot | undefined
   private readonly peers = new WeakMap<WebSocket, Peer>()
+  /** When each socket's attachment last took a pause change (ms): see ATTACHMENT_PAUSE_MS. */
+  private readonly pauseWrittenAt = new WeakMap<WebSocket, number>()
   /**
    * Epoch ms of the clock alarm this object last set, or 0 when none is pending. In memory
    * only: after an eviction it reads 0, and the next message sets the alarm again, which
@@ -381,10 +383,13 @@ export class RoomDO {
       if (!att.info) {
         const info = room.info(peer)
         if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer), ...(room.pausedOf(peer) ? { paused: true } : {}) } satisfies Attachment)
-      } else if (room.pausedOf(peer) !== Boolean(att.paused)) {
-        // Pausing or resuming: kept with the socket for a hibernation wake. One write per change.
+      } else if (room.pausedOf(peer) !== Boolean(att.paused) && Date.now() - (this.pauseWrittenAt.get(ws) ?? 0) >= ATTACHMENT_PAUSE_MS) {
+        // Pausing or resuming: kept with the socket for a hibernation wake. At most one rewrite
+        // per socket per ATTACHMENT_PAUSE_MS, however fast a client flips the bit; the latest
+        // value is written by the first message after that (a paused page sends one a second).
         const { paused: _was, ...rest } = att
         ws.serializeAttachment({ ...rest, ...(room.pausedOf(peer) ? { paused: true } : {}) } satisfies Attachment)
+        this.pauseWrittenAt.set(ws, Date.now())
       }
     } catch (error) {
       // Logged, then thrown on as before: the runtime's handling of a failed event is unchanged.

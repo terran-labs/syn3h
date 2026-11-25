@@ -294,6 +294,23 @@ const MALFORMED_LOG_MS = 60_000
 const CAPTURE_LOG_MS = 30_000
 /** How often, at most, a busy room persists "still active" for the Durable Object. */
 const ACTIVE_PERSIST_MS = 30_000
+/**
+ * A pause or resume is written to storage (the roster's `paused`, for a restore after a
+ * release) lazily: at the first accepted state at least this long after the room last
+ * persisted, ms. No client input can therefore cause more than one pause-driven snapshot
+ * write per room per PAUSE_PERSIST_MS (six a minute), however fast it flips the bit. The
+ * cost: a pause less than this old at a release is restored as not paused, and that player
+ * counts as active from their rejoin until their next state (a running page sends one at
+ * least every second; a frozen page cannot rejoin, and a held place is never counted).
+ */
+export const PAUSE_PERSIST_MS = 10_000
+/**
+ * A transport rewrites a socket's kept pause bit (server/worker.ts Attachment.paused) at most
+ * this often per socket, ms. Here, not in the Worker's entry module, which may export only
+ * handlers and functions. The cost: a flip within this time of the last rewrite, followed by
+ * silence, is kept stale until the socket's next message or its close as silent.
+ */
+export const ATTACHMENT_PAUSE_MS = 1000
 
 export class Room {
   readonly name: string
@@ -978,9 +995,10 @@ export class Room {
     const wasPaused = this.isPaused(player)
     player.lastState = state
     player.lastStateAt = this.now()
-    // Pausing or resuming is kept with the room (its roster), so a rebuilt room counts this
-    // player correctly before their next state (see pausedOf). Rare: one write per change.
-    if (state.paused !== wasPaused && player.token && this.rejoinOn()) this.persist()
+    // Pausing or resuming is kept with the room's roster, so a rebuilt room counts this player
+    // right before their next state (see pausedOf); written lazily, see PAUSE_PERSIST_MS.
+    if (Boolean(state.paused) !== wasPaused && player.token && this.rejoinOn()) this.pauseUnsaved = true
+    if (this.pauseUnsaved && this.now() - this.activePersistedAt >= PAUSE_PERSIST_MS) this.persist()
     const speed = leewaySpeed(state.v)
     if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {
       player.fast = speed
@@ -2063,8 +2081,12 @@ export class Room {
     for (const peer of this.players.keys()) if (peer !== except) peer.send(text)
   }
 
+  /** A pause or resume not yet in storage: see PAUSE_PERSIST_MS. */
+  private pauseUnsaved = false
+
   private persist(): void {
     this.activePersistedAt = this.now()
+    this.pauseUnsaved = false
     this.onPersist?.(this.snapshot())
   }
 }

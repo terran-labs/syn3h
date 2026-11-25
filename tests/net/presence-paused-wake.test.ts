@@ -7,7 +7,7 @@
  * phone sends none: the lobby counted them as players to join for minutes.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { Room, type Peer, type RoomSnapshot } from '../../server/room'
+import { ATTACHMENT_PAUSE_MS, PAUSE_PERSIST_MS, Room, type Peer, type RoomSnapshot } from '../../server/room'
 import { RoomDO } from '../../server/worker'
 import { encodeState, PROTOCOL_VERSION } from '../../shared/protocol'
 import { emptyInputLike } from './helpers'
@@ -32,13 +32,16 @@ describe('paused players stay paused across a rebuild', () => {
 
   it('restore: a paused player rejoining after a release counts as paused until their next state', () => {
     let saved: RoomSnapshot | undefined
-    const before = new Room('release', { onPersist: (s) => { saved = s } })
+    let now = 1_000_000
+    const before = new Room('release', { now: () => now, onPersist: (s) => { saved = s } })
     const a = peer()
     before.connect(a); before.receive(a, hello('A', TOKEN))
-    before.receive(a, state(true)) // pausing is persisted with the roster
+    before.receive(a, state(true))
+    // Pausing reaches the roster lazily, with the heartbeats (PAUSE_PERSIST_MS).
+    for (let t = 0; t < PAUSE_PERSIST_MS; t += 1000) { now += 1000; before.receive(a, state(true)) }
     expect(saved?.roster?.[0]).toMatchObject({ token: TOKEN, paused: true })
     // The release: a new room from storage, nobody connected; A reconnects with its secret.
-    const after = new Room('release')
+    const after = new Room('release', { now: () => now })
     after.restore(structuredClone(saved!))
     const again = peer()
     after.connect(again); after.receive(again, hello('A', TOKEN))
@@ -83,5 +86,63 @@ describe('paused players stay paused across a rebuild', () => {
     woken.webSocketMessage(ws as never, JSON.stringify({ type: 'ping', t: 1 }))
     await new Promise((r) => setTimeout(r, 0))
     expect(reports.at(-1)).toMatchObject({ players: 1, active: 0 })
+  })
+})
+
+describe('pause persistence is bounded, whatever a client sends', () => {
+  it('flapping the pause bit 200 times a second writes the room at most once per PAUSE_PERSIST_MS', () => {
+    let now = 1_000_000, writes = 0
+    const r = new Room('flap', { now: () => now, onPersist: () => { writes++ } })
+    const a = peer()
+    r.connect(a); r.receive(a, hello('A', TOKEN))
+    writes = 0
+    // One second: 200 flips (the state budget accepts 70 of them).
+    for (let i = 0; i < 200; i++) { now += 5; r.receive(a, state(i % 2 === 0)) }
+    expect(writes).toBeLessThanOrEqual(1)
+    // A minute of the same: pause-driven writes plus the room's 30 s activity writes.
+    writes = 0
+    for (let i = 0; i < 200 * 60; i++) { now += 5; r.receive(a, state(i % 2 === 0)) }
+    expect(writes).toBeLessThanOrEqual(60_000 / PAUSE_PERSIST_MS + 2)
+  })
+
+  it('the latest pause bit still reaches storage within PAUSE_PERSIST_MS of heartbeats', () => {
+    let now = 1_000_000
+    let saved: RoomSnapshot | undefined
+    const r = new Room('lazy', { now: () => now, onPersist: (s) => { saved = s } })
+    const a = peer()
+    r.connect(a); r.receive(a, hello('A', TOKEN))
+    r.receive(a, state(true))
+    for (let t = 0; t < PAUSE_PERSIST_MS; t += 1000) { now += 1000; r.receive(a, state(true)) } // heartbeats
+    expect(saved?.roster?.[0]).toMatchObject({ paused: true })
+  })
+
+  it('flapping rewrites a socket attachment at most once per ATTACHMENT_PAUSE_MS', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+    let clock = 5_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    let rewrites = 0
+    const ws = {
+      attachment: { room: 'flap-do', at: 1 } as unknown,
+      send() {}, close() {},
+      serializeAttachment(v: unknown) { rewrites++; this.attachment = v },
+      deserializeAttachment() { return this.attachment },
+    }
+    const state0 = {
+      storage: { get: async () => undefined, put: async () => {}, deleteAll: async () => {}, setAlarm: async () => {} },
+      waitUntil: () => {}, acceptWebSocket: () => {}, getWebSockets: () => [ws],
+      blockConcurrencyWhile: async <T>(fn: () => Promise<T>) => fn(),
+    }
+    const env = { ROOMS: { idFromName: () => ({}), get: () => ({ fetch: async () => new Response(null, { status: 204 }) }) } }
+    const room = new RoomDO(state0 as never, env as never)
+    await Promise.resolve(); await Promise.resolve()
+    room.webSocketMessage(ws as never, hello('A'))
+    rewrites = 0
+    for (let i = 0; i < 200; i++) { clock += 5; room.webSocketMessage(ws as never, state(i % 2 === 0) as never) }
+    expect(rewrites).toBeLessThanOrEqual(1)
+    // Ten seconds of flapping: at most one a second.
+    rewrites = 0
+    for (let i = 0; i < 2000; i++) { clock += 5; room.webSocketMessage(ws as never, state(i % 2 === 0) as never) }
+    expect(rewrites).toBeLessThanOrEqual(10_000 / ATTACHMENT_PAUSE_MS + 1)
+    vi.restoreAllMocks()
   })
 })
