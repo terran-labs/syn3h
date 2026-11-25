@@ -29,8 +29,11 @@
 set -u
 cd "$(dirname "$0")/.."
 N="${1:-}"; NOTE="${2:-}"
-case "$N" in ''|*[!0-9]*) echo "usage: tools/ship.sh <n> \"note\"" >&2; exit 2 ;; esac
+case "$N" in ''|*[!0-9]*) echo "usage: tools/ship.sh <n> \"note\" [--beta | --promote <frozen-id> --approved <version> --approval \"<words>\"]" >&2; exit 2 ;; esac
 [ -n "$NOTE" ] || { echo "ship.sh: give a note" >&2; exit 2; }
+# The rest is passed to release.sh unchanged: --beta, or --promote with the owner's approval.
+shift 2
+MODE="${1:-}"
 GAP="${MIRA_SHIP_GAP_S:-900}"; LIMIT="${MIRA_GATE_LOAD:-12}"; HOLD_S="${MIRA_GATE_HOLD_S:-120}"
 TIMEOUT="${MIRA_GATE_TIMEOUT_S:-3600}"; POLL="${MIRA_GATE_POLL_S:-10}"
 RELEASE="${MIRA_SHIP_RELEASE:-tools/release.sh}"; OUT="${MIRA_SHIP_OUT:-/tmp}/mira-ship-$N"
@@ -47,8 +50,16 @@ trap 'exit 143' TERM
 # The version this ships as, and whether the notes are for it, before any waiting: a train
 # prepared before midnight Pacific ships with the next day's number (release.sh checks again
 # when it starts, in case midnight passes during the gap or the gate).
-VERSION="$(node tools/release-notes.mjs next)" || finish "could not compute the version"
-echo "Version: $VERSION"
+if [ "$MODE" = "--promote" ]; then
+  # A promotion ships the beta's frozen copy: its version is fixed, and it was proven when it
+  # shipped as a beta, so there is no dry run (no build either).
+  VERSION="$(node -e 'try{process.stdout.write(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).version||"")}catch{}' "$STABLE/${2:-none}/dist/build.json")"
+  [ -n "$VERSION" ] || finish "no frozen copy $STABLE/${2:-} to promote"
+  MIRA_SHIP_DRY=0
+else
+  VERSION="$(node tools/release-notes.mjs next)" || finish "could not compute the version"
+fi
+echo "Version: $VERSION${MODE:+ ($MODE)}"
 node tools/release-notes.mjs check "$VERSION" || finish "the release notes are not for $VERSION; nothing released (see the fix above)"
 
 # The gap after the last release, so queued builder jobs can run between releases.
@@ -86,6 +97,6 @@ done
 
 # The release takes the hold over ('running') as it starts; ours stays until then.
 echo "START $(date '+%H:%M:%S') load $(sysctl -n vm.loadavg)"
-"$RELEASE" "$N" "$NOTE" > "$OUT-release.log" 2>&1; rc=$?; echo "$rc" > "$OUT-release.rc"
+"$RELEASE" "$N" "$NOTE" "$@" > "$OUT-release.log" 2>&1; rc=$?; echo "$rc" > "$OUT-release.rc"
 echo "END $(date '+%H:%M:%S') release rc=$rc"
 finish "release rc=$rc"

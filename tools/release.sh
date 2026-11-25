@@ -8,6 +8,19 @@
 #   tools/release.sh <n> "note" --immediate reset every occupied room at once (see below)
 #   tools/release.sh <n> "note" --staging   freeze, deploy to the staging Worker and check it there;
 #                                           production is not touched and nothing is recorded
+#   tools/release.sh <n> "note" --beta      freeze, deploy the frozen copy UNEDITED to the staging
+#                                           Worker, check it there and at https://beta.mira.cc/,
+#                                           and record it in ../Syn3h-stable/betas.tsv. Production
+#                                           is not touched and no production tag is made.
+#   tools/release.sh <n> "note" --promote <frozen-id> --approved <version> --approval "<words>"
+#                                           take the frozen copy a beta shipped, byte for byte, to
+#                                           production: no build. Refuses unless <version> is the
+#                                           version inside that copy; records the owner's approving
+#                                           words beside it in ../Syn3h-stable/approvals.tsv.
+#
+# Beta first, production only on the owner's approval in their own words (ops/RELEASE.md, 25
+# November 2026). A plain production release (no option) builds a new copy and deploys it straight
+# to production: it is refused unless MIRA_DIRECT_RELEASE=1 names a reason the Foreman gave.
 #
 # Run from the integration checkout with a clean tree whose HEAD carries a tag. Steps:
 #  1. tools/promote-stable.sh freezes the build into ../Syn3h-stable/<id> (dist, server,
@@ -53,11 +66,32 @@ REPO="$(pwd)"
 N="${1:-}"
 NOTE="${2:-}"
 MODE="${3:-}"
-case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run | --immediate | --staging]" >&2; exit 2 ;; esac
+case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run | --immediate | --staging | --beta | --promote <frozen-id> --approved <version> --approval \"<words>\"]" >&2; exit 2 ;; esac
 [ -n "$NOTE" ] || { echo "release.sh: give a note" >&2; exit 2; }
-[ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || [ "$MODE" = "--immediate" ] || [ "$MODE" = "--staging" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
+case "$MODE" in ''|--dry-run|--immediate|--staging|--beta|--promote) ;; *) echo "release.sh: unknown option $MODE" >&2; exit 2 ;; esac
 DRY=""; [ "$MODE" = "--dry-run" ] && DRY=1
 STAGE_ONLY=""; [ "$MODE" = "--staging" ] && STAGE_ONLY=1
+BETA=""; [ "$MODE" = "--beta" ] && BETA=1
+PROMOTE=""; PROMOTE_ID=""; APPROVED=""; APPROVAL=""
+if [ "$MODE" = "--promote" ]; then
+  PROMOTE=1; PROMOTE_ID="${4:-}"
+  shift 4 2>/dev/null || { echo "release.sh: --promote needs <frozen-id> --approved <version> --approval \"<words>\"" >&2; exit 2; }
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --approved) APPROVED="${2:-}"; shift 2 ;;
+      --approval) APPROVAL="${2:-}"; shift 2 ;;
+      *) echo "release.sh: unknown argument $1 after --promote" >&2; exit 2 ;;
+    esac
+  done
+  case "$PROMOTE_ID" in ''|*/*|.*) echo "release.sh: --promote needs a frozen id from ../Syn3h-stable (a directory name)" >&2; exit 2 ;; esac
+  [ -n "$APPROVED" ] || { echo "release.sh: --promote refuses without --approved <version>: the version the owner approved" >&2; exit 2; }
+  [ -n "$APPROVAL" ] || { echo "release.sh: --promote refuses without --approval \"<the owner's approving words>\"" >&2; exit 2; }
+fi
+# Beta first, production only on the owner's approval: a plain release builds and ships straight
+# to production, so it needs an explicit reason (a recorded exception from the Foreman).
+if [ -z "$MODE" ] || [ "$MODE" = "--immediate" ]; then
+  [ -n "${MIRA_DIRECT_RELEASE:-}" ] || { echo "release.sh: production releases go through --beta, then --promote with the owner's approval (ops/RELEASE.md). Set MIRA_DIRECT_RELEASE=<reason> only on the Foreman's explicit word." >&2; exit 2; }
+fi
 STUB="${MIRA_RELEASE_STUB:-}"; [ -z "$DRY" ] || STUB=""
 # Extra deploy arguments: empty for a normal release.
 UPDATE_MODE=""; [ "$MODE" = "--immediate" ] && UPDATE_MODE="--durable-objects-code-update-mode immediate"
@@ -66,16 +100,36 @@ fail() { printf '\nRELEASE FAILED: %s\n' "$*" >&2; exit 1; }
 
 # --- Preconditions --------------------------------------------------------------------------
 [ -z "$(git status --porcelain)" ] || fail "the working tree is not clean"
-if ! MILESTONE="$(git describe --exact-match --tags HEAD 2>/dev/null)"; then
-  [ -n "$DRY" ] || fail "HEAD is not on a tag: tag a green milestone first"
-  MILESTONE="untagged"
-  echo "Warning: HEAD is not on a tag (allowed for a dry run only)."
+if [ -n "$PROMOTE" ]; then
+  # Promote: the build, its commit and its version all come from the frozen copy the beta
+  # shipped, never from HEAD or today's date.
+  DEST="$(cd ../Syn3h-stable/"$PROMOTE_ID" 2>/dev/null && pwd)" || fail "no frozen copy ../Syn3h-stable/$PROMOTE_ID"
+  [ -f "$DEST/dist/build.json" ] || fail "$DEST has no dist/build.json"
+  _bj() { node -e 'const b=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(b[process.argv[2]]??""))' "$DEST/dist/build.json" "$1"; }
+  [ "$(_bj id)" = "$PROMOTE_ID" ] || fail "$DEST/dist/build.json names $(_bj id), not $PROMOTE_ID"
+  COMMIT_FULL="$(_bj commit)"; COMMIT="$(git rev-parse --short "$COMMIT_FULL" 2>/dev/null)" || fail "commit $COMMIT_FULL of $PROMOTE_ID is not in this repository"
+  awk -F '\t' -v id="$PROMOTE_ID" '$3 == id { found = 1 } END { exit !found }' ../Syn3h-stable/betas.tsv 2>/dev/null \
+    || fail "$PROMOTE_ID was never shipped as a beta (no line in ../Syn3h-stable/betas.tsv): only what the owner tested on beta can be promoted"
+  MILESTONE="$(git describe --exact-match --tags "$COMMIT_FULL" 2>/dev/null | grep -v '^v[0-9]' | grep -v '^release-' | head -1)"
+  [ -n "$MILESTONE" ] || MILESTONE="$(awk -F '\t' -v id="$PROMOTE_ID" '$3 == id { m = $4 } END { print m }' ../Syn3h-stable/betas.tsv)"
+else
+  if ! MILESTONE="$(git describe --exact-match --tags HEAD 2>/dev/null)"; then
+    [ -n "$DRY" ] || fail "HEAD is not on a tag: tag a green milestone first"
+    MILESTONE="untagged"
+    echo "Warning: HEAD is not on a tag (allowed for a dry run only)."
+  fi
+  COMMIT="$(git rev-parse --short HEAD)"; COMMIT_FULL="$(git rev-parse HEAD)"
 fi
-COMMIT="$(git rev-parse --short HEAD)"
 # The version this release ships as, first: it is named by the Pacific date, so a train
 # prepared before midnight ships with the next day's number. Resolved before building, so the
 # UI and frozen metadata agree; the dry run, staging and the release all check it here.
-CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
+if [ -n "$PROMOTE" ]; then
+  # The version was fixed when the beta was built and is promoted unchanged, on any later day.
+  CALVER="$(_bj version)"; [ -n "$CALVER" ] || fail "$PROMOTE_ID records no version"
+  [ "$APPROVED" = "$CALVER" ] || fail "the approval names $APPROVED, but $PROMOTE_ID is $CALVER: nothing promoted"
+else
+  CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
+fi
 export MIRA_RELEASE_VERSION="$CALVER"
 echo "Version: $CALVER"
 # The notes are published after the release is live, so check now, before anything is built,
@@ -125,8 +179,22 @@ PREV_REL="$(printf '%s' "$PREV_LINE" | cut -f1)"
 PREV_ID="$(printf '%s' "$PREV_LINE" | cut -f7)"
 PREV_CURRENT="$(readlink ../Syn3h-stable/current 2>/dev/null || true)"
 [ -n "$DRY" ] || [ -n "$PREV_REL" ] || fail "no earlier release in ../Syn3h-stable/releases.tsv to roll back to"
+if [ -n "$PROMOTE" ]; then
+  # The beta's frozen build lists every version production had when it was built. If production
+  # has moved on since, promoting it would drop a version from ?v=: build a new beta instead.
+  LIVE_VER="$(curl -sf --max-time 15 https://mira.cc/build.json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).version||"")}catch{}})' 2>/dev/null || true)"
+  [ -n "$LIVE_VER" ] || fail "could not read the live version from https://mira.cc/build.json"
+  node -e 'const l=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const v=process.argv[2].replace(/^v/,"");process.exit((l.versions||l).includes(v)?0:1)' "$DEST/dist/v/versions.json" "$LIVE_VER" \
+    || fail "production is on $LIVE_VER, which $PROMOTE_ID does not know: production moved on after this beta was built. Ship a new beta."
+fi
 
 # --- Freeze ---------------------------------------------------------------------------------
+if [ -n "$PROMOTE" ]; then
+  # No build: the beta's frozen copy, its versions list and its .assetsignore as they were shipped.
+  ID="$PROMOTE_ID"
+  ln -sfn "$ID" ../Syn3h-stable/current
+  echo "Promoting the frozen copy $ID ($CALVER, $MILESTONE $COMMIT) unchanged; approved as \"$APPROVAL\""
+else
 echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
 DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
@@ -137,6 +205,7 @@ printf '*.map\n' > "$DEST/dist/.assetsignore"
 # all, and `prepare` refuses a build that changes a root file an earlier version also serves.
 # After a rollback, frozen versions are served by the restored Worker: see tools/rollback.sh.
 node tools/frozen-versions.mjs prepare "$DEST" "$CALVER" || fail "could not prepare the frozen versions list"
+fi
 echo "Frozen copy: $DEST"
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
@@ -229,13 +298,18 @@ else
   # The same frozen build on the staging Worker first (wrangler.staging.toml: its own name, its
   # own rooms, no routes), checked on Cloudflare's real network before production is touched.
   # A failure here stops the release with production unchanged: nothing to roll back.
+  # Promote skips this: the same bytes were deployed and checked here when they shipped as a beta.
+  if [ -z "$PROMOTE" ]; then
   STAGING_DEST="$DEST.staging"
   rm -rf "$STAGING_DEST"; cp -Rc "$DEST" "$STAGING_DEST" 2>/dev/null || cp -R "$DEST" "$STAGING_DEST"
-  printf 'User-agent: *\nDisallow: /\n' > "$STAGING_DEST/dist/robots.txt"
-  # Mark the page so a stray visitor cannot take staging for the real game. Only the staging
-  # clone's HTML changes; the production build and bundle are untouched.
-  sed -i '' 's#<title>#<title>[staging] #' "$STAGING_DEST/dist/index.html"
-  echo "Deploying to staging..."
+  if [ -z "$BETA" ]; then
+    # --staging only: mark the page so a stray visitor cannot take staging for the real game.
+    # A beta is deployed unedited: the bytes the owner tests are the bytes that ship, and the
+    # Worker tells beta from production by hostname (robots, noindex, the beta mark).
+    printf 'User-agent: *\nDisallow: /\n' > "$STAGING_DEST/dist/robots.txt"
+    sed -i '' 's#<title>#<title>[staging] #' "$STAGING_DEST/dist/index.html"
+  fi
+  echo "Deploying to staging${BETA:+ (beta, unedited)}..."
   if [ -n "$STUB" ]; then
     echo "STUB: (cd $STAGING_DEST && wrangler deploy --config wrangler.staging.toml --message \"$MILESTONE $COMMIT: $NOTE\")"
   else
@@ -257,6 +331,26 @@ else
     _staging_ok=1; run_smoke "$STAGING_URL" "$LOG-staging-smoke.log" "$SHOT_PARENT/evidence" || _staging_ok=""
     MIRA_CRASH_CAP=2; if [ -n "$_prod_crashes" ]; then MIRA_CRASH_COUNT="$_prod_crashes"; else unset MIRA_CRASH_COUNT; fi
     [ -n "$_staging_ok" ] || fail "net-smoke failed on staging (production untouched; see $LOG-staging-smoke.log)"
+  fi
+  if [ -n "$BETA" ]; then
+    # The owner tests at https://beta.mira.cc/ (the staging Worker's Custom Domain): it must serve
+    # this exact build too, with its certificate, its socket and the short public check.
+    BETA_URL="https://beta.mira.cc/"
+    if [ -z "$STUB" ]; then
+      settle "$BETA_URL" "$STAGING_DEST" "$LOG-beta-assets.log" --feed || { tail -20 "$LOG-beta-assets.log"; fail "beta.mira.cc did not settle on the frozen build (production untouched)"; }
+      tail -1 "$LOG-beta-assets.log"
+      MIRA_SHORT_CHECK=1 MIRA_DOMAIN_WORKER=syn3h-staging tools/domain.sh check beta.mira.cc --zone mira.cc >"$LOG-beta.log" 2>&1 \
+        || { cat "$LOG-beta.log"; fail "beta.mira.cc acceptance failed (production untouched)"; }
+      cat "$LOG-beta.log"
+    fi
+    BWHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
+    [ -n "$STUB" ] || printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$BWHEN" "$ID" "$MILESTONE" "$COMMIT" "beta-for-release-$N" "$NOTE" >> ../Syn3h-stable/betas.tsv
+    echo
+    echo "BETA OK: $CALVER ($MILESTONE $COMMIT), frozen as $ID, is live at $BETA_URL. Production was not touched."
+    echo "Promote only on the owner's approval of $CALVER in their own words:"
+    echo "  tools/release.sh <n> \"$NOTE\" --promote $ID --approved $CALVER --approval \"<their words>\""
+    exit 0
+  fi
   fi
   if [ -n "$STAGE_ONLY" ]; then
     echo
@@ -391,7 +485,12 @@ ARCHIVE_FAILED=""
 with_cf_token node tools/frozen-versions.mjs archive "$DEST" "$CALVER" >"$LOG-archive.log" 2>&1 || ARCHIVE_FAILED=1
 tail -3 "$LOG-archive.log"
 [ -z "$ARCHIVE_FAILED" ] || printf '\nARCHIVE FAILED: release-%s is live, but %s is not verified in R2 (see %s).\nRun: bash -c %s\n\n' "$N" "$CALVER" "$LOG-archive.log" "'. tools/cloudflare-token.sh; with_cf_token node tools/frozen-versions.mjs archive $DEST $CALVER'" >&2
-git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
+git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)" "$COMMIT_FULL"
+if [ -n "$PROMOTE" ]; then
+  # The owner's approval, in their own words, beside the version it approved.
+  printf '%s\t%s\t%s\t%s\t%s\n' "$CALVER" "$WHEN" "$ID" "release-$N" "$APPROVAL" >> ../Syn3h-stable/approvals.tsv
+  echo "Approval recorded for $CALVER: \"$APPROVAL\""
+fi
 echo
 echo "RELEASE OK: release-$N is live at $URL"
 echo "For ops/RELEASES.md:"
@@ -401,7 +500,7 @@ echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSI
 # never turn a successful deploy into a failed release or trigger rollback.
 if ! (
   printf '%s\t%s\t%s\t%s\tproduction\n' "$CALVER" "$MILESTONE" "$COMMIT" "$WHEN" >> release-notes/history.tsv || exit 1
-  git tag -a "$CALVER" -m "Mira $CALVER ($MILESTONE, release-$N)" || exit 1
+  git tag -a "$CALVER" -m "Mira $CALVER ($MILESTONE, release-$N)" "$COMMIT_FULL" || exit 1
   # Notes are written and committed before the tag now; draft only when there are none.
   [ -f "release-notes/releases/$CALVER.md" ] || node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
 ); then
