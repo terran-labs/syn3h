@@ -52,6 +52,15 @@ function fill(n, room) {
 
 /** In every page: after the move is armed, any frame with the lobby's planets on screen and not under the veil. */
 const sampler = () => {
+  // Every write to the veil's status line, with where it came from, so a failure can name the writer.
+  if (!window.__bootWriters) {
+    window.__bootWriters = []
+    const desc = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent')
+    Object.defineProperty(Node.prototype, 'textContent', { ...desc, set(v) {
+      if (this.classList?.contains?.('boot-status')) window.__bootWriters.push({ text: String(v), by: (new Error().stack ?? '').split('\n').slice(2, 4).map(l => l.trim()).join(' < ') })
+      desc.set.call(this, v)
+    } })
+  }
   if (!sessionStorage.getItem('check.armed')) return
   const visible = el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < innerHeight && s.visibility !== 'hidden' && s.display !== 'none' && Number(s.opacity) > 0.05 }
   const tick = () => {
@@ -64,7 +73,12 @@ const sampler = () => {
     // The lobby: its planets or its own buttons (Settings, Welcome), not under the veil.
     const lobby = [...document.querySelectorAll('.galaxy-label, .galaxy-ui button')].some(visible)
     if (moving && lobby && !covered) console.log(`CHECK lobby-visible ${location.search.slice(0, 40)} veil=${vs ? vs.opacity : 'none'}`)
-    if (moving && covered) console.log(`CHECK veil ${document.querySelector('.boot-status')?.textContent ?? ''}`)
+    if (moving && covered) {
+      const text = document.querySelector('.boot-status')?.textContent ?? ''
+      const shown = getComputedStyle(document.querySelector('.boot-status')).visibility !== 'hidden'
+      const writer = window.__bootWriters.filter(w => w.text === text).at(-1)?.by ?? "index.html's markup (shown before its veil script said the move's line)"
+      if (shown) console.log(`CHECK veil ${text} @@ ${writer}`)
+    }
     requestAnimationFrame(tick)
   }
   // Mark the pages a move opens (autoplay with a move note waiting).
@@ -77,7 +91,7 @@ const failures = []
 async function phone(motion) {
   const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2, reducedMotion: motion })
   const page = await context.newPage(), seen = { lobby: [], veil: new Set(), driving: 0 }
-  page.on('console', m => { const t = m.text(); if (!t.startsWith('CHECK ')) return; if (t.startsWith('CHECK lobby')) seen.lobby.push(t); else if (t.startsWith('CHECK veil')) seen.veil.add(t.slice(11)); else seen.driving++ })
+  page.on('console', m => { const t = m.text(); if (!t.startsWith('CHECK ')) return; if (t.startsWith('CHECK lobby')) seen.lobby.push(t); else if (t.startsWith('CHECK veil')) { const [text, by] = t.slice(11).split(' @@ '); seen.veil.add(text); seen.by ??= new Map(); seen.by.set(text, by) } else seen.driving++ })
   await page.addInitScript(sampler)
   if (THROTTLE > 1) { const cdp = await context.newCDPSession(page); await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE }); page.on('framenavigated', f => { if (f === page.mainFrame()) cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE }).catch(() => {}) }) }
   return { context, page, seen }
@@ -89,7 +103,7 @@ const universeButton = (page, label) => page.evaluate(label => { const b = [...d
 function judge(name, seen, wantLine) {
   if (seen.lobby.length) failures.push(`${name}: the lobby showed ${seen.lobby.length} frame(s) during the move: ${seen.lobby[0]}`)
   const other = [...seen.veil].filter(t => !/universe|world/i.test(t))
-  if (other.length) failures.push(`${name}: the veil said something else during the move: ${other.join(' | ')}`)
+  if (other.length) failures.push(`${name}: the veil said something else during the move: ${other.map(t => `"${t}" (written by ${seen.by?.get(t) ?? 'unknown'})`).join(' | ')}`)
   if (wantLine && ![...seen.veil].some(t => t.includes(wantLine))) failures.push(`${name}: the veil never said "${wantLine}" (${[...seen.veil].join(' | ')})`)
   console.log(`${name}: ${seen.lobby.length ? 'LOBBY SHOWN' : 'veil held'}; veil said ${JSON.stringify([...seen.veil])}`)
   seen.lobby.length = 0; seen.veil.clear()

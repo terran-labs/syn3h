@@ -229,6 +229,8 @@
          line says what is happening. Removing the attribute lets the veil fade as usual. */
       html[data-room-move] .boot-veil { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; animation: none !important; }
       html[data-room-move] .boot-status, html[data-room-move] .boot-still { opacity: 1 !important; }
+      /* Until the move's line is in it (index.html's own markup carries a general loading line). */
+      html[data-move-unsaid] .boot-status { visibility: hidden !important; }
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
       /* ---- The continuous opening (?intro=, src/ui/galaxy/opening.ts). The veil is black
          space and one point of light at the very centre, where the lobby's sun is drawn at
@@ -379,6 +381,14 @@
           var root = document.documentElement;
           // Shows the loading veil; LoadingScreen lifts it.
           root.dataset.boot = "loading";
+          // A page opened by a move between rooms (src/ui/parallelUniverse.ts): hold the veil from the
+          // very first paint, and keep its status line hidden until the move's own line is in it,
+          // so the markup's general loading line is never what shows (the body's veil script says
+          // the line, removes data-move-unsaid and owns the release).
+          try {
+            var move = JSON.parse(sessionStorage.getItem("mira.roomMove") || "null");
+            if (move && /^(full|chosen|returning|still-full)$/.test(move.reason) && Date.now() - move.at < 120000) { root.dataset.roomMove = ""; root.dataset.moveUnsaid = ""; }
+          } catch (error) {}
           // ?intro=1 to 3: the continuous opening (src/ui/galaxy/opening.ts). The veil is black
           // space with a point of light where the lobby's sun will be. Not with reduced motion.
           // On unless ?intro=0. With reduced motion the veil is the same; only the reveal is plain.
@@ -450,7 +460,7 @@
                 "still-full": main ? "The main world is still full. Back to your parallel universe." : "That world is still full. Back to your parallel universe." }[move.reason];
               if (line) {
                 var root = document.documentElement, since = Date.now();
-                s.textContent = line; root.dataset.roomMove = ""; root.dataset.bootLate = "";
+                s.textContent = line; root.dataset.roomMove = ""; root.dataset.bootLate = ""; delete root.dataset.moveUnsaid;
                 // What sets the hold owns its end, whether or not the game's script ever arrives or
                 // still finds the note fresh: the hold goes the moment the game is on screen or the
                 // page's failure shows; after 45 s the line says so plainly and offers a reload.
