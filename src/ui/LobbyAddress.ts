@@ -75,6 +75,9 @@ const ROOM_HELD = ['world', 'planet', 'seed']
 
 function withoutDefaultRoom(url: URL): URL {
   if (url.searchParams.has('room') && isDefaultRoom(url.searchParams.get('room'))) url.searchParams.delete('room')
+  // The entry campaign tag is read once for analytics (src/net/analytics.ts entryRef) and
+  // never shown, reloaded with or passed on in an invite.
+  url.searchParams.delete('ref')
   return url
 }
 

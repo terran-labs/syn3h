@@ -6,6 +6,7 @@
  * remote vehicles are played back from snapshot buffers and stay physical near us so ramming
  * works. Lasers, identity and the tag game ride on rare JSON messages.
  */
+import { clientFacts, reportCrash, reportEvent } from './analytics'
 import { longFrames } from '../core/longFrames'
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
@@ -538,11 +539,18 @@ export class NetClient implements System {
       this.send({
         type: 'hello', v: PROTOCOL_VERSION, largeWelcome: true, sparseWorld: true, modes: 2, name: playerName(), params: params.snapshot('world', true),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
+        // Launch analytics (src/net/analytics.ts): anonymous id, version, device, backend,
+        // quality and the entry campaign tag. An older room ignores them.
+        ...clientFacts(this.ctx.game.backend),
         ...(this.dropReport ? { drop: this.dropReport } : {}),
         // "Bots may play with me": only a no is sent; an older room ignores the field.
         ...(playWithMe.value ? {} : { play: false }),
       })
       this.dropReport = null
+    }
+    this.conn.onFailedAttempt = (inARow) => {
+      reportEvent('ws_fail', inARow)
+      if (inARow === 3) reportCrash('ws_connect', new Error('no connection after 3 attempts'))
     }
     this.conn.onText = (text) => {
       const msg = parseJson<ServerMessage>(text, 'welcome', this.recordOversize)

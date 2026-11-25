@@ -7,6 +7,10 @@
  * client says (parameter changes, shots, hits, rams) is validated against what the room
  * already knows before it changes shared state.
  */
+import {
+  type Common, type EventName, type Extra, type Geo, type SessionRecord, cleanFacts, cleanSession, commonOf, endRows,
+  NO_GEO, roomKind, sessionKind, sessionPaused, sessionSnapshot, startSession,
+} from './analytics'
 import { recipeIdForLook } from '../shared/recipes'
 import { type ParamDef, params as registry, sanitize } from '../shared/params'
 import {
@@ -84,6 +88,11 @@ export interface RoomOptions {
   maxPlayers?: number
   /** Called after anything worth persisting changes (params, tag state, scores). */
   onPersist?: (snapshot: RoomSnapshot) => void
+  /**
+   * Launch analytics (server/analytics.ts): the transport's bounded writer. Called only on a
+   * session's start and end and on a refusal as full, never per message. Must not throw.
+   */
+  analytics?: (event: EventName, common: Common, extra?: Extra) => void
 }
 
 /** What a Durable Object stores to survive hibernation. */
@@ -121,13 +130,19 @@ export interface RoomSnapshot {
    * rebuilt from storage (a release reset it, everyone dropped at once) can hold their
    * places. `at` is server ms when the entry was written.
    */
-  roster?: { token: string; info: PlayerInfo; at: number; paused?: boolean }[]
+  roster?: { token: string; info: PlayerInfo; at: number; paused?: boolean; session?: SessionRecord }[]
   race?: { state: RaceState | null; deadline: number; cooldownUntil: number; lastId: string }
 }
 
 interface Player {
   /** Explicit local driving state, independent of hidden-tab heartbeats. */
   raceDriving: boolean
+  /** Launch analytics: this player's session (server/analytics.ts), or null for none. */
+  session?: SessionRecord | null
+  /** Bumped when the session's pause or vehicle changes, for a transport keeping a copy. */
+  sessionVersion?: number
+  /** Server ms the player dropped (its place then held), for the session's end. */
+  droppedAt?: number
   info: PlayerInfo
   lastState: WireState | null
   /**
@@ -324,6 +339,9 @@ export class Room {
   private readonly now: () => number
   private readonly maxPlayers: number
   private readonly onPersist?: (s: RoomSnapshot) => void
+  private readonly analytics?: RoomOptions['analytics']
+  /** Where each connected peer is (the Worker's request.cf codes), until its hello. */
+  private readonly geo = new WeakMap<Peer, Geo>()
   /** Connected peers that have not said hello yet. */
   private readonly pending = new Set<Peer>()
   private readonly players = new Map<Peer, Player>()
@@ -361,6 +379,7 @@ export class Room {
     this.name = name
     this.tag = roomTag(name)
     this.now = opts.now ?? Date.now
+    this.analytics = opts.analytics
     this.maxPlayers = opts.maxPlayers ?? MAX_ROOM_PLAYERS
     this.onPersist = opts.onPersist
     this.setDefaults()
@@ -611,6 +630,8 @@ export class Room {
   private hold(peer: Peer, player: Player, until = this.now() + REJOIN_GRACE * 1000): void {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
+    player.droppedAt = this.now()
+    if (player.session) sessionPaused(player.session, this.now(), true)
     logEvent('place_held', { room: this.tag, player: player.info.id, forMs: until - this.now() })
     player.raceDriving = false
     if (player.info.id === this.host) this.cancelRace('Host disconnected')
@@ -695,6 +716,7 @@ export class Room {
   }
 
   private leave(peer: Peer, player: Player): void {
+    this.endSession(player)
     if (player.info.id === this.host) this.cancelRace('Host disconnected')
     else this.withdrawRace(player.info.id)
     const wasActive = this.isActive(player, this.now())
@@ -741,7 +763,55 @@ export class Room {
 
   private roster(): NonNullable<RoomSnapshot['roster']> {
     const at = this.now()
-    return [...this.players.values()].filter((p) => p.token).map((p) => ({ token: p.token!, info: { ...p.info }, at, ...(this.isPaused(p) ? { paused: true } : {}) }))
+    return [...this.players.values()].filter((p) => p.token).map((p) => ({
+      token: p.token!, info: { ...p.info }, at, ...(this.isPaused(p) ? { paused: true } : {}),
+      ...(p.session ? { session: sessionSnapshot(p.session, p.droppedAt ?? at) } : {}),
+    }))
+  }
+
+  // -------------------------------------------------------------------------------------
+  // Launch analytics (server/analytics.ts). Rows only at a session's start and end and at a
+  // refusal; the transport's writer bounds them per minute. Which endings write session_end:
+  //  - a player leaving, or their held place expiring (leave): written, as of when they left;
+  //  - a socket closed as silent (SILENT_MS): it is disconnected, so the same as above;
+  //  - a hibernation wake: the session rides in the socket attachment (adopt), so a later
+  //    ending writes it;
+  //  - a release or reset of the object: the session is in the room's roster (written with the
+  //    room, at most PAUSE_PERSIST_MS or ACTIVE_PERSIST_MS behind), so a rejoin continues it
+  //    and an expired hold ends it, even after an eviction (endRosterSessions);
+  //  - a crash of the object before its roster was ever saved: lost, the session_start stands.
+  // -------------------------------------------------------------------------------------
+
+  /** Where a peer came from (the Worker's request.cf codes), before its hello. */
+  setGeo(peer: Peer, geo: Geo): void {
+    this.geo.set(peer, geo)
+  }
+
+  private track(event: EventName, common: Common, extra?: Extra): void {
+    try { this.analytics?.(event, common, extra) } catch { /* analytics never affects play */ }
+  }
+
+  private beginSession(peer: Peer, player: Player, hello: object): void {
+    if (!this.analytics) return
+    try {
+      const facts = cleanFacts(hello)
+      const now = this.now()
+      player.session = startSession(now, this.presence().recipeId ?? '', roomKind(this.name), facts, this.geo.get(peer) ?? NO_GEO, player.info.kind)
+      this.track('session_start', commonOf(player.session), { quality: facts.quality, ref: facts.ref })
+    } catch { player.session = null }
+  }
+
+  private endSession(player: Player): void {
+    const s = player.session
+    player.session = null
+    if (!s) return
+    try { for (const row of endRows(s, player.droppedAt ?? this.now())) this.track(row.event, row.common, row.extra) } catch { /* never affects play */ }
+  }
+
+  /** The session a transport keeps with the socket, banked to now, and its version. */
+  sessionOf(peer: Peer): { session: SessionRecord; version: number } | null {
+    const p = this.players.get(peer)
+    return p?.session ? { session: sessionSnapshot(p.session, this.now()), version: p.sessionVersion ?? 0 } : null
   }
 
   /** Paused: the latest state says so, or before any state since a rebuild, it last did. */
@@ -781,7 +851,13 @@ export class Room {
       const now = this.now()
       for (const entry of s.roster) {
         if (!entry || !isToken(entry.token) || !entry.info || typeof entry.info.id !== 'number') continue
-        if (now - entry.at > REJOIN_GRACE * 1000 || this.byId(entry.info.id)) continue
+        if (this.byId(entry.info.id)) continue
+        if (now - entry.at > REJOIN_GRACE * 1000) {
+          // Too old to hold: the player is gone. Its session ends as of the room's last save.
+          const ended = cleanSession(entry.session)
+          if (ended && this.analytics) try { for (const row of endRows(ended, entry.at)) this.track(row.event, row.common, row.extra) } catch { /* never affects play */ }
+          continue
+        }
         const player = this.newPlayer({
           ...entry.info, score: this.scores[entry.info.id] ?? 0,
           kind: cleanKind(entry.info.kind) ?? 'buggy', colors: cleanColors(entry.info.colors) ?? [...DEFAULT_COLORS],
@@ -789,8 +865,12 @@ export class Room {
         player.token = entry.token
         player.joinedAt = 0
         if (entry.paused === true) player.pausedBefore = true
+        // Its session carries on if it rejoins; if not, it ends as of when the room last saved it.
+        player.session = cleanSession(entry.session)
+        if (player.session) sessionPaused(player.session, entry.at, true)
         this.nextId = Math.max(this.nextId, entry.info.id + 1)
         this.hold({ send() {}, close() {} }, player, now + REJOIN_GRACE * 1000)
+        player.droppedAt = entry.at
       }
     }
     if (s.race) {
@@ -805,7 +885,7 @@ export class Room {
   }
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
-  adopt(peer: Peer, info: PlayerInfo, token?: string | null, paused?: boolean): void {
+  adopt(peer: Peer, info: PlayerInfo, token?: string | null, paused?: boolean, session?: unknown): void {
     // After hibernation the room is restored from storage first, which holds a place for
     // everyone on its roster, and then the sockets that are still connected are adopted. A
     // connected player is not absent: it takes its held place, it is not added beside it.
@@ -816,6 +896,9 @@ export class Room {
       held.lastHeardAt = this.now()
       if (isToken(token)) held.token = token
       if (paused !== undefined) held.pausedBefore = paused
+      held.droppedAt = undefined
+      const kept = cleanSession(session)
+      if (kept) held.session = kept
       return
     }
     const full: PlayerInfo = {
@@ -827,6 +910,8 @@ export class Room {
     player.joinedAt = 0
     player.token = isToken(token) ? token : null
     player.pausedBefore = paused === true
+    // The session kept with the socket (a hibernation wake); none from an older attachment.
+    player.session = cleanSession(session)
     this.players.set(peer, player)
     this.nextId = Math.max(this.nextId, info.id + 1)
   }
@@ -864,6 +949,8 @@ export class Room {
       const drop = cleanDropReport((msg as { drop?: unknown }).drop)
       logEvent('rejoin', { room: this.tag, player: player.info.id, from: player.heldUntil ? 'held' : 'quiet', ...(drop ? Object.fromEntries(Object.entries(drop).map(([k, v]) => [`drop${k[0].toUpperCase()}${k.slice(1)}`, v])) : {}) })
       player.heldUntil = 0
+      player.droppedAt = undefined
+      if (player.session) player.session.rejoins++
       if (msg.play === false) player.info.play = false
       else delete player.info.play
       player.page = page
@@ -876,6 +963,8 @@ export class Room {
       return
     }
     if (this.players.size >= this.maxPlayers) {
+      // Launch analytics: a refusal is a handoff into a parallel universe for current clients.
+      this.track('room_full', { ...commonOfHello(msg, this.geo.get(peer) ?? NO_GEO), recipe: this.presence().recipeId ?? '', roomKind: roomKind(this.name) })
       this.sendTo(peer, { type: 'error', message: 'room is full' })
       peer.close(4001, 'full')
       return
@@ -922,6 +1011,7 @@ export class Room {
     player.page = player.token ? page : null
     this.players.set(peer, player)
     this.scores[info.id] = 0
+    this.beginSession(peer, player, msg)
 
     if (!this.it || !this.byId(this.it)) this.it = info.id
     if (!this.host || !this.byId(this.host)) {
@@ -998,7 +1088,14 @@ export class Room {
     // Pausing or resuming is kept with the room's roster, so a rebuilt room counts this player
     // right before their next state (see pausedOf); written lazily, see PAUSE_PERSIST_MS.
     if (Boolean(state.paused) !== wasPaused && player.token && this.rejoinOn()) this.pauseUnsaved = true
+    if (Boolean(state.paused) !== wasPaused && player.session) {
+      sessionPaused(player.session, this.now(), Boolean(state.paused))
+      player.sessionVersion = (player.sessionVersion ?? 0) + 1
+    }
     if (this.pauseUnsaved && this.now() - this.activePersistedAt >= PAUSE_PERSIST_MS) this.persist()
+    // Sessions (launch analytics) ride in the roster: keep it at most ACTIVE_PERSIST_MS behind
+    // while anyone plays, in every mode (tickIdle's write runs only on a room's clock).
+    else if (this.analytics && this.rejoinOn() && this.now() - this.activePersistedAt >= ACTIVE_PERSIST_MS) this.persist()
     const speed = leewaySpeed(state.v)
     if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {
       player.fast = speed
@@ -1150,6 +1247,10 @@ export class Room {
     const n = name === undefined ? player.info.name : this.rename(player, name)
     const mayPlay = play === undefined ? player.info.play !== false : play !== false
     if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1] && n === player.info.name && mayPlay === (player.info.play !== false)) return
+    if (k !== player.info.kind && player.session) {
+      sessionKind(player.session, this.now(), k)
+      player.sessionVersion = (player.sessionVersion ?? 0) + 1
+    }
     player.info.kind = k
     player.info.colors = c
     player.info.name = n
@@ -2186,4 +2287,10 @@ function isShot(s: unknown): s is ShotInfo {
     typeof o.boost === 'number' && Number.isFinite(o.boost) &&
     typeof o.t === 'number' && Number.isFinite(o.t)
   )
+}
+
+/** A refused hello's analytics fields (it has no session). */
+function commonOfHello(hello: object, geo: Geo): Common {
+  const f = cleanFacts(hello)
+  return { channel: geo.channel, build: f.build, recipe: '', roomKind: '', device: f.device, backend: f.backend, country: geo.country, continent: geo.continent, aid: f.aid }
 }

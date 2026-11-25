@@ -59,6 +59,8 @@ export interface PhysicsWasmOptions {
   /** Calls `listener` when the browser comes back online; returns the unsubscribe. Default: the window's online event. */
   onOnline?: (listener: () => void) => () => void
 }
+/** Launch analytics hooks (src/net/analytics.ts, set in main.ts): a retry, a failed round. */
+export const physicsLoadEvents: { retry?: (attempt: number) => void; failed?: (error: string) => void } = {}
 /** How the binary was obtained, for diagnostics. `attempts` counts requests made, `error` is the last failure. */
 export const physicsWasmLoad: { url: string | null; ms: number | null; error: string | null; attempts: number } = { url: null, ms: null, error: null, attempts: 0 }
 
@@ -88,10 +90,12 @@ export async function loadPhysicsWasm(url: string, options: PhysicsWasmOptions =
           physicsWasmLoad.error = `${url}: ${error instanceof Error ? error.message : String(error)}`
         } finally { hush = null }
         if (n === attempts) break
+        try { physicsLoadEvents.retry?.(physicsWasmLoad.attempts) } catch { /* analytics never affects loading */ }
         notice?.retrying()
         await new Promise<void>(resolve => { const timer = setTimeout(resolve, backoff(n)); wake = () => { clearTimeout(timer); resolve() } })
         wake = null
       }
+      try { physicsLoadEvents.failed?.(physicsWasmLoad.error ?? url) } catch { /* analytics never affects loading */ }
       if (!notice) throw new PhysicsLoadError(physicsWasmLoad.error ?? url)
       // Wait for the player's Try again, or the connection's return, then a fresh round.
       await new Promise<void>(resolve => { wake = resolve; notice.failed(resolve) })

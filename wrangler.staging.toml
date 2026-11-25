@@ -10,7 +10,18 @@ preview_urls = false
 [assets]
 directory = "./dist"
 binding = "ASSETS"
-run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html"]
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html", "/e"]
+
+# Launch analytics (server/analytics.ts): rows written by the room objects, the registry and
+# POST /e into Workers Analytics Engine. The dataset is created on the first write. Query it
+# with tools/analytics-report.mjs (an Account Analytics Read token). No IP address is stored.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "mira_events"
+
+[vars]
+# The channel for rows with no request hostname to read (the registry's presence snapshot).
+MIRA_CHANNEL = "beta"
 
 # Frozen versions, stored once in R2 (tools/frozen-versions.mjs archive) and read by the Worker for
 # every version but its own; deployments carry none. "/v/*" above sends a frozen page's own
