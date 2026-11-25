@@ -43,7 +43,7 @@ try {
     // Put the centre half a radius farther from the eye than the sun. The sun's depth
     // then falls inside the globe, where the historical per-pixel cutoff drew a ring.
     const centreDistance = distance + radius / 2
-    const along = (distance ** 2 + x*x + y*y + z*z - centreDistance ** 2) / (2 * distance)
+    const along = (distance ** 2 + x ** 2 + y ** 2 + z ** 2 - centreDistance ** 2) / (2 * distance)
     const turn = Math.acos((along - y * Math.sin(pitch)) / (Math.hypot(x, z) * Math.cos(pitch)))
     g.clockHold = true
     g.clock = clock
@@ -52,7 +52,11 @@ try {
       g.yaw = Math.atan2(x, z) + side * turn
       const frame = g.frames
       g.wake = 2
-      while (g.frames === frame) await new Promise(resolve => requestAnimationFrame(resolve))
+      const deadline = performance.now() + 10_000
+      while (g.frames === frame) {
+        if (performance.now() > deadline) throw Error('The held galaxy did not draw the solar-depth fixture')
+        await new Promise(resolve => requestAnimationFrame(resolve))
+      }
       const disc = g.screen[index]
       if (disc.visible && !g.screen.some(other => other !== disc && other.visible &&
           other.depth < disc.depth && Math.hypot(other.x - disc.x, other.y - disc.y) < other.radius + disc.radius)) {
@@ -61,26 +65,24 @@ try {
     }
     throw Error('Volcanic is occluded on both sides of the solar-depth test view')
   }, clock)
-  {
-    const clip = { x: Math.min(1280 - 640, Math.max(0, Math.round(world.x - 320))),
-      y: Math.min(800 - 480, Math.max(0, Math.round(world.y - 240))), width: 640, height: 480 }
-    const path = `${out}/${tag}-0-${world.id}.png`
-    const shot = await page.screenshot({ path, clip, style: '.galaxy-labels { visibility: hidden !important }' })
-    // Brightness over concentric rings of the disc, centre to 85 percent of the radius.
-    const steps = await page.evaluate(async ([data, cx, cy, r]) => {
-      const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode()
-      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
-      const c = canvas.getContext('2d'); c.drawImage(image, 0, 0)
-      const scale = image.width / 640, px = c.getImageData(0, 0, image.width, image.height)
-      const luma = (x, y) => { let sum = 0, count = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const i = (Math.round(y * scale) + dy) * image.width * 4 + (Math.round(x * scale) + dx) * 4; sum += 0.2126 * px.data[i] + 0.7152 * px.data[i + 1] + 0.0722 * px.data[i + 2]; count++ } return sum / count }
-      // A step is a jump between neighbouring ring averages: rings smooth out the surface's own
-      // detail (coasts, clouds, city lights), leaving what is painted over the whole disc.
-      const rings = []
-      for (let k = 0; k <= 17; k++) { const d = r * 0.05 * k; let sum = 0; for (let a = 0; a < 48; a++) sum += luma(cx + Math.cos(a / 48 * 6.2832) * d, cy + Math.sin(a / 48 * 6.2832) * d); rings.push(sum / 48) }
-      return { rings: rings.map(v => Math.round(v)), worst: Math.max(...rings.slice(1).map((v, i) => Math.abs(v - rings[i]))) }
-    }, [shot.toString('base64'), world.x - clip.x, world.y - clip.y, world.r])
-    report.push({ world: world.id, clock: world.clock, radiusPx: Math.round(world.r), worstRingStep: Math.round(steps.worst * 10) / 10, rings: steps.rings.join(' '), path })
-  }
+  const clip = { x: Math.min(1280 - 640, Math.max(0, Math.round(world.x - 320))),
+    y: Math.min(800 - 480, Math.max(0, Math.round(world.y - 240))), width: 640, height: 480 }
+  const path = `${out}/${tag}-0-${world.id}.png`
+  const shot = await page.screenshot({ path, clip, style: '.galaxy-labels { visibility: hidden !important }' })
+  // Brightness over concentric rings of the disc, centre to 85 percent of the radius.
+  const steps = await page.evaluate(async ([data, cx, cy, r]) => {
+    const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode()
+    const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height
+    const c = canvas.getContext('2d'); c.drawImage(image, 0, 0)
+    const scale = image.width / 640, px = c.getImageData(0, 0, image.width, image.height)
+    const luma = (x, y) => { let sum = 0, count = 0; for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { const i = (Math.round(y * scale) + dy) * image.width * 4 + (Math.round(x * scale) + dx) * 4; sum += 0.2126 * px.data[i] + 0.7152 * px.data[i + 1] + 0.0722 * px.data[i + 2]; count++ } return sum / count }
+    // A step is a jump between neighbouring ring averages: rings smooth out the surface's own
+    // detail (coasts, clouds, city lights), leaving what is painted over the whole disc.
+    const rings = []
+    for (let k = 0; k <= 17; k++) { const d = r * 0.05 * k; let sum = 0; for (let a = 0; a < 48; a++) sum += luma(cx + Math.cos(a / 48 * 6.2832) * d, cy + Math.sin(a / 48 * 6.2832) * d); rings.push(sum / 48) }
+    return { rings: rings.map(v => Math.round(v)), worst: Math.max(...rings.slice(1).map((v, i) => Math.abs(v - rings[i]))) }
+  }, [shot.toString('base64'), world.x - clip.x, world.y - clip.y, world.r])
+  report.push({ world: world.id, clock: world.clock, radiusPx: Math.round(world.r), worstRingStep: Math.round(steps.worst * 10) / 10, rings: steps.rings.join(' '), path })
   console.table(report.map(({ rings, ...row }) => row)); for (const row of report) console.log(row.world, 'ring brightness, centre to limb:', row.rings)
   assert.deepEqual(errors, [])
   if (process.env.VEIL_ASSERT !== '0') for (const row of report) if (row.world !== 'custom') assert.ok(row.worstRingStep < 12, `${row.world}: a step of ${row.worstRingStep} in brightness across its disc`)
