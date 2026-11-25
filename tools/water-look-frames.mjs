@@ -30,6 +30,9 @@ const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] :
 const out = argv[0]
 const builds = argv.slice(1).filter((a) => a.includes('=') && !a.startsWith('--')).map((a) => { const [name, dir] = a.split('='); return { name, dir } })
 const webgl = flag('--webgl'), cost = flag('--cost'), framesOnly = flag('--frames-only')
+// --preview-swell L: a labelled preview of a longer physical swell (water.waveLength L). It
+// changes the shared wave length for the page, physics included, so it is for frames only.
+const previewSwell = Number(opt('--preview-swell', '0'))
 const levels = opt('--levels', '1,4,5').split(',').map(Number)
 const sizes = opt('--sizes', '1280x800,390x844').split(',').map((s) => { const [w, h] = s.split('x').map(Number); return { width: w, height: h } })
 const views = opt('--views', 'shore,open,glitter,shallows').split(',')
@@ -46,12 +49,14 @@ for (const build of builds) {
     const phone = viewport.width < viewport.height
     const ctx = await browser.newContext(phone ? { viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport })
     const page = await ctx.newPage()
+    if (previewSwell > 0) await page.addInitScript((l) => { window.wlPreviewSwell = l }, previewSwell)
     page.on('pageerror', (e) => report.errors.push(`${build.name} ${viewport.width}: ${e.message}`))
     await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=hovercraft&planet=alpine&seed=4&room=wl${Date.now().toString(36)}&daydream=0${webgl ? '&webgl=1' : ''}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 240000 })
     const backend = await page.evaluate(() => {
       const s = window.mira
       s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0)
+      if (window.wlPreviewSwell > 0) s.params.set('water.waveLength', window.wlPreviewSwell)
       const canvas = s.game.canvas ?? document.querySelector('canvas')
       for (const el of document.body.querySelectorAll('*')) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden'
       // Spots, found once: a coast (water about 5 m deep with land 50 to 90 m to one side), open
@@ -100,7 +105,7 @@ for (const build of builds) {
       const settled = await shaderWork(page)
       for (const view of views) {
         await pose(page, view)
-        const name = `${build.name}-${report.backend}-${viewport.width}x${viewport.height}-L${level}-${view}`
+        const name = `${previewSwell > 0 ? `PREVIEW-swell${previewSwell}m-` : ''}${build.name}-${report.backend}-${viewport.width}x${viewport.height}-L${level}-${view}`
         if (!cost || !framesOnly) await page.screenshot({ path: `${out}/${name}.png` })
         if (!cost) { report.rows.push({ name, build: build.name, backend, level, view, size: `${viewport.width}x${viewport.height}` }); continue }
         const before = await shaderWork(page)

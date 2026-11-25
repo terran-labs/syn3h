@@ -20,13 +20,13 @@
 import * as THREE from 'three/webgpu'
 import {
   abs, attribute, cameraPosition, select, cameraViewMatrix, color, cos, dFdx, dFdy, faceDirection, float, max, mix, modelWorldMatrix,
-  mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
+  Fn, If, mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
 // The fragment's colour as the scene fog reads it (hazeCurve).
 import { output as fogInput } from 'three/tsl'
 import { SEA_COMPONENTS as WAVE_COUNT } from './seaWaves'
 import { rippleField } from './ripples'
-import { waterChop, waterClarity, waterReflection, waterWaveVisual } from './params'
+import { waterChop, waterClarity, waterDetail, waterGlitter, waterGusts, waterReflection, waterRipple, waterWaveVisual } from './params'
 import { clipmapNodes } from './clipmap'
 import { bentGrazing, curveInverseRadius } from '../curve'
 import { NO_BED, type WaterBed } from './bed'
@@ -87,15 +87,57 @@ export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFlo
 
 
 /**
- * Wind chop: short waves the sea mesh cannot carry as geometry, so they only tilt the light.
- * Each is [wavelength m, heading radians, steepness]. Headings cover the compass unevenly so
- * the pattern never lines up into a grid; steepness (amplitude times wavenumber) is what the
- * eye reads as roughness. Speeds follow deep water dispersion, like the swell.
+ * Wind chop and fine ripples: short waves the sea mesh cannot carry as geometry, so they only
+ * tilt the light. Each is [wavelength m, heading radians, steepness].
+ *
+ * Built so that no two of them, nor any with the swell, can beat into a lattice:
+ *  - wavelengths step by irregular ratios (0.58 to 0.66), never a simple fraction of each other;
+ *  - headings are scattered unevenly round most of the compass, not a narrow fan;
+ *  - steepness (amplitude times wavenumber) falls toward the short end, as on a real wind sea,
+ *    so the longest chop sets the texture and the ripples only add a fine sparkle on top;
+ *  - each one's phase is bent by noise with its own pair of weights (WARP), so their crests
+ *    wander independently instead of all bending together.
+ * Those under RIPPLE_LENGTH are the fine ripples: water.ripple scales them, they grow only near
+ * the camera, and the calm and rough patches act on them twice as hard. Speeds follow deep water
+ * dispersion, like the swell.
  */
-const CHOP: readonly [number, number, number][] = [
-  [7.3, 0.35, 0.050], [4.1, -0.9, 0.055], [2.6, 1.7, 0.060],
-  [1.7, -2.3, 0.060], [1.1, 2.9, 0.055], [0.7, -0.2, 0.045],
+export const CHOP: readonly [number, number, number][] = [
+  [9.1, 0.25, 0.085], [5.3, -0.7, 0.07], [3.4, 1.15, 0.058], [2.05, -1.6, 0.048],
+  [1.33, 0.6, 0.04], [0.81, 2.3, 0.034], [0.52, -0.2, 0.028], [0.33, -2.6, 0.024],
 ]
+/** Phase warp weights per CHOP component, on the two ripple noises. */
+const WARP: readonly [number, number][] = [[1.1, 0.6], [0.7, 1.6], [2.1, -0.9], [-1.4, 1.9], [2.4, 1.2], [-0.8, 2.6], [1.7, -2.2], [-2.5, -1.1]]
+/** Chop shorter than this, metres, counts as fine ripples. */
+export const RIPPLE_LENGTH = 1.5
+/** Chop longer than this also moves the vertices near the camera (visual only). */
+const DETAIL_GEOMETRY_LENGTH = 2
+/**
+ * The most the visual-only vertex detail can lift or lower the drawn sea from the surface the
+ * physics floats on, metres, at any slider setting: the bound tests/world/water-look.test.ts holds.
+ */
+export const VISUAL_DETAIL_MAX = 0.15
+/** Calm and rough patches: noise frequency (1 / metres) and how fast they change (per second). */
+const PATCH_FREQUENCY = 0.0065
+const PATCH_RATE = 0.012
+
+/**
+ * Visual-only vertex detail at (x, z) and time t, metres: the CPU twin of the shader's, for the
+ * bound test. `warpX`, `warpZ` are the two noises there (each within -1..1), `strength` the
+ * chop slider times wind times water.waveVisual, `patch` the calm (0) to rough (1) share.
+ * Normalised by the sum of the amplitudes, so it never exceeds VISUAL_DETAIL_MAX in size.
+ */
+export function visualDetailHeight(x: number, z: number, t: number, warpX: number, warpZ: number, strength: number, patch: number, near: number): number {
+  let d = 0, total = 0
+  CHOP.forEach(([length, heading, steepness], i) => {
+    if (length < DETAIL_GEOMETRY_LENGTH) return
+    const k = (Math.PI * 2) / length, a = steepness / k
+    total += a
+    d += a * Math.sin(k * (x * Math.cos(heading) + z * Math.sin(heading)) + t * Math.sqrt(9.81 * k) + warpX * WARP[i][0] + warpZ * WARP[i][1])
+  })
+  const unit = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0)
+  const scale = unit(strength) * (0.35 + 0.65 * unit(patch)) * unit(near)
+  return total > 0 ? (d / total) * VISUAL_DETAIL_MAX * scale : 0
+}
 
 /**
  * The footprint filter's ramp, in pixel footprints per wavelength: a wave is gone at
@@ -115,6 +157,11 @@ export function filteredRoughness(base: THREE.Node<'float'>, lost: THREE.Node<'f
   const a0 = base.mul(base)
   return a0.mul(a0).add(lost).sqrt().sqrt().min(1)
 }
+
+/** Share of the way from the shallow to the deep colour the lagoon's middle band sits. */
+const LAGOON_BAND = 0.45
+/** Peak slope of the noise ripple near the camera on the sea and still water. */
+const SLOPE_NOISE = 0.05
 
 /** Cosine of the critical angle of water: the edge of Snell's window seen from below. */
 const SNELL_COS = Math.cos(Math.asin(1 / 1.333))
@@ -287,27 +334,47 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const depth = surfaceY.sub(bedMap.sample(bedUv).r.add(bedFrame.z))
   const shoalHere = shoalNode(depth)
 
+  /** water.waveVisual: scales the visual-only detail and how strongly crests are picked out. */
+  const visual = uniform(waterWaveVisual.value).setGroup(renderGroup).onRenderUpdate(() => waterWaveVisual.value)
+  /** 1 where the detail layer runs (water.detail, owned by the quality level); the shader branches on it. */
+  const detailOn = uniform(1).setGroup(renderGroup).onRenderUpdate(() => (waterDetail.value ? 1 : 0))
+  const glitter = uniform(waterGlitter.value).setGroup(renderGroup).onRenderUpdate(() => waterGlitter.value)
+  const rippleStrength = uniform(waterRipple.value).setGroup(renderGroup).onRenderUpdate(() => waterRipple.value)
+  const patchiness = uniform(waterGusts.value).setGroup(renderGroup).onRenderUpdate(() => waterGusts.value)
   /**
-   * Visual-only detail near the camera: the chop below as real ripples, at most 0.15 m in all
-   * (CHOP amplitudes are steepness / k: 6, 4, 2.5, 1.6, 1 and 0.5 cm). Too small to matter to
-   * anything afloat, so the physics never sees it. Phase-warped by the same noise as the chop's
-   * normals, so the shapes you see are the ones the light picks out.
+   * Calm (0) to rough (1) patches about 150 m across that slowly change in place (they do not
+   * slide, so nothing reads as a pattern moving over the water). water.gusts 0 is rough everywhere.
+   */
+  const patchAt = (xz: THREE.Node<'vec2'>) => {
+    const n = mx_noise_float(vec3(xz.x.mul(PATCH_FREQUENCY), xz.y.mul(PATCH_FREQUENCY), time.mul(PATCH_RATE)))
+    return mix(float(1), smoothstep(-0.4, 0.45, n), patchiness)
+  }
+
+  /**
+   * Visual-only detail near the camera: the longer chop as real ripples (visualDetailHeight is
+   * its CPU twin). Normalised so it can never move the drawn sea more than VISUAL_DETAIL_MAX from
+   * the surface the physics floats on. Phase-warped by the same noise as the chop's normals, so
+   * the shapes you see are the ones the light picks out. Nothing at the levels without detail.
    */
   const detailHeight = (w: THREE.Node<'vec2'>, cell: THREE.Node<'float'>) => {
-    const near = smoothstep(80, 20, w.sub(cameraPosition.xz).length()).mul(chop).mul(visual)
+    const near = smoothstep(80, 20, w.sub(cameraPosition.xz).length())
+    const strength = chop.mul(visual).clamp(0, 1).mul(detailOn)
     const q = vec3(w.x.mul(0.3), w.y.mul(0.3), time.mul(0.6))
     const wx = mx_noise_float(q)
     const wz = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
     let d: Sum = float(0)
-    for (const [length, heading, steepness] of CHOP) {
-      const k = (Math.PI * 2) / length
-      const arg = w.x.mul(k * Math.cos(heading)).add(w.y.mul(k * Math.sin(heading))).add(time.mul(Math.sqrt(9.81 * k))).add(wx.mul(2.4)).add(wz.mul(1.3))
-      d = d.add(sin(arg).mul(steepness / k).mul(smoothstep(cell.mul(3), cell.mul(5), float(length))))
-    }
-    return d.mul(near)
+    let total = 0
+    CHOP.forEach(([length, heading, steepness], i) => {
+      if (length < DETAIL_GEOMETRY_LENGTH) return
+      const k = (Math.PI * 2) / length, a = steepness / k
+      total += a
+      const arg = w.x.mul(k * Math.cos(heading)).add(w.y.mul(k * Math.sin(heading))).add(time.mul(Math.sqrt(9.81 * k))).add(wx.mul(WARP[i][0])).add(wz.mul(WARP[i][1]))
+      // Too short for the mesh here: left to the normals (the shape stays bounded either way).
+      d = d.add(sin(arg).mul(a).mul(smoothstep(cell.mul(3), cell.mul(5), float(length))))
+    })
+    const patch = float(0.35).add(patchAt(w).mul(0.65))
+    return d.mul(VISUAL_DETAIL_MAX / total).mul(strength).mul(patch).mul(near)
   }
-  /** water.waveVisual: scales the visual-only detail and how strongly crests are picked out. */
-  const visual = uniform(waterWaveVisual.value).setGroup(renderGroup).onRenderUpdate(() => waterWaveVisual.value)
 
   // Vertex: swell, on the clipmap (clipmap.ts). Every component the shared field holds,
   // evaluated at the morphed world xz; components too short for the level's cells fade out
@@ -378,19 +445,17 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       sz = sz.add(c.mul(u.y))
       crest = crest.add(sin(arg).mul(u.w))
     }
-    // Beyond the near field the swell's slope is too gentle to see in the light, so the far
-    // sea reads as flat haze. Steepen the light (normals only; nothing afloat feels this) with
-    // distance, so distant swells show as light and dark bands. water.waveVisual scales it.
-    const farBands = float(1).add(visual.mul(1.6).mul(smoothstep(60, 350, dist)))
-    sx = sx.mul(shoalHere).mul(farBands)
-    sz = sz.mul(shoalHere).mul(farBands)
+    // No steepening with distance: the old far-field boost (up to 2.6 times) printed the
+    // swell's interference lattice to the horizon. The far sea reads by its sheen instead.
+    sx = sx.mul(shoalHere)
+    sz = sz.mul(shoalHere)
   }
 
   // Detail: small wind ripples near the camera, and on a river they run downstream.
   const flowSpeed = mode === 'river' ? attribute<'float'>('flowSpeed', 'float') : float(0)
   const steep = mode === 'river' ? attribute<'float'>('slope', 'float') : float(0)
   const drift = time.mul(0.6)
-  let rx, rz
+  let rx: Sum, rz: Sum
   if (mode === 'river') {
     // uv: x across the river in metres, y metres along it. Scroll downstream at the flow speed.
     const along = uv().y.sub(time.mul(flowSpeed))
@@ -398,9 +463,47 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     rx = mx_noise_float(q)
     rz = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
   } else {
-    const q = vec3(p.x.mul(0.3), p.z.mul(0.3), drift)
-    rx = mx_noise_float(q)
-    rz = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
+    // The sea and still water: chop and fine ripples, only where the quality level runs the
+    // detail layer (a uniform branch, so changing level builds nothing and skips the work).
+    // Sines are far cheaper than noise and give an exact slope; the two noises bend each one's
+    // phase by its own weights (WARP), so crests wander instead of marching in ranks.
+    // One shader function, so the branch has a stack to live on. Returns the detail's slope (x, z),
+    // the slope variance the footprint filter took from it, and the first noise (for foam and sheen).
+    const detail = Fn(() => {
+      const nx = float(0).toVar(), cx = float(0).toVar(), cz = float(0).toVar(), lostDetail = float(0).toVar()
+      If(detailOn.greaterThan(0.5), () => {
+        const q = vec3(p.x.mul(0.3), p.z.mul(0.3), drift)
+        const n1 = mx_noise_float(q), n2 = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
+        nx.assign(n1)
+        const patch = patchAt(p.xz)
+        const still = mode === 'still' ? 0.45 : 1
+        // Chop is never fully calm (35 per cent in a lull); ripples die in a lull and grow near the camera.
+        const chopShare = chop.mul(still).mul(float(0.35).add(patch.mul(0.65)))
+        const rippleShare = chop.mul(still).mul(rippleStrength).mul(patch.mul(patch)).mul(smoothstep(160, 25, dist))
+        // Glitter: the share of each wave's slope kept as a sharp facet; the rest roughens (filteredRoughness).
+        const facet = mix(float(0.45), float(1), glitter)
+        const add = (gx: THREE.Node<'float'>, gz: THREE.Node<'float'>, length: number, slope: THREE.Node<'float'>, keep: THREE.Node<'float'>) => {
+          lostDetail.addAssign(slope.mul(slope).mul(0.5).mul(float(1).sub(keep.mul(keep))))
+          cx.addAssign(gx.mul(slope).mul(keep))
+          cz.addAssign(gz.mul(slope).mul(keep))
+        }
+        CHOP.forEach(([length, heading, steepness], i) => {
+          const k = (Math.PI * 2) / length
+          const dx = Math.cos(heading), dz = Math.sin(heading)
+          const arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(n1.mul(WARP[i][0])).add(n2.mul(WARP[i][1]))
+          const c = cos(arg)
+          add(c.mul(dx), c.mul(dz), length, (length < RIPPLE_LENGTH ? rippleShare : chopShare).mul(steepness), resolved(length).mul(facet))
+        })
+        // A little noise in the slope near the camera; its features are about 3 m across (1 / 0.3).
+        add(n1, n2, 3, near.mul(SLOPE_NOISE), resolved(3))
+      })
+      return vec4(cx, cz, lostDetail, nx)
+    })()
+    lost = lost.add(detail.z)
+    sx = sx.add(detail.x)
+    sz = sz.add(detail.y)
+    rx = detail.w
+    rz = float(0)
   }
   // The simulated ripples round the camera (water.ripples): vehicle wakes and splashes. Zero
   // outside their window and while they are off. Seen in the lighting, on still water too.
@@ -409,33 +512,12 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     sx = sx.sub(ripple.x.div(ripple.y))
     sz = sz.sub(ripple.z.div(ripple.y))
   }
-  const rippleGain = mode === 'river' ? float(0.18).add(steep.mul(0.6)) : float(0.07)
-  // The noise's features are about 3 m across (1 / 0.3), and as short along a river.
-  const rippleKeep = filtered(mode === 'river' ? 2.5 : 3, rippleGain.mul(near))
-  sx = sx.add(rx.mul(rippleGain).mul(near).mul(rippleKeep))
-  sz = sz.add(rz.mul(rippleGain).mul(near).mul(rippleKeep))
-  // Chop: sines are far cheaper than noise and give an exact slope. The noise above bends
-  // their phase so crests wander instead of marching in ranks. Each fades out before it
-  // would be smaller than a pixel, shortest first.
-  let chopSlope: Sum = float(0)
-  if (mode !== 'river') {
-    let cx: Sum = float(0)
-    let cz: Sum = float(0)
-    const still = mode === 'still' ? 0.45 : 1
-    for (const [length, heading, steepness] of CHOP) {
-      const k = (Math.PI * 2) / length
-      const dx = Math.cos(heading)
-      const dz = Math.sin(heading)
-      const arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(rx.mul(2.4)).add(rz.mul(1.3))
-      const c = cos(arg).mul(steepness * still).mul(filtered(length, chop.mul(steepness * still)))
-      cx = cx.add(c.mul(dx))
-      cz = cz.add(c.mul(dz))
-    }
-    cx = cx.mul(chop)
-    cz = cz.mul(chop)
-    sx = sx.add(cx)
-    sz = sz.add(cz)
-    chopSlope = cx.mul(cx).add(cz.mul(cz)).sqrt()
+  // On a river, the noise is its running texture: features about 2.5 m long.
+  if (mode === 'river') {
+    const rippleGain = float(0.18).add(steep.mul(0.6))
+    const rippleKeep = filtered(2.5, rippleGain.mul(near))
+    sx = sx.add(rx.mul(rippleGain).mul(near).mul(rippleKeep))
+    sz = sz.add(rz.mul(rippleGain).mul(near).mul(rippleKeep))
   }
 
   // Lit as the slope says, flipped when seen from below.
@@ -447,10 +529,18 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // What the water itself sends back: the shallow tint where little of it lies along the
   // sight line, the deep colour once the line has crossed about a clarity's worth.
   // A river is a few metres deep at most: it darkens over its own depths, so its pools read deep.
-  const body = mix(shallowColour, deepColour, smoothstep(0.3, mode === 'river' ? 9 : 16, waterPath(depth)))
-  // Crests catch the light: a step toward the shallow colour, brightened.
-  // Steep little faces let light through their thin tops: the same lift, from the chop.
-  const lifted = mix(body, shallowColour.mul(1.15), max(smoothstep(0.2, 1, crestN).mul(0.35), smoothstep(0.05, 0.22, chopSlope).mul(0.3)))
+  // The sea grades as a lagoon does: the shallow colour holds over the first few metres (with the
+  // bed showing through, from the opacity), eases to a band between the planet's two colours, and
+  // drops to the deep colour past the shelf. Both colours are the planet's own, so a murky world
+  // stays murky. A river keeps its short ramp.
+  const path = waterPath(depth)
+  const grade = mode === 'river'
+    ? smoothstep(0.3, 9, path)
+    : smoothstep(1.5, 9, path).mul(LAGOON_BAND).add(smoothstep(9, 30, path).mul(1 - LAGOON_BAND))
+  const body = mix(shallowColour, deepColour, grade)
+  // Swell crests catch the light: a step toward the shallow colour, brightened. Only the swell:
+  // when the chop lifted the colour too, every small cell was printed into the water's body.
+  const lifted = mix(body, shallowColour.mul(1.15), smoothstep(0.2, 1, crestN).mul(0.25).mul(visual.min(1.5)))
 
   // Foam.
   const breakup = mx_noise_float(vec3(p.x.mul(0.12), p.z.mul(0.12), drift.mul(0.5))).mul(0.5).add(0.5)
