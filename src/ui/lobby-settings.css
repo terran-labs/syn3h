@@ -32,6 +32,7 @@
    so it reads as a link: a fine underline, a small arrow after it, brighter under the pointer, and
    a 44 px target round the small type. A hook for the Updates view (data-lobby-version). */
 .lobby-version-dock { position: fixed; display: grid; justify-items: start; z-index: 30; left: max(6px, calc(env(safe-area-inset-left) - 8px)); bottom: max(2px, calc(env(safe-area-inset-bottom) - 10px)); pointer-events: none; }
+.mira-shell.exploration-ui:has(.lobby-settings-host) .lobby-version-dock { visibility: hidden; }
 .lobby-version-dock :is(button, a) { pointer-events: auto; }
 .lobby-version-dock .lobby-community { display: flex; align-items: center; gap: 4px; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-community a {
@@ -42,7 +43,7 @@
   text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8));
 }
 .lobby-version-dock .lobby-community svg {
-  width: 20px; height: 20px; flex: none; fill: #fff;
+  width: 20px; height: 20px; flex: none; fill: currentColor;
 }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-community a:is(:hover, :focus-visible) { color: #fff; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-community a:hover { outline: var(--control-hover-outline); outline-offset: -4px; }

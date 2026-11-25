@@ -12,7 +12,10 @@ const links = [
   ['Mira on GitHub', 'https://github.com/terran-labs/syn3h'],
   ['Terran Labs', 'https://terranlabs.com'],
 ]
-const profiles = [[320, 568], [390, 844], [844, 390], [1440, 900]]
+const profiles = [[320, 568], [390, 844], [844, 390], [1280, 800], [1440, 900]]
+const requested = process.argv.slice(3)
+const selected = profiles.filter(([width, height]) => !requested.length || requested.includes(`${width}x${height}`))
+assert.ok(selected.length, 'at least one requested viewport must match')
 const report = []
 const failures = []
 await mkdir(out, { recursive: true })
@@ -25,7 +28,7 @@ try {
   await server.listen()
   const address = server.resolvedUrls.local[0]
   browser = await chromium.launch({ channel: 'chrome', args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
-  for (const [width, height] of profiles) {
+  for (const [width, height] of selected) {
     const id = `${width}x${height}`
     const touch = width < 900
     const context = await browser.newContext({
@@ -41,7 +44,8 @@ try {
     page.setDefaultTimeout(7000)
     const measurements = { id }
     try {
-      await page.goto(address + '?webgl=1&tap=0&intro=0')
+      await page.goto(address + '?webgl=1&tap=0&intro=0', { waitUntil: 'domcontentloaded', timeout: 90000 })
+      await page.locator('html[data-boot="done"]').waitFor({ state: 'attached', timeout: 90000 })
       const version = page.locator('[data-lobby-version]')
       await version.waitFor({ timeout: 45000 })
       const nav = page.getByRole('navigation', { name: 'Mira community' })
@@ -95,6 +99,19 @@ try {
       await page.keyboard.press('Escape')
       await nav.waitFor()
       assert.ok(await version.evaluate(button => button === document.activeElement), 'Updates returns focus to the version button')
+      await page.locator('.lobby-about').click()
+      await page.locator('.lobby-sheet-about[open]').waitFor()
+      assert.equal(await version.isVisible() || await nav.isVisible(), false, 'Welcome hides the entire version dock')
+      if (width === 390) await page.screenshot({ path: resolve(out, id + '-welcome.png') })
+      await page.keyboard.press('Escape')
+      await version.waitFor()
+
+      await page.locator('.lobby-gear').click()
+      await page.locator('.lobby-settings').waitFor()
+      assert.equal(await version.isVisible() || await nav.isVisible(), false, 'Settings hides the entire version dock')
+      await page.keyboard.press('Escape')
+      await version.waitFor()
+
       const { dock, gear, targets } = measurements
       assert.ok(dock.left >= 0 && dock.right <= width && dock.top >= 0 && dock.bottom <= height)
       assert.ok(dock.right <= gear.left || dock.left >= gear.right || dock.bottom <= gear.top || dock.top >= gear.bottom,
