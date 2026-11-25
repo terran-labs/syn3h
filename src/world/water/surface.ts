@@ -19,7 +19,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  abs, attribute, cameraPosition, select, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
+  abs, attribute, cameraPosition, select, cameraViewMatrix, color, cos, dFdx, dFdy, faceDirection, float, max, mix, modelWorldMatrix,
   mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
 // The fragment's colour as the scene fog reads it (hazeCurve).
@@ -96,6 +96,25 @@ const CHOP: readonly [number, number, number][] = [
   [7.3, 0.35, 0.050], [4.1, -0.9, 0.055], [2.6, 1.7, 0.060],
   [1.7, -2.3, 0.060], [1.1, 2.9, 0.055], [0.7, -0.2, 0.045],
 ]
+
+/**
+ * The footprint filter's ramp, in pixel footprints per wavelength: a wave is gone at
+ * FOOTPRINT_GONE (a little above the two a pixel grid can sample at all) and whole from
+ * FOOTPRINT_WHOLE. Between them it fades, and what it loses roughens the surface instead.
+ */
+export const FOOTPRINT_GONE = 2.5
+export const FOOTPRINT_WHOLE = 7
+
+/**
+ * Roughness for a surface whose base roughness is `base` and from which the footprint filter
+ * removed slope variance `lost` (summed over both axes). GGX alpha is roughness squared, and
+ * alpha squared is the variance of the microfacet slopes, so the removed variance adds to it:
+ * alpha = sqrt(alpha0^2 + lost). The usual Toksvig-style correction, done on known sines.
+ */
+export function filteredRoughness(base: THREE.Node<'float'>, lost: THREE.Node<'float'>) {
+  const a0 = base.mul(base)
+  return a0.mul(a0).add(lost).sqrt().sqrt().min(1)
+}
 
 /** Cosine of the critical angle of water: the edge of Snell's window seen from below. */
 const SNELL_COS = Math.cos(Math.asin(1 / 1.333))
@@ -325,6 +344,24 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // distance so they do not shimmer.
   const dist = p.sub(cameraPosition).length()
   const near = smoothstep(500, 60, dist)
+  // The footprint filter. A pixel covers `footprint` metres of water along the screen axis that
+  // covers the most (at a grazing view that is the axis toward the horizon, many times the other).
+  // A wave shorter than a few footprints cannot be drawn: summed into the normal it aliases into
+  // the hatch and the streaks the owner saw. Each wave is faded by `resolved(length)` instead, and
+  // the slope it would have given (its variance, slope amplitude squared over two) goes to
+  // `lost`, which roughens the surface by exactly that much (filteredRoughness): the far sea turns
+  // to a sheen that keeps the brightness of the detail it can no longer show. By footprint, not by
+  // distance, so a low camera, a high one and any screen resolution are each filtered for what
+  // they actually resolve.
+  const footprint = max(dFdx(p.xz).length(), dFdy(p.xz).length()).max(1e-4)
+  const resolved = (length: THREE.Node<'float'> | number) => smoothstep(footprint.mul(FOOTPRINT_GONE), footprint.mul(FOOTPRINT_WHOLE), length)
+  let lost: Sum = float(0)
+  /** Fade one wave's slope (s, its peak slope) by the filter and record what was removed. */
+  const filtered = (length: THREE.Node<'float'> | number, s: THREE.Node<'float'>) => {
+    const w = resolved(length)
+    lost = lost.add(s.mul(s).mul(0.5).mul(float(1).sub(w.mul(w))))
+    return w
+  }
   let sx: Sum = float(0)
   let sz: Sum = float(0)
   let crest: Sum = float(0)
@@ -334,7 +371,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       const arg = u.x.mul(p.x).add(u.y.mul(p.z)).add(u.z)
       // Geometric components at full strength, light-only ones fade out with distance.
       const a = u.w.add(shadeAmp[i].sub(u.w).mul(smoothstep(900, 150, dist)))
-      const c = cos(arg).mul(a)
+      const k = vec2(u.x, u.y).length()
+      const w = filtered(float(Math.PI * 2).div(k.max(1e-4)), a.mul(k))
+      const c = cos(arg).mul(a).mul(w)
       sx = sx.add(c.mul(u.x))
       sz = sz.add(c.mul(u.y))
       crest = crest.add(sin(arg).mul(u.w))
@@ -371,8 +410,10 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     sz = sz.sub(ripple.z.div(ripple.y))
   }
   const rippleGain = mode === 'river' ? float(0.18).add(steep.mul(0.6)) : float(0.07)
-  sx = sx.add(rx.mul(rippleGain).mul(near))
-  sz = sz.add(rz.mul(rippleGain).mul(near))
+  // The noise's features are about 3 m across (1 / 0.3), and as short along a river.
+  const rippleKeep = filtered(mode === 'river' ? 2.5 : 3, rippleGain.mul(near))
+  sx = sx.add(rx.mul(rippleGain).mul(near).mul(rippleKeep))
+  sz = sz.add(rz.mul(rippleGain).mul(near).mul(rippleKeep))
   // Chop: sines are far cheaper than noise and give an exact slope. The noise above bends
   // their phase so crests wander instead of marching in ranks. Each fades out before it
   // would be smaller than a pixel, shortest first.
@@ -386,7 +427,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       const dx = Math.cos(heading)
       const dz = Math.sin(heading)
       const arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(rx.mul(2.4)).add(rz.mul(1.3))
-      const c = cos(arg).mul(steepness * still).mul(smoothstep(length * 45, length * 8, dist))
+      const c = cos(arg).mul(steepness * still).mul(filtered(length, chop.mul(steepness * still)))
       cx = cx.add(c.mul(dx))
       cz = cz.add(c.mul(dz))
     }
@@ -496,7 +537,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // a mirror would sparkle and alias.
   // Seen from below the surface is not a sky mirror (Snell's window above is the sky): fully
   // rough there, so the full-strength reflection capture cannot light the underside.
-  const glassy = float(0.05).add(foam.mul(0.6)).add(abs(rx).mul(0.03)).add(smoothstep(80, 900, dist).mul(0.16))
+  const glassy = filteredRoughness(float(0.05).add(foam.mul(0.6)).add(abs(rx).mul(0.03)), lost)
   material.roughnessNode = mix(float(1), glassy, faceDirection.mul(0.5).add(0.5))
   // Roughness alone still lets the capture light the underside as a blurred blue sky. Under
   // water the surface outside Snell's window reflects the dark water below, so occlude nearly
