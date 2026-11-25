@@ -19,10 +19,6 @@ run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.j
 binding = "ANALYTICS"
 dataset = "mira_events"
 
-[vars]
-# The channel for rows with no request hostname to read (the registry's presence snapshot).
-MIRA_CHANNEL = "beta"
-
 # Frozen versions, stored once in R2 (tools/frozen-versions.mjs archive) and read by the Worker for
 # every version but its own; deployments carry none. "/v/*" above sends a frozen page's own
 # /v/<version>/... addresses to the Worker. The Worker only reads it (server/worker.ts, FrozenBucket). Staging reads the same bucket, so it proves the real archive,

@@ -75,8 +75,6 @@ interface Env {
   FROZEN?: FrozenBucket
   /** Launch analytics dataset (server/analytics.ts); absent in tests and local runs that omit it. */
   ANALYTICS?: AnalyticsSink
-  /** "beta" or "production", for rows with no request to read a hostname from (presence). */
-  MIRA_CHANNEL?: string
 }
 
 interface Attachment {
@@ -368,7 +366,8 @@ export class RoomDO {
   /** Counting never blocks gameplay; hold the event alive until ordered delivery finishes. */
   private report(room: Room): void {
     const { seed, ...presence } = room.presence()
-    this.state.waitUntil(this.reporter.report({ room: room.name, ...presence }, seed))
+    // The channel its players connected through (launch analytics' presence rows), if known.
+    this.state.waitUntil(this.reporter.report({ room: room.name, ...presence, ...(this.channel ? { channel: this.channel } : {}) }, seed))
   }
 
   /** Only on the registry instance: the counts, loaded from storage on first use. */
@@ -377,21 +376,34 @@ export class RoomDO {
   private countsSavedAt = -Infinity
   /** Only on the registry instance: when the last presence snapshot was written (ms). */
   private presenceAt = -Infinity
+  /** Only on the registry instance, in memory: each room's channel, from its reports. */
+  private readonly channels = new Map<string, string>()
+  /** On a room: the channel its latest connection came through (GEO_HEADER). */
+  private channel = ''
 
   /**
    * Launch analytics: players and active players per planet, at most once per
    * PRESENCE_SNAPSHOT_MS, on report traffic (no timer: with nobody playing there is nothing
-   * to write, and zero is read from the absence). At most one row per planet (a dozen or so).
+   * to write, and zero is read from the absence). At most one row per planet and channel
+   * (a dozen or so), the channel being the one each room's players connected through.
    */
   private presenceSnapshot(registry: RoomRegistry): void {
     const now = Date.now()
     if (!this.env.ANALYTICS || now - this.presenceAt < PRESENCE_SNAPSHOT_MS) return
     this.presenceAt = now
     try {
-      const channel = this.env.MIRA_CHANNEL === 'beta' || this.env.MIRA_CHANNEL === 'production' ? this.env.MIRA_CHANNEL : ''
-      for (const g of registry.presence(now).byRecipe.slice(0, 50)) {
-        this.env.ANALYTICS.writeDataPoint(dataPoint('presence', { channel, build: '', recipe: g.recipeId ?? '', roomKind: '', device: '', backend: '', country: '', continent: '', aid: '' },
-          { players: g.players, active: g.active ?? g.players, rooms: g.rooms }))
+      // One row per planet and channel (the channel each room's players connected through).
+      const groups = new Map<string, { recipe: string; channel: string; players: number; active: number; rooms: number }>()
+      for (const [room, e] of registry.live(now)) {
+        const channel = this.channels.get(room) ?? '', recipe = e.recipeId ?? ''
+        const g = groups.get(`${recipe} ${channel}`) ?? { recipe, channel, players: 0, active: 0, rooms: 0 }
+        g.players += e.players; g.active += e.active ?? e.players; g.rooms++
+        groups.set(`${recipe} ${channel}`, g)
+      }
+      for (const room of this.channels.keys()) if (!registry.has(room)) this.channels.delete(room)
+      for (const g of [...groups.values()].slice(0, 50)) {
+        this.env.ANALYTICS.writeDataPoint(dataPoint('presence', { channel: g.channel, build: '', recipe: g.recipe, roomKind: '', device: '', backend: '', country: '', continent: '', aid: '' },
+          { players: g.players, active: g.active, rooms: g.rooms }))
       }
     } catch { /* never affects the registry */ }
   }
@@ -405,9 +417,10 @@ export class RoomDO {
     this.registryReady ??= this.state.storage.get<Record<string, RegistryEntry>>('counts').then(saved => new RoomRegistry(saved))
     const registry = await this.registryReady
     if (path === '/report' && req.method === 'POST') {
-      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown } | null
+      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown; channel?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
         const durability = registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
+        if (body.channel === 'beta' || body.channel === 'production') this.channels.set(body.room, body.channel)
         this.presenceSnapshot(registry)
         if (durability === 'save' || (durability === 'later' && Date.now() - this.countsSavedAt >= ACTIVE_SAVE_MS)) {
           this.countsSavedAt = Date.now()
@@ -430,7 +443,9 @@ export class RoomDO {
     const server = pair[1]
     this.state.acceptWebSocket(server)
     server.serializeAttachment({ room: name, at: Date.now() } satisfies Attachment)
-    room.setGeo(this.peer(server), geoFromHeader(req.headers.get(GEO_HEADER)))
+    const geo = geoFromHeader(req.headers.get(GEO_HEADER))
+    if (geo.channel) this.channel = geo.channel
+    room.setGeo(this.peer(server), geo)
     room.connect(this.peer(server))
     logEvent('socket_open', { room: room.tag, sockets: this.state.getWebSockets().length })
     return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit)

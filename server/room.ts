@@ -1095,6 +1095,11 @@ export class Room {
     if (this.pauseUnsaved && this.now() - this.activePersistedAt >= PAUSE_PERSIST_MS) this.persist()
     // Sessions (launch analytics) ride in the roster: keep it at most ACTIVE_PERSIST_MS behind
     // while anyone plays, in every mode (tickIdle's write runs only on a room's clock).
+    // Cost, new write load: an Explore room with one player for an hour writes its snapshot
+    // at most 120 times (one per ACTIVE_PERSIST_MS, sharing that clock with the pause and
+    // activity writes, so never more than two a minute in all). Each write is one storage put
+    // of the snapshot: about 4 to 5 KB (some 150 world settings at about 23 bytes each, plus
+    // about 600 bytes per roster entry with its session), so roughly 0.5 to 0.6 MB an hour.
     else if (this.analytics && this.rejoinOn() && this.now() - this.activePersistedAt >= ACTIVE_PERSIST_MS) this.persist()
     const speed = leewaySpeed(state.v)
     if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {

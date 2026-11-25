@@ -131,7 +131,12 @@ export function roomKind(name: string): 'public' | 'universe' | 'private' {
   return 'private'
 }
 
-/** Beta on beta.* and any workers.dev address (the staging Worker); production elsewhere. */
+/**
+ * Beta on beta.* and any workers.dev address (the staging Worker); production elsewhere.
+ * A copy of feat/beta-channel's rule (shared/channel.ts channelOf), kept here so the two
+ * branches do not depend on each other: when both have merged, keep shared/channel.ts and
+ * import it here instead.
+ */
 export function channelOf(hostname: string): 'beta' | 'production' {
   const h = hostname.toLowerCase()
   return h.startsWith('beta.') || h.endsWith('.workers.dev') ? 'beta' : 'production'

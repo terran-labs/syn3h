@@ -80,6 +80,15 @@ export class RoomRegistry {
     return activeOnly ? 'later' : 'save'
   }
 
+  /** Rooms with a report younger than the presence TTL, for launch analytics. */
+  live(now: number): [string, RegistryEntry][] {
+    return [...this.entries].filter(([, e]) => now - e.at < PRESENCE_TTL_MS && e.at <= now)
+  }
+
+  has(room: string): boolean {
+    return this.entries.has(room)
+  }
+
   totals(now: number): Totals {
     let rooms = 0
     let players = 0

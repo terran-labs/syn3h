@@ -5,7 +5,7 @@
 //   node tools/analytics-report.mjs [--since 24h|7d|2026-11-25] [--channel beta|production|all]
 //
 // Token: an API token with Account | Account Analytics | Read, one line, mode 600, in the file
-// MIRA_ANALYTICS_TOKEN_FILE (default ~/.config/syn3h/analytics-token). Never on the command line
+// MIRA_ANALYTICS_TOKEN_FILE (default ~/.config/syn3h/cloudflare-analytics-token). Never on the command line
 // and never printed. The account is MIRA_CF_ACCOUNT_ID, or read from the zone; the zone is
 // MIRA_ZONE_ID, or looked up by name (that lookup needs Zone | Zone | Read).
 //
@@ -132,7 +132,7 @@ export function format(r, window) {
 // ---------------------------------------------------------------------------------------------
 // Cloudflare access. The token is read from its file and only ever placed in a header.
 
-export function readToken(file = process.env.MIRA_ANALYTICS_TOKEN_FILE || join(homedir(), '.config/syn3h/analytics-token')) {
+export function readToken(file = process.env.MIRA_ANALYTICS_TOKEN_FILE || join(homedir(), '.config/syn3h/cloudflare-analytics-token')) {
   try { return readFileSync(file, 'utf8').replace(/[\r\n]/g, '') } catch { return '' }
 }
 
@@ -172,7 +172,7 @@ export async function main(argv = process.argv.slice(2), fetcher = fetch, out = 
   const arg = (name, dflt) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : dflt }
   const since = arg('--since', '24h'), channel = arg('--channel', 'production')
   sinceSql(since)
-  if (!token) { out('No token: put an Account Analytics Read token in ~/.config/syn3h/analytics-token (or MIRA_ANALYTICS_TOKEN_FILE).'); return 1 }
+  if (!token) { out('No token: put an Account Analytics Read token in ~/.config/syn3h/cloudflare-analytics-token (or MIRA_ANALYTICS_TOKEN_FILE).'); return 1 }
   let account = process.env.MIRA_CF_ACCOUNT_ID ?? '', zone = process.env.MIRA_ZONE_ID ?? ''
   if (!account || !zone) {
     const z = await api(fetcher, token, '/zones?name=mira.cc')

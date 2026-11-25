@@ -327,3 +327,27 @@ describe('client posts and the Worker', () => {
     expect(() => room.disconnect(a)).not.toThrow()
   })
 })
+
+describe('the registry presence snapshot', () => {
+  // Bug: presence rows stamped with a fixed channel, so beta traffic counted as production.
+  it('writes one row per planet and channel, from the channel each room reported', async () => {
+    let clock = 9_000_000
+    vi.spyOn(Date, 'now').mockImplementation(() => clock)
+    const { rows, sink } = recorder()
+    const store = new Map<string, unknown>()
+    const s = {
+      storage: { get: async (k: string) => store.get(k), put: async (k: string, v: unknown) => { store.set(k, v) }, deleteAll: async () => {}, setAlarm: async () => {} },
+      waitUntil: () => {}, acceptWebSocket: () => {}, getWebSockets: () => [], blockConcurrencyWhile: async <T>(fn: () => Promise<T>) => fn(),
+    }
+    const registry = new RoomDO(s as never, { ANALYTICS: sink } as never)
+    const report = (room: string, players: number, channel: string) =>
+      registry.fetch(new Request('https://registry/report', { method: 'POST', body: JSON.stringify({ room, players, active: players, recipeId: 'alpine', channel }) }))
+    await report('lobby', 3, 'production')
+    await report('p-' + 'a'.repeat(22), 2, 'beta')
+    expect(by(rows, 'presence')).toHaveLength(1) // the first report wrote the snapshot of what it knew
+    clock += 60_000
+    await report('lobby', 4, 'production')
+    const latest = by(rows, 'presence').slice(1)
+    expect(latest.map((r) => [r.blobs[1], r.blobs[3], r.doubles[4]]).sort()).toEqual([['beta', 'alpine', 2], ['production', 'alpine', 4]])
+  })
+})

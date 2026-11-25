@@ -2,7 +2,7 @@ import { PRESENCE_REFRESH_MS } from './registry'
 import type { RecipeId } from '../shared/recipes'
 
 /** `active`: connected players not paused (server/room.ts presence); absent from older rooms. */
-export interface RoomPresenceReport { room: string; players: number; active?: number; recipeId: RecipeId | null }
+export interface RoomPresenceReport { room: string; players: number; active?: number; recipeId: RecipeId | null; channel?: string }
 interface Pending { report: RoomPresenceReport; core: string; active: number | undefined }
 
 /**
