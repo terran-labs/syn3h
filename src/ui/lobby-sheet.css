@@ -51,6 +51,19 @@
   .mira-shell.exploration-ui .lobby-sheet .about-columns { grid-template-columns: 1fr; gap: 16px; }
 }
 
+/* Welcome: the X stays where it is while the guide scrolls, so the top fade deepens as the guide
+   scrolls, down to just below the X (--sheet-lift, LobbySheet), and nothing reads under the X: a
+   picture fades out before it reaches it. At the top nothing moves (the fade is as on every sheet).
+   On a phone held upright the column is centred, the pictures its full width, with the X above
+   them at the right of the title row; held on its side the column keeps its lane clear of the X
+   and the carousel stays inside the column (welcome.css), so the fade stays shallow there. */
+.lobby-sheet-about .lobby-sheet-body {
+  -webkit-mask-image: linear-gradient(180deg, transparent var(--sheet-lift, 0px), #000 calc(var(--sheet-lift, 0px) + 28px), #000 calc(100% - 44px), transparent);
+  mask-image: linear-gradient(180deg, transparent var(--sheet-lift, 0px), #000 calc(var(--sheet-lift, 0px) + 28px), #000 calc(100% - 44px), transparent);
+}
+@media (max-width: 600px) and (min-height: 501px) { .lobby-sheet-about .lobby-sheet-body { padding-right: 12px; } }
+@media (max-height: 500px) { .lobby-sheet-about .lobby-sheet-body { -webkit-mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent); } }
+
 /* Text behind the sheet would read through it and tangle with the sheet's own: the planet
    captions, the corner icons, the hint, the lobby's buttons and the update banner step aside
    while one is open. Only the sun and the stars stay, dimmed. */

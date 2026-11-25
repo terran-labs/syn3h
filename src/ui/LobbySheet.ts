@@ -104,6 +104,13 @@ export class LobbySheet {
     }, { capture: true, signal })
     this.element.addEventListener('keydown', event => { if (this.shown) event.stopPropagation() }, { signal })
     window.addEventListener('resize', () => { if (this.shown) this.layout() }, { signal })
+    // How far the contents have scrolled, up to the X's foot, as --sheet-lift: a sheet may deepen
+    // its top fade by it so nothing scrolls under the X (Welcome, lobby-sheet.css).
+    let lift = -1
+    this.body.addEventListener('scroll', () => {
+      const next = Math.round(Math.min(this.body.scrollTop, this.close_.offsetTop + this.close_.offsetHeight))
+      if (next !== lift) { lift = next; this.body.style.setProperty('--sheet-lift', `${next}px`) }
+    }, { passive: true, signal })
   }
 
   get isOpen(): boolean { return this.shown }
