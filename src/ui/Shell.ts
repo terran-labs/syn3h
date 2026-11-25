@@ -1861,11 +1861,15 @@ export class Shell implements System {
     caption.className = 'galaxy-caption-text'
     const label = document.createElement('strong')
     label.id = `twin-private-${world.id}`
-    label.textContent = 'Private'
-    caption.append(label)
+    label.textContent = `Your ${planetLabelText(world).name} · Private to you`
+    const detail = document.createElement('small')
+    detail.textContent = 'Friends can join by link'
+    detail.id = `twin-invite-${world.id}`
+    caption.append(label, detail)
     button.append(caption)
-    button.setAttribute('aria-labelledby', `${label.id} twin-world-${world.id}`)
-    button.title = 'Invite only'
+    button.setAttribute('aria-labelledby', label.id)
+    button.setAttribute('aria-describedby', detail.id)
+    button.title = detail.textContent
     const options = { signal: this.abort.signal }
     button.addEventListener('click', () => this.actOnTwin(world.id, 'private'), options)
     button.addEventListener('focus', () => this.galaxy?.refreshCaptions(), options)
@@ -1889,8 +1893,8 @@ export class Shell implements System {
     chooser.setAttribute('aria-labelledby', 'twin-chooser-title')
     chooser.innerHTML = `<h2 id="twin-chooser-title"></h2>
       <div class="galaxy-twin-actions">
-        <button type="button" data-action="public">Play publicly</button>
-        <button type="button" data-action="private">Play privately</button>
+        <button type="button" data-action="public">Join public</button>
+        <button type="button" data-action="private">Enter private</button>
         <button type="button">Back</button>
       </div>`
     const options = { signal: this.abort.signal }
@@ -2041,11 +2045,11 @@ export class Shell implements System {
         const name = chip.querySelector('strong')!, action = chip.querySelector('small')!
         const count = chip.querySelector('.galaxy-population')!
         name.id = `twin-world-${world.id}`
-        action.textContent = `Public · ${planetById(world.recipe ?? world.id)?.label ?? world.label}`
+        action.textContent = '· Public and shared'
         action.id = `twin-public-${world.id}`
         count.id = `twin-count-${world.id}`
         count.textContent = twinPopulationLabel(world.label, null)
-        chip.setAttribute('aria-labelledby', `${action.id} ${name.id}`)
+        chip.setAttribute('aria-labelledby', `${name.id} ${action.id}`)
         chip.setAttribute('aria-describedby', count.id)
       }
       chip.addEventListener('click', event => {
@@ -2304,7 +2308,11 @@ export class Shell implements System {
         }
       }
       const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
-      if (name.textContent !== text) name.textContent = text
+      if (name.textContent !== text) {
+        name.textContent = text
+        const twinName = this.galaxyChips.get(`${id}:private`)?.querySelector('strong')
+        if (twinName) twinName.textContent = `Your ${text} · Private to you`
+      }
       chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }

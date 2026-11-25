@@ -77,16 +77,16 @@ async function controls(page, recipe, onScreen = true) {
         if (usable(publicButton) && usable(privateButton) && publicLabel && privateLabel) {
           return {
             recipe: id,
-            public: `${publicLabel.textContent.trim()} ${name.textContent.trim()}`,
-            private: `${privateLabel.textContent.trim()} ${name.textContent.trim()}`,
+            public: `${name.textContent.trim()} ${publicLabel.textContent.trim()}`,
+            private: privateLabel.textContent.trim(),
           }
         }
       }
       return null
     }, { recipe, onScreen }, 30)
   const names = await found.jsonValue()
-  assert.match(names.public, /^Public\b/, 'the public caption identifies its action')
-  assert.match(names.private, /^Private\b/, 'the private caption identifies its action')
+  assert.match(names.public, /· Public and shared$/, 'the public caption identifies its action')
+  assert.match(names.private, /^Your .+ · Private to you$/, 'the private caption identifies its action')
   return {
     recipe: names.recipe,
     public: page.getByRole('button', { name: names.public, exact: true }),
