@@ -222,8 +222,8 @@ for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,39
   const sides=await ring.evaluate(r=>r.hasAttribute('data-sides'))
   if(sides){
    // A tap on the picture beside the front one, just past the hinge, brings it to the front.
-   const r=await ring.locator('.welcome-ring-track').boundingBox()
-   await page.mouse.click(Math.min(r.x+r.width+24,width-4),r.y+r.height/2);await expect(5,'a tap on a side picture')
+   const side=ring.locator('.welcome-ring-card').nth(5), sb=await side.boundingBox()
+   await side.click({position:{x:Math.min(24,sb.width/4),y:sb.height/2},timeout:5000});await expect(5,'a tap on a side picture')
    await settled()
   }
   // Only the front picture is offered to a screen reader; the side ones are not focusable duplicates.
@@ -238,7 +238,11 @@ for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,39
    else await ring.locator('.welcome-ring-dots').evaluate(el=>el.scrollIntoView({block:'nearest'}))
    await page.waitForTimeout(200)
    const fit=await ring.evaluate(r=>{
-    const problems=[], body=r.closest('.lobby-sheet-body').getBoundingClientRect(), clip={l:0,t:body.top,r:innerWidth,b:body.bottom}
+    const problems=[], body=r.closest('.lobby-sheet-body').getBoundingClientRect(), rr=r.getBoundingClientRect(), cs=getComputedStyle(r), reach=k=>parseFloat(cs.getPropertyValue(`--reach-${k}`))||0
+    // What can be seen: inside the sheet's scrolling body below its top fade (28 px, or once scrolled
+    // transparent down to the X's foot, --sheet-lift; lobby-sheet.css), the screen, and the ring's own clip (welcome.css).
+    const bodyEl=r.closest('.lobby-sheet-body'), lift=parseFloat(bodyEl.style.getPropertyValue('--sheet-lift'))||0
+    const clip={l:Math.max(0,rr.left-reach('left')),t:body.top+Math.max(28,lift),r:Math.min(innerWidth,rr.right+reach('right')),b:body.bottom}
     const seen=el=>{const b=el.getBoundingClientRect();const l=Math.max(b.left,clip.l),t=Math.max(b.top,clip.t),rt=Math.min(b.right,clip.r),bt=Math.min(b.bottom,clip.b);return rt-l>1&&bt-t>1?{l,t,r:rt,b:bt}:null}
     const hit=(a,b)=>a&&b&&a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1
     const box=sel=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();return b.width?{l:b.left,t:b.top,r:b.right,b:b.bottom}:null}
@@ -247,7 +251,7 @@ for(const [name,width,height] of [['phone-upright',390,844],['phone-side',844,39
     for(const el of parts){
      const b=el.getBoundingClientRect(), what=el.className
      if(!el.matches('.welcome-ring-card')&&b.width>0&&(b.left<-1||b.right>innerWidth+1))problems.push(`${what} runs off the screen`)
-     for(const [k,v] of Object.entries(keep))if(hit(seen(el),v))problems.push(`${what} overlaps the ${k}`)
+     for(const [k,v] of Object.entries(keep))if(hit(seen(el),v))problems.push(`${what} overlaps the ${k} ${JSON.stringify({seen:seen(el),[k]:v})}`)
     }
     const front=r.querySelector('.welcome-ring-card[data-slot=front]').getBoundingClientRect()
     if(front.left<-1||front.right>innerWidth+1)problems.push('the front picture runs off the screen')
