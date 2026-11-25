@@ -33,7 +33,8 @@ export function holdVeil(text: string | null, onScreen: () => boolean, doc: Docu
   const root = doc.documentElement
   const veil = doc.querySelector<HTMLElement>('.boot-veil')
   const status = doc.querySelector<HTMLElement>('.boot-status')
-  if (status && text !== null) status.textContent = text
+  // Once the veil has said it is taking a while (index.html's own watch), that warning stays.
+  if (status && text !== null && !doc.getElementById('move-reload')) status.textContent = text
   root.dataset.bootLate = ''
   root.dataset.roomMove = ''
   // The veil's 60-second failsafe animation has long finished for anyone who waited in the lobby.
