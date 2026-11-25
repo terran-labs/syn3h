@@ -37,6 +37,11 @@
  *   ?shadowColor=0      depth-only sun shadow maps: no colour target or attachment per cascade
  *   ?shadowFilter=hard  basic shadow maps: one depth compare, no filtering
  *   ?shadowFade=0       no blend between sun shadow cascades
+ *   ?presentLate=1      the canvas texture taken at the end of the frame and filled with one copy
+ *                       (core/presentLate.ts), not taken first and held across the frame
+ *   ?frameCap=30        in play, draw at most every 30 ms: about 30 frames a second
+ *   ?shadowUpdate=once  sun shadow maps drawn once and then reused (and again on a level change)
+ *   ?shadowUpdate=2     sun shadow maps drawn every second frame
  * The five shadow switches shape how shadows are drawn, not whether: with shadows off (Low, ?shadows=0,
  * or the device gate below) they change nothing. They are build choices of the shadow node, not
  * level-owned parameters, so they are read here and applied where the shadow is built
@@ -70,6 +75,10 @@ export interface FlashSwitches {
   shadowColor0: boolean
   shadowHard: boolean
   shadowFade0: boolean
+  presentLate: boolean
+  frameCap30: boolean
+  shadowOnce: boolean
+  shadowEvery2: boolean
   /** Not flash switches, but named in the same report line so every switch that is on is named. */
   gfx: number | undefined
   diag: boolean
@@ -115,6 +124,10 @@ export function readFlashSwitches(search: string): FlashSwitches {
     shadowColor0: on(q, 'shadowColor', '0'),
     shadowHard: q.get('shadowFilter') === 'hard',
     shadowFade0: on(q, 'shadowFade', '0'),
+    presentLate: on(q, 'presentLate'),
+    frameCap30: on(q, 'frameCap', '30'),
+    shadowOnce: on(q, 'shadowUpdate', 'once'),
+    shadowEvery2: on(q, 'shadowUpdate', '2'),
     gfx: graphicsOverride(search),
     diag: on(q, 'diag'),
     // Game.ts starts WebGL 2 on any ?webgl, whatever its value.
@@ -138,6 +151,7 @@ export function flashSwitchNames(s: FlashSwitches): string[] {
     s.samples1 && 'samples=1', s.lowRest && 'lowrest=1', s.freeze && 'freeze=1', s.uiFlat && 'ui=flat',
     s.frameCanary && 'frameCanary=1', s.frameProbe && 'frameProbe=1', s.canvasOpaque && 'canvasAlpha=opaque', s.presentHold && 'presentHold=1', s.canvasBackdrop && 'canvasBackdrop=1', s.shadowCascades && 'shadowCascades=' + s.shadowCascades, s.shadowMap && 'shadowMap=' + s.shadowMap,
     s.shadowColor0 && 'shadowColor=0', s.shadowHard && 'shadowFilter=hard', s.shadowFade0 && 'shadowFade=0',
+    s.presentLate && 'presentLate=1', s.frameCap30 && 'frameCap=30', s.shadowOnce && 'shadowUpdate=once', s.shadowEvery2 && 'shadowUpdate=2',
     s.gfx !== undefined && 'gfx=' + s.gfx, s.diag && 'diag=1', s.webgl && 'webgl=1',
   ].filter((name): name is string => !!name)
 }

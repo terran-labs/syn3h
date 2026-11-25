@@ -99,8 +99,17 @@ class QualitySunShadow extends CSMShadowNode {
     })()
   }
 
+  /** Frames this shadow has been asked to update, for ?shadowUpdate=2. */
+  private updates = 0
   override updateBefore(frame: THREE.NodeFrame) {
-    if (this.enabled.value) return super.updateBefore(frame)
+    if (!this.enabled.value) return
+    // ?shadowUpdate=once or =2 (core/flashSwitches.ts): which frames draw the cascades' maps.
+    // Once: the first frame only (a level change asks again through needsUpdate, buildLight).
+    // The cascade frusta still follow the camera every frame.
+    const n = this.updates++
+    const redraw = flashSwitches.shadowOnce ? n === 0 : flashSwitches.shadowEvery2 ? n % 2 === 0 : true
+    for (const cascade of this.lights) if (cascade.shadow) cascade.shadow.autoUpdate = redraw
+    return super.updateBefore(frame)
   }
 }
 

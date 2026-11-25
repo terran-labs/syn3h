@@ -267,10 +267,14 @@ effect at once or after a reload). This table is written from the switch list in
 | `?shadowColor=0` | `0` | Depth-only sun shadow maps: no colour target beside each cascade's depth. | after a reload |
 | `?shadowFilter=hard` | `hard` | Basic shadow maps: one depth comparison per pixel, no soft filtering. | after a reload |
 | `?shadowFade=0` | `0` | No blend between one sun shadow cascade and the next. | after a reload |
+| `?shadowUpdate=once` | `once` | Shadow map refresh: Shadow map refresh: Draw the sun shadow maps once and reuse them (again only on a level change), so no frame draws them. Shadows stay where they were drawn. | at once |
+| `?shadowUpdate=2` | `2` | Shadow map refresh: Shadow map refresh: Draw the sun shadow maps every second frame instead of every frame. | at once |
 | `?samples=1` | `1` | Draw the scene without multisampling. Antialias is fixed when the renderer is made. | after a reload |
 | `?webgl=1` | present, any value | Start on WebGL 2 instead of WebGPU. The backend is chosen when the renderer is made. | after a reload |
 | `?canvasAlpha=opaque` | `opaque` | Configure the canvas opaque instead of premultiplied, so the browser composites the frame without blending. The canvas is configured when the renderer is made. | after a reload |
 | `?presentHold=1` | `1` | Draw no new frame while the GPU is still working on the previous one, so the browser never hands back a picture that is still on screen to draw into. Frames skipped this way are counted in the report. | at once |
+| `?presentLate=1` | `1` | Draw the frame into a texture of our own and take the canvas's texture only at the end, filling it with one copy in a submit of its own, instead of taking it first and holding it while the shadows and the scene are drawn. One extra full-screen copy per frame. Installed when the renderer is made; WebGPU only. | after a reload |
+| `?frameCap=30` | `30` | In play, draw at most one frame every 30 milliseconds, about 30 a second, so the browser has longer to finish showing each frame before the next. Use it with ?freeze=1, or the governor reads the slower frames as a slow device. | at once |
 | `?gpuTrace=1` | present, any value | Count live WebGPU texture and buffer bytes exactly, by wrapping every allocation, and add a "Live WebGPU memory (gpuTrace)" line to the report. The wrapping starts with the renderer. | after a reload |
 | `?freeze=1` | `1` | Freeze the quality governor: no level, rung or bot count changes, and the render scale stays fixed. | at once |
 | `?ui=flat` | `flat` | Flat interface glass for this visit. The saved choice is kept. | at once |

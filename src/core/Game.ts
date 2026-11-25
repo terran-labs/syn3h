@@ -2,6 +2,7 @@ import { CoveredPipelines } from './coveredPipelines'
 import { CoveredClimbRun, SLICED_CLIMB_TOP, slicedClimbTo } from './coveredClimb'
 import { longFrames } from './longFrames'
 import { flashSwitches } from './flashSwitches'
+import { installPresentLate } from './presentLate'
 import { BlankFrameRecorder } from './blankFrames'
 import { LossRecorder } from './lossRecord'
 import { FrameCanary } from './frameCanary'
@@ -158,6 +159,8 @@ export class Game {
     const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
       if (freshCanvas) this.replaceCanvas()
       // ?samples=1 (core/flashSwitches.ts): one sample, no multisampling anywhere.
+      // ?presentLate=1 (presentLate.ts): installed on the canvas before three takes its context.
+      if (!webgl && flashSwitches.presentLate) installPresentLate(this.canvas)
       this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: !flashSwitches.samples1, forceWebGL: webgl, alpha: !flashSwitches.canvasOpaque })
       this.observeRenderer?.()
       return this.renderer
@@ -464,7 +467,9 @@ export class Game {
     // the surface drawn into two frames behind the one shown.
     const held = flashSwitches.presentHold && this.gpuBusy && view === 'playing'
     if (held) this.presentHeldFrames++
-    const draw = !held && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    // ?frameCap=30 (flashSwitches.ts): in play, at most one drawn frame every 30 ms.
+    const capped = flashSwitches.frameCap30 && view === 'playing' && now - this.lastDraw < 30
+    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) {
       // Before drawing: a size that changed without a usable resize event is applied here, and a
       // render scale the governor chose last frame (QualityController.deferPixelRatio).
