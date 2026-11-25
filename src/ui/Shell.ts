@@ -97,6 +97,10 @@ import './pause-screen.css'
 import './card-chrome.css'
 import './bottom-stack.css'
 import './room-notice.css'
+import { PlayerPanel, type PlayerPanelActions } from './players/PlayerPanel'
+import { BanishedList, type Banish } from './players/BanishedList'
+import './players/shareLocation'
+import { shareLocation } from './players/shareLocation'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 import { ReportSheet, chatOnPage } from './report/ReportSheet'
 import { REPORT_ICON } from './report/sheetHtml'
@@ -246,6 +250,14 @@ export class Shell implements System {
   private readonly panels: SlidingPanels
   private readonly board: Scoreboard
   private readonly hudBoard: Scoreboard
+  /** The player panel the Players card's rows open (src/ui/players). */
+  private playerPanel!: PlayerPanel
+  private banished!: BanishedList
+  /**
+   * What the panel does that needs the room's server (main.ts fills these in once joined);
+   * until then the moderation controls show as unavailable.
+   */
+  private playerHooks: Partial<Pick<PlayerPanelActions, 'muteForAll' | 'moderation' | 'eject' | 'botTraits' | 'setBotTrait'>> = {}
   private paramPanel?: ParamPanel
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
@@ -333,7 +345,12 @@ export class Shell implements System {
     // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
     // Players card's). The board stays, detached, for its join and leave messages.
     this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
-    this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
+    this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {}, {
+      pick: (id, button, keyboard) => this.playerPanel.pick(id, button, keyboard),
+      hoverRow: (id, button) => this.playerPanel.hoverRow(id, button),
+      leave: () => this.playerPanel.leave(),
+      openId: () => this.playerPanel?.openId ?? null,
+    })
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
     // TAG reads the gear in hand: Plasma Tag streams while held, other gear sends on the lift,
     // and Cancel drops a charge or carry the way the in-play guide does (src/ui/tagStick.ts).
@@ -404,9 +421,24 @@ export class Shell implements System {
         </div>
       </div>
       ${switchHtml('rail-diagnostics', 'Connection diagnostics')}
+      <div class="rail-banished" hidden></div>
       <div class="card-actions rail-actions rail-session-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div>
     </div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
+    // Players-card rows open the player panel, beside the sidebar (src/ui/players).
+    this.playerPanel = new PlayerPanel(this.element, () => this.inspector.element, {
+      muteForMe: (id, muted) => this.sessionNet()?.chat.mute(id, muted),
+      muteForAll: (id, muted) => this.playerHooks.muteForAll?.(id, muted),
+      moderation: id => this.playerHooks.moderation?.(id) ?? { ok: false, reason: 'unknown' },
+      eject: (id, stop) => this.playerHooks.eject?.(id, stop),
+      botTraits: id => this.playerHooks.botTraits?.(id) ?? null,
+      setBotTrait: (id, trait, value) => this.playerHooks.setBotTrait?.(id, trait, value),
+      sharesLocation: () => shareLocation.value,
+      phone: () => matchMedia(PHONE_SIDEBAR).matches,
+      changed: () => this.hudBoard.syncExpanded(),
+    })
+    this.playerPanel.setRoster(() => this.sessionPlayers)
+    this.banished = new BanishedList(players.querySelector<HTMLElement>('.rail-banished')!)
     const botControls = players.querySelector<HTMLElement>('.rail-session-bots')!
     const botInput = botControls.querySelector('input')!
     const [minus, plus] = botControls.querySelectorAll('button')
@@ -1519,6 +1551,7 @@ export class Shell implements System {
     const wanted = this.panelsWanted
     if (this.inspector.open !== wanted) {
       this.inspector.hideTooltip(); this.inspector.open = wanted
+      if (!wanted) this.playerPanel?.close(false)
       // Phones fade Show panels out as the panels grow from it (phone-panels.css).
       this.element.classList.toggle('is-panels', wanted)
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
@@ -2443,6 +2476,25 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
+  /**
+   * The room's side of the player panel (main.ts, once joined): mute for everyone, who may
+   * moderate whom, eject with a banish, bot traits. Call again with {} on leaving.
+   */
+  setPlayerHooks(hooks: Shell['playerHooks']): void {
+    this.playerHooks = hooks
+    this.syncSessionRoster(true)
+  }
+  /** The room's active banishes, for moderators (an empty list hides the Banished fold). */
+  setBanishes(list: readonly Banish[], lift: ((id: string) => void) | null): void { this.banished.set(list, lift) }
+  /**
+   * The room's host changed (the server's 'game' host event): one clear line in the bottom
+   * stack. `moderates` is whether the new host may mute and eject in this kind of world.
+   */
+  announceHost(name: string, self: boolean, moderates: boolean): void {
+    this.showRoomNotice(self
+      ? `You are now the host of this world.${moderates ? ' You can mute and eject players.' : ''}`
+      : `${name} is now the host.`, [])
+  }
   /** Who is in the room, as names are shown (main.ts). */
   setPlayerRoster(roster: PlayerRoster): void {
     this.roster = roster
@@ -2518,6 +2570,7 @@ export class Shell implements System {
         (net.players.get(a.id)?.slot ?? 0) - (net.players.get(b.id)?.slot ?? 0) || a.id - b.id)
     }
     this.sessionPlayers = players
+    this.playerPanel?.update(players, id => this.hudBoard.nameButton(id))
     this.sessionBotCount = players?.filter(player => player.bot).length ?? 0
     const people = players ? players.length - this.sessionBotCount : this.sessionLines.filter(line => parseScoreRow(line)).length
     if (people !== this.playerCount) { this.playerCount = people; this.updateInvite() }

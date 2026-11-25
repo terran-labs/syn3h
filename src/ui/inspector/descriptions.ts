@@ -4,6 +4,7 @@
  * Keys are property ids. Keep each to a sentence or two and say what changes on screen.
  */
 export const DESCRIPTIONS: Record<string, string> = {
+  'net.shareLocation': 'Other players see your state or region and country, never closer. Off, they see only your kind of device.',
   'world.seed': 'The number the whole planet grows from. The same seed and settings always make the same world, on every device.',
   'world.gravity': 'How hard the planet pulls. Lower it and vehicles float over jumps; raise it and they hug the ground.',
   'world.lavaAltitude': 'How high the sea stands. Raise it and the coast floods; lower it and more land appears.',

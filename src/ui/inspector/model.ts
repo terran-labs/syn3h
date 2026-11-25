@@ -51,7 +51,7 @@ export function shownDef<T extends PropertyDef>(def: T): T {
 export interface SectionSpec { id: string; title: string; blurb: string; groups: readonly string[]; scope: 'world' | 'client' }
 /** Logical sections, in the order they are shown. Personal settings first; stable ids preserve saved section copies. */
 export const SECTIONS: readonly SectionSpec[] = [
-  { id: 'you', title: 'Me', blurb: 'Yours only: camera, sound, graphics and this display.', groups: ['Interface', 'Camera', 'Input', 'Daydream', 'Audio', 'Adaptive score', 'Graphics', 'Network'], scope: 'client' },
+  { id: 'you', title: 'Me', blurb: 'Yours only: camera, sound, graphics and this display.', groups: ['Interface', 'Privacy', 'Camera', 'Input', 'Daydream', 'Audio', 'Adaptive score', 'Graphics', 'Network'], scope: 'client' },
   // Every gear setting lives here, shared with the room (the owner, 22 November 2026).
   { id: 'game', title: 'Game', blurb: 'What is being played, and who else is driving.', groups: ['Game', 'Tag', 'Tag beams', 'Zorb', 'Plasma Tag', 'Gear: Yoink', 'Gear: Chaser', 'Gear: Grapple', 'Gear: Plasma Thunder', 'Gear: Impact push', 'Gear effects', 'Vehicle looks', 'Bots'], scope: 'world' },
   { id: 'vehicles', title: 'Vehicles', blurb: 'How each vehicle drives, flies and looks.', groups: ['Buggy', 'Jet', 'Hovercraft', 'Tank', 'Wheels', 'Canopy', 'Vehicle paint'], scope: 'world' },
