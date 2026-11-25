@@ -23,14 +23,18 @@ describe('galaxy twins', () => {
     expect(project([alpine, world('desert', inward.x, 6)])[0].visible).toBe(false)
   })
 
-  it('keeps taps on each disc direct and opens a choice in the touch gap', () => {
-    const place = world('alpine'), places = [place], twins = project(places)
+  it('opens a choice throughout the touch overlap, including inside either painted rim', () => {
+    const place = { ...world('alpine'), radius: 15 }, places = [place], twins = project(places)
     const [twin] = twins
     const pick = (x: number, touch = true) => pickTwin(places, twins, sun, x, place.y, 22, touch)
-    expect(pick(place.x)).toEqual({ id: place.id, action: 'public' })
-    expect(pick(twin.x)).toEqual({ id: place.id, action: 'private' })
+    const publicEdge = twin.rimX - 1, privateEdge = twin.x - twin.radius + 1
+    expect(pick(publicEdge)).toEqual({ id: place.id, action: 'choose' })
     expect(pick(twin.rimX + 2)).toEqual({ id: place.id, action: 'choose' })
-    expect(pick(twin.rimX + 2, false)).toEqual({ id: place.id, action: 'public' })
+    expect(pick(privateEdge)).toEqual({ id: place.id, action: 'choose' })
+    expect(pick(place.x - place.radius + 1)).toEqual({ id: place.id, action: 'public' })
+    expect(pick(twin.x + twin.radius - 1)).toEqual({ id: place.id, action: 'private' })
+    expect(pick(publicEdge, false)).toEqual({ id: place.id, action: 'public' })
+    expect(pick(privateEdge, false)).toEqual({ id: place.id, action: 'private' })
     expect(pick(250)).toBeUndefined()
   })
 
@@ -39,6 +43,9 @@ describe('galaxy twins', () => {
     const [twin] = twins
     const foreground = world('desert', twin.x, 6)
     expect(pickTwin([alpine, foreground], twins, sun, twin.x, twin.y, 22, true)).toEqual({ id: 'desert', action: 'public' })
+    const foregroundTwins = project([foreground])
+    expect(pickTwin([alpine, foreground], [...twins, ...foregroundTwins], sun, twin.x, twin.y, 22, true))
+      .toEqual({ id: 'desert', action: 'choose' })
     expect(pickTwin([alpine], twins, { ...sun, x: twin.x, y: twin.y }, twin.x, twin.y, 22, true)).toBeUndefined()
     expect(pickTwin([alpine, foreground], twins, sun, twin.rimX + 2, twin.y, 22, true)).toEqual({ id: 'desert', action: 'public' })
   })

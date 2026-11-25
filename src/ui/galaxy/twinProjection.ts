@@ -37,10 +37,11 @@ export function pickTwin(
     ...twins.filter(shown).map(place => ({ place, target: priv(place.id), edge: edge(place) })),
   ]
   const direct = hits.filter(hit => hit.edge < 0).sort((a, b) => a.place.depth - b.place.depth)[0]
-  if (direct) return direct.target
-  if (cutoff !== Infinity) return undefined
-  const padded = hits.filter(hit => hit.edge < margin).sort((a, b) => a.edge - b.edge)
-  const first = padded[0]
+  if (direct && !touch) return direct.target
+  if (!direct && cutoff !== Infinity) return undefined
+  const padded = hits.filter(hit => hit.edge < margin)
+  // Resolve the foreground disc first, then check whether the touch also reaches its twin.
+  const first = direct ?? padded.sort((a, b) => a.edge - b.edge)[0]
   if (touch && first && padded.some(hit => hit.target.id === first.target.id && hit.target.action !== first.target.action)) {
     return { id: first.target.id, action: 'choose' }
   }
