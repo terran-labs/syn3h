@@ -381,7 +381,14 @@ export type ClientMessage =
    * `page` is random per page load: a hello with the same secret and the same page is that page
    * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
-  | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean }
+  /**
+   * Launch analytics fields (src/net/analytics.ts, server/analytics.ts), all optional and newer:
+   * an older room ignores them, and a frozen client sends none (its session still counts).
+   * aid: the anonymous id; build: client version; device: phone, tablet or desktop; backend:
+   * webgpu or webgl2; quality: level 0 to 5; ref: the entry campaign tag (?ref=).
+   */
+  | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean
+      aid?: string; build?: string; device?: string; backend?: string; quality?: number; ref?: string }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and

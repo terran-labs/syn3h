@@ -7,7 +7,7 @@ export type ConnectionState = 'connecting' | 'open' | 'closed'
 /** Close code for a socket this client gave up on because its open handler failed. */
 const CLOSE_HANDLER_FAILED = 4010
 
-type Handler = 'open' | 'text' | 'binary' | 'close'
+type Handler = 'open' | 'text' | 'binary' | 'close' | 'failed'
 
 /**
  * Reconnection never depends on a handler succeeding: the retry is scheduled before the close
@@ -42,6 +42,10 @@ export class Connection {
   private backoff = 500
   private timer: ReturnType<typeof setTimeout> | null = null
   private stopped = false
+  /** Attempts in a row that closed before opening (analytics: ws_fail, ws_connect). */
+  private failedInARow = 0
+  /** An attempt closed before it opened; `inARow` counts since the last open. */
+  onFailedAttempt: (inARow: number) => void = () => {}
 
   constructor(readonly url: string) {}
 
@@ -108,6 +112,7 @@ export class Connection {
       this.openedAt = this.lastRx = this.lastTx = performance.now()
       if (this.opened) this.reconnects++
       this.opened = true
+      this.failedInARow = 0
       if (this.guard('open', () => this.onOpen())) {
         this.backoff = 500
         return
@@ -141,6 +146,7 @@ export class Connection {
       this.state = 'closed'
       // The retry first: nothing a handler does can then stop it, except a deliberate close().
       this.scheduleRetry()
+      if (!wasOpen) { this.failedInARow++; this.guard('failed', () => this.onFailedAttempt(this.failedInARow)) }
       if (wasOpen) this.guard('close', () => this.onClose(e.code, e.reason))
     }
     // onclose always follows onerror, which is where we retry.

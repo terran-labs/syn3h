@@ -3,6 +3,9 @@
  * Keep this file small: features belong behind the seams, not here.
  */
 import './core/legacyWindowNames'
+import { recipeIdForLook } from '../shared/recipes'
+import { installCrashReporting, reportCrash, reportEvent, setReportContext } from './net/analytics'
+import { physicsLoadEvents } from './core/physicsWasm'
 import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
@@ -65,6 +68,11 @@ async function main(): Promise<void> {
   const { saved } = applyStartWorld(query, sessionStore(), navigator.webdriver ? () => 1 : randomSeed)
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
+  // Launch analytics (src/net/analytics.ts): crashes and physics download health, bounded per
+  // page, posted to our own server only.
+  installCrashReporting()
+  physicsLoadEvents.retry = (attempt) => reportEvent('physics_retry', attempt)
+  physicsLoadEvents.failed = (error) => { reportEvent('physics_fail'); reportCrash('physics_wasm', new Error(error)) }
   // A full room sends the player to a parallel universe of the world they were entering, and the
   // Players & session card offers one (ui/parallelUniverse.ts). Read at start: why this page is here.
   const universes = new ParallelUniverses({
@@ -87,6 +95,13 @@ async function main(): Promise<void> {
   if (universes.arrived || document.documentElement.hasAttribute('data-room-move')) holdVeil(universes.arrived ? moveVeilLine(universes.arrived) : null, () => gameOnScreen())
   const game = new Game(canvas)
   await game.init()
+  {
+    const onLost = game.renderer.onDeviceLost
+    game.renderer.onDeviceLost = (info) => {
+      reportCrash('device_lost', new Error(`${info?.api ?? ''} device lost: ${info?.reason ?? ''} ${info?.message ?? ''}`.trim()))
+      onLost.call(game.renderer, info)
+    }
+  }
 
   const terrain = createTerrain(game, worldSeed.value)
   // Graphics levels thin out distant terrain on weaker devices.
@@ -121,6 +136,7 @@ async function main(): Promise<void> {
   // Everything that follows the player reads it from this slot, so the vehicle can be changed
   // in place without rebuilding those systems. `player` is only the vehicle spawned first.
   const slot = new PlayerSlot(player)
+  setReportContext(() => ({ backend: game.backend, vehicle: slot.current.kind, recipe: recipeIdForLook(params.get('terrain.look')?.value) ?? undefined }))
   game.vehicleKind = () => slot.current.kind
   // Tracks, dust, thrusters and lights, with the real headlight a local vehicle gets. The
   // swapper owns them from here on: it moves them when the vehicle changes.
@@ -159,6 +175,11 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain, query.get('name'))
+  // From here a crash report can also blank out the player's own name and room (shared/crashText.ts).
+  setReportContext(() => ({
+    backend: game.backend, vehicle: slot.current.kind, recipe: recipeIdForLook(params.get('terrain.look')?.value) ?? undefined,
+    name: shell.playerName, room: shell.room || roomFromQuery(query),
+  }))
   if (glass) shell.driveGlassFrame = glass.driveFrame
   let postCheckQueued = false
   const materialChanged = params.onChange((id) => {

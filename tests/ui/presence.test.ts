@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PresenceFeed, populations, readPresence, populationLabel, PRESENCE_TTL } from '../../src/ui/galaxy/presence'
+import { activePlayersLabel, PresenceFeed, populations, readPresence, populationLabel, PRESENCE_TTL } from '../../src/ui/galaxy/presence'
 const now = 1_000_000
 const payload = (byRecipe: unknown[] = [], generatedAt = now) => ({ version: 1, generatedAt, ttlMs: PRESENCE_TTL, byRecipe })
 const row = (recipeId: string | null, players = 3, rooms = 2, oldestReportAt = now) => ({ recipeId, players, rooms, oldestReportAt })
@@ -9,10 +9,10 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 describe('public recipe populations', () => {
   it('keeps unknown distinct from fresh zero and never assigns legacy counts to a recipe', () => {
     expect(populations(null, ['volcanic'], now).get('volcanic')).toBeNull()
-    expect(populations(readPresence(payload()), ['volcanic'], now).get('volcanic')).toEqual({ players: 0, rooms: 0 })
+    expect(populations(readPresence(payload()), ['volcanic'], now).get('volcanic')).toEqual({ players: 0, rooms: 0, active: 0 })
     const values = populations(readPresence(payload([row(null, 20), row('alpine')])), ['volcanic', 'alpine'], now)
-    expect(values.get('volcanic')).toEqual({ players: 0, rooms: 0 })
-    expect(populationLabel(values.get('alpine')!)).toBe('3 connected across 2 rooms')
+    expect(values.get('volcanic')).toEqual({ players: 0, rooms: 0, active: 0 })
+    expect(populationLabel(values.get('alpine')!)).toBe('3 active players')
     expect(populationLabel(null)).toBe('Population unknown')
   })
   it('uses the oldest report time, rejects expired payloads and does not renew on receipt', () => {
@@ -35,7 +35,7 @@ describe('public recipe populations', () => {
     const changed = vi.fn(), feed = new PresenceFeed(['alpine'], changed)
     feed.setActive(true)
     await vi.advanceTimersByTimeAsync(0)
-    expect(changed.mock.lastCall![0].get('alpine')).toEqual({ players: 3, rooms: 2 })
+    expect(changed.mock.lastCall![0].get('alpine')).toEqual({ players: 3, rooms: 2, active: 3 })
     feed.dispose()
   })
   it('polls only when active, with one request in flight, and drops an answer that lands after hide', async () => {
@@ -77,7 +77,7 @@ describe('public recipe populations', () => {
     const changed = vi.fn(), feed = new PresenceFeed(['alpine'], changed, fetcher)
     feed.setActive(true)
     await vi.advanceTimersByTimeAsync(0)
-    expect(changed.mock.lastCall![0].get('alpine')).toEqual({ players: 3, rooms: 2 })
+    expect(changed.mock.lastCall![0].get('alpine')).toEqual({ players: 3, rooms: 2, active: 3 })
     await vi.advanceTimersByTimeAsync(5000)
     expect(changed.mock.lastCall![0].get('alpine')).toBeNull()
     expect(fetcher).toHaveBeenCalledTimes(1)

@@ -14,7 +14,14 @@ binding = "ASSETS"
 # because their names are not content hashed and a frozen page must get its own copies.
 # /webgpu-present-test.html: the default html_handling would answer it with a 307 to the
 # extensionless address; the Worker serves the file itself, at its own address (server/worker.ts).
-run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html"]
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*", "/v/*", "/webgpu-present-test.html", "/e"]
+
+# Launch analytics (server/analytics.ts): rows written by the room objects, the registry and
+# POST /e into Workers Analytics Engine. The dataset is created on the first write. Query it
+# with tools/analytics-report.mjs (an Account Analytics Read token). No IP address is stored.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "mira_events"
 
 # Frozen versions, stored once in R2 (tools/frozen-versions.mjs archive) and read by the Worker for
 # every version but its own; deployments carry none. "/v/*" above sends a frozen page's own

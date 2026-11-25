@@ -7,9 +7,13 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import type { PlayerInfo } from '../shared/protocol'
-import { RoomRegistry, type RegistryEntry } from './registry'
+import { ACTIVE_SAVE_MS, RoomRegistry, type RegistryEntry, STALE_MS } from './registry'
+import {
+  type AnalyticsSink, cleanClientPost, dataPoint, endRows, GEO_HEADER, geoFromHeader, geoHeader, geoOf,
+  POST_MAX_BYTES, postKey, PostLimiter, PRESENCE_SNAPSHOT_MS, readCapped, ROOM_ROWS_PER_MINUTE, RowBudget, type SessionRecord,
+} from './analytics'
 import { PresenceReporter } from './presenceReporter'
-import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
+import { ATTACHMENT_PAUSE_MS, CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
 import { channelOf } from '../shared/channel'
@@ -70,6 +74,8 @@ interface Env {
   ASSETS: Fetcher
   /** Frozen versions in R2 (v/<version>/<path>); absent in local dev and tests that omit it. */
   FROZEN?: FrozenBucket
+  /** Launch analytics dataset (server/analytics.ts); absent in tests and local runs that omit it. */
+  ANALYTICS?: AnalyticsSink
 }
 
 interface Attachment {
@@ -77,8 +83,13 @@ interface Attachment {
   info?: PlayerInfo
   /** The player's rejoin secret (game.rejoin), so it survives hibernation with the socket. */
   token?: string | null
+  /** Launch analytics: the player's session (Room.sessionOf) and its version, kept for a wake. */
+  session?: SessionRecord
+  sv?: number
   /** Epoch ms the socket was accepted, for the close line's openMs. */
   at?: number
+  /** The player was paused as last seen (Room.pausedOf), so a wake counts them right (adopt). */
+  paused?: boolean
   // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
   // within 1.5 s of the place's last message falls back to the quiet rule (Room.quietFor).
 }
@@ -119,8 +130,14 @@ async function route(req: Request, env: Env, url: URL): Promise<Response> {
       return new Response('expected a websocket', { status: 426 })
     }
     const name = roomName(url.searchParams.get('room'))
-    return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(req)
+    // Where the connection came from, for analytics: request.cf's country and continent codes
+    // and the channel by hostname, never the address. Only this Worker sets the header.
+    const headers = new Headers(req.headers)
+    headers.set(GEO_HEADER, geoHeader(geoOf((req as Request & { cf?: unknown }).cf, channelOf(url.hostname))))
+    return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(new Request(req, { headers }))
   }
+  // Client crash and health reports (src/net/analytics.ts): small, rate limited, never awaited.
+  if (url.pathname === '/e') return clientPost(req, url, env)
   // How many people are playing, in total: counts only. Read before a release.
   if (url.pathname === '/status' || url.pathname === '/presence') {
     if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
@@ -135,6 +152,33 @@ async function route(req: Request, env: Env, url: URL): Promise<Response> {
   // key, as archived.
   if (url.pathname === PRESENT_TEST) return serveVersioned(req, url, { ...env, ASSETS: htmlAsset(env.ASSETS) })
   return serveVersioned(req, url, env)
+}
+
+/** Per isolate, in memory only: see PostLimiter. */
+const postLimiter = new PostLimiter(() => Date.now())
+
+/**
+ * POST /e?k=<key>: one client crash or health report. Always 204 (413 for a body declared too
+ * large); nothing about it reaches play. In order, before any body is read: analytics bound,
+ * a valid key, the declared length, the per-key and per-isolate limits. The body is then read
+ * with a hard cap that cancels the stream at POST_MAX_BYTES, so no post is ever buffered whole.
+ */
+async function clientPost(req: Request, url: URL, env: Env): Promise<Response> {
+  const done = (status = 204) => { void req.body?.cancel().catch(() => {}); return new Response(null, { status, headers: { 'cache-control': 'no-store' } }) }
+  if (req.method !== 'POST') return new Response('POST only', { status: 405, headers: { allow: 'POST' } })
+  try {
+    if (!env.ANALYTICS) return done()
+    const key = postKey(url.searchParams.get('k'))
+    if (!key) return done()
+    if (Number(req.headers.get('content-length') ?? 0) > POST_MAX_BYTES) return done(413)
+    if (!postLimiter.allow(key)) return done()
+    const text = await readCapped(req.body, POST_MAX_BYTES)
+    if (text === null) return done(413)
+    const channel = channelOf(url.hostname)
+    const post = cleanClientPost(JSON.parse(text), key, geoOf((req as Request & { cf?: unknown }).cf, channel), channel)
+    if (post) env.ANALYTICS.writeDataPoint(dataPoint(post.row.event, post.row.common, post.row.extra))
+  } catch { /* a malformed post or a failed write changes nothing */ }
+  return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } })
 }
 
 const PRESENT_TEST = '/webgpu-present-test.html'
@@ -328,6 +372,8 @@ export class RoomDO {
   private room: Room | null = null
   private snapshot: RoomSnapshot | undefined
   private readonly peers = new WeakMap<WebSocket, Peer>()
+  /** When each socket's attachment last took a pause change (ms): see ATTACHMENT_PAUSE_MS. */
+  private readonly pauseWrittenAt = new WeakMap<WebSocket, number>()
   /**
    * Epoch ms of the clock alarm this object last set, or 0 when none is pending. In memory
    * only: after an eviction it reads 0, and the next message sets the alarm again, which
@@ -358,21 +404,82 @@ export class RoomDO {
   /** Counting never blocks gameplay; hold the event alive until ordered delivery finishes. */
   private report(room: Room): void {
     const { seed, ...presence } = room.presence()
-    this.state.waitUntil(this.reporter.report({ room: room.name, ...presence }, seed))
+    // The channel its players connected through (launch analytics' presence rows), if known.
+    this.state.waitUntil(this.reporter.report({ room: room.name, ...presence, ...(this.channel ? { channel: this.channel } : {}) }, seed))
   }
 
   /** Only on the registry instance: the counts, loaded from storage on first use. */
   private registryReady: Promise<RoomRegistry> | null = null
+  /** Only on the registry instance: when the counts were last stored (ms), see ACTIVE_SAVE_MS. */
+  private countsSavedAt = -Infinity
+  /** Only on the registry instance: when the last presence snapshot was written (ms). */
+  private presenceAt = -Infinity
+  /**
+   * Only on the registry instance, in memory: each room's channel, from its reports, and when.
+   * Kept only with the analytics binding; a room reporting nobody is forgotten at once, and the
+   * rest are pruned by age (STALE_MS) at most once a minute, snapshot or not.
+   */
+  private readonly channels = new Map<string, { channel: string; at: number }>()
+  private channelsPrunedAt = 0
+
+  private noteChannel(room: string, players: number, channel: unknown): void {
+    if (!this.env.ANALYTICS) return
+    const now = Date.now()
+    if (players <= 0) this.channels.delete(room)
+    else if (channel === 'beta' || channel === 'production') this.channels.set(room, { channel, at: now })
+    if (now - this.channelsPrunedAt >= 60_000) {
+      this.channelsPrunedAt = now
+      for (const [r, c] of this.channels) if (now - c.at > STALE_MS) this.channels.delete(r)
+    }
+  }
+  /** On a room: the channel its latest connection came through (GEO_HEADER). */
+  private channel = ''
+
+  /**
+   * Launch analytics: players and active players per planet, at most once per
+   * PRESENCE_SNAPSHOT_MS, on report traffic (no timer: with nobody playing there is nothing
+   * to write, and zero is read from the absence). At most one row per planet and channel
+   * (a dozen or so), the channel being the one each room's players connected through.
+   */
+  private presenceSnapshot(registry: RoomRegistry): void {
+    const now = Date.now()
+    if (!this.env.ANALYTICS || now - this.presenceAt < PRESENCE_SNAPSHOT_MS) return
+    this.presenceAt = now
+    try {
+      // One row per planet and channel (the channel each room's players connected through).
+      const groups = new Map<string, { recipe: string; channel: string; players: number; active: number; rooms: number }>()
+      for (const [room, e] of registry.live(now)) {
+        const channel = this.channels.get(room)?.channel ?? '', recipe = e.recipeId ?? ''
+        const g = groups.get(`${recipe} ${channel}`) ?? { recipe, channel, players: 0, active: 0, rooms: 0 }
+        g.players += e.players; g.active += e.active ?? e.players; g.rooms++
+        groups.set(`${recipe} ${channel}`, g)
+      }
+      for (const g of [...groups.values()].slice(0, 50)) {
+        this.env.ANALYTICS.writeDataPoint(dataPoint('presence', { channel: g.channel, build: '', recipe: g.recipe, roomKind: '', device: '', backend: '', country: '', continent: '', aid: '' },
+          { players: g.players, active: g.active, rooms: g.rooms }))
+      }
+    } catch { /* never affects the registry */ }
+  }
+
+  /** Launch analytics rows this room object writes, bounded per minute (server/analytics.ts). */
+  // (Class fields initialise before the constructor's parameters are assigned: read env late.)
+  private readonly rows = new RowBudget(ROOM_ROWS_PER_MINUTE, () => Date.now(), { writeDataPoint: (p) => this.env.ANALYTICS?.writeDataPoint(p) },
+    (error) => logError('error', error, { where: 'analytics', room: this.tag() }))
 
   /** The registry instance's two requests; see REGISTRY_ID. */
   private async registryFetch(req: Request, path: string): Promise<Response> {
     this.registryReady ??= this.state.storage.get<Record<string, RegistryEntry>>('counts').then(saved => new RoomRegistry(saved))
     const registry = await this.registryReady
     if (path === '/report' && req.method === 'POST') {
-      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown } | null
+      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown; active?: unknown; channel?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
-        registry.report(body.room, body.players, Date.now(), body.recipeId)
-        await this.state.storage.put('counts', registry.save())
+        const durability = registry.report(body.room, body.players, Date.now(), body.recipeId, body.active)
+        this.noteChannel(body.room, body.players, body.channel)
+        this.presenceSnapshot(registry)
+        if (durability === 'save' || (durability === 'later' && Date.now() - this.countsSavedAt >= ACTIVE_SAVE_MS)) {
+          this.countsSavedAt = Date.now()
+          await this.state.storage.put('counts', registry.save())
+        }
       }
       return new Response(null, { status: 204 })
     }
@@ -390,6 +497,9 @@ export class RoomDO {
     const server = pair[1]
     this.state.acceptWebSocket(server)
     server.serializeAttachment({ room: name, at: Date.now() } satisfies Attachment)
+    const geo = geoFromHeader(req.headers.get(GEO_HEADER))
+    if (geo.channel) this.channel = geo.channel
+    room.setGeo(this.peer(server), geo)
     room.connect(this.peer(server))
     logEvent('socket_open', { room: room.tag, sockets: this.state.getWebSockets().length })
     return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit)
@@ -406,7 +516,22 @@ export class RoomDO {
       const att = ws.deserializeAttachment() as Attachment
       if (!att.info) {
         const info = room.info(peer)
-        if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer) } satisfies Attachment)
+        if (info) {
+          const kept = room.sessionOf(peer)
+          ws.serializeAttachment({ ...att, info, token: room.token(peer), ...(room.pausedOf(peer) ? { paused: true } : {}), ...(kept ? { session: kept.session, sv: kept.version } : {}) } satisfies Attachment)
+        }
+      } else {
+        // Cheap checks first (a bit and a number); the session is copied only when a rewrite is due.
+        const version = room.sessionVersionOf(peer)
+        if ((room.pausedOf(peer) !== Boolean(att.paused) || (version >= 0 && version !== att.sv)) && Date.now() - (this.pauseWrittenAt.get(ws) ?? 0) >= ATTACHMENT_PAUSE_MS) {
+          // Pausing, resuming or a vehicle change: kept with the socket for a hibernation wake.
+          // At most one rewrite per socket per ATTACHMENT_PAUSE_MS, however fast a client flips;
+          // the latest value goes with the first message after that (a paused page sends one a second).
+          const kept = room.sessionOf(peer)
+          const { paused: _was, session: _s, sv: _v, ...rest } = att
+          ws.serializeAttachment({ ...rest, ...(room.pausedOf(peer) ? { paused: true } : {}), ...(kept ? { session: kept.session, sv: kept.version } : {}) } satisfies Attachment)
+          this.pauseWrittenAt.set(ws, Date.now())
+        }
       }
     } catch (error) {
       // Logged, then thrown on as before: the runtime's handling of a failed event is unchanged.
@@ -519,11 +644,23 @@ export class RoomDO {
     const room = this.room
     room?.tick()
     if (room) this.report(room)
+    // Evicted with only held places: they have all expired, so their sessions end here, as of
+    // when the room last saved them (Room's analytics comment lists every ending).
+    if (!room) this.endRosterSessions()
     if (!room || room.connectionCount === 0) {
       logEvent('room_cleanup', { room: this.tag(), reason: 'holds_expired' })
       await this.state.storage.deleteAll()
       this.snapshot = undefined
     }
+  }
+
+  private endRosterSessions(): void {
+    try {
+      for (const entry of this.snapshot?.roster ?? []) {
+        if (!entry.session) continue
+        for (const row of endRows(entry.session, entry.at)) this.rows.write(row.event, row.common, row.extra)
+      }
+    } catch { /* never affects the room */ }
   }
 
   /**
@@ -545,11 +682,15 @@ export class RoomDO {
 
   private ensureRoom(name: string): Room {
     if (this.room) return this.room
-    const room = new Room(name, { onPersist: (s) => void this.state.storage.put('room', s) })
+    const room = new Room(name, {
+      onPersist: (s) => void this.state.storage.put('room', s),
+      // No binding, no analytics work at all: no sessions, copies or extra roster saves.
+      analytics: this.env.ANALYTICS ? (event, common, extra) => { this.rows.write(event, common, extra) } : undefined,
+    })
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as Attachment | null
-      if (att?.info) room.adopt(this.peer(ws), att.info, att.token)
+      if (att?.info) room.adopt(this.peer(ws), att.info, att.token, att.paused === true, att.session)
       else room.connect(this.peer(ws))
     }
     this.room = room
