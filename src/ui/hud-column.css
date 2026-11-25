@@ -189,8 +189,13 @@
   display: inline; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: inherit; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--s3-accent-2);
 }
-/* Captured for driving, the gear's number caps step out; touch never shows them. */
-:root .mira-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
+/* Captured for driving, the gear's number caps step out; touch never shows them. On the
+   desktop they leave the flow and fade where they stand while the names slide over to their
+   new place (GearSelector.slideNames), so the list changes form as one motion. */
+:root .mira-shell.exploration-ui .gear-selector[data-touch] .gs-index { display: none; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label { position: relative; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-index { transition: opacity .18s cubic-bezier(.16,1,.3,1); }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] .gs-index { position: absolute; left: 0; opacity: 0; transition-duration: .1s; }
 /* Cursor captured (the owner, 25 November 2026: "Hide all of this text when the cursor is
    locked. Continue showing the weapon switcher."): the column keeps only the drum. The rows
    below it (Wings, Zorb, Chat: names, keys, count, nodes and line) and the detail beside the
