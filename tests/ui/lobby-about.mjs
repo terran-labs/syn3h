@@ -211,7 +211,8 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
     // `part`: how much of the box from its top must show (a dot is drawn at its 40 px target's middle).
     const inView=(el,part=1)=>{const e=el.getBoundingClientRect();return e.top>=top-1&&e.top+e.height*part<=bottom+1}
     const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'),0.6)}
-    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');out.card=!!card&&inView(card,0.3)}
+    // The next section: its heading, and the top of its first card (its title row, 40 px).
+    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');if(card){const e=card.getBoundingClientRect();out.card=e.top>=top-1&&e.top+40<=bottom+1}else out.card=false}
     return out
    },below)
    console.log(JSON.stringify({ring:name,atTop:shown}))
