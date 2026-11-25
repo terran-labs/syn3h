@@ -170,3 +170,42 @@ describe('vehicle effects across a world seam',()=>{
   for(let q=n;q<crossed.marks;q++)expect(crossed.positions[q*12]).toBeLessThan(-150)
  })
 })
+
+describe("other vehicles' headlights on the ground",()=>{
+ const night=(s:ReturnType<typeof scene>,y:number)=>{const sky=Object.assign(new T.Object3D(),{sunDirection:{value:new T.Vector3(0,y,0)}});s.game.scene.add(sky);return sky}
+ const pools=(s:ReturnType<typeof scene>)=>(s.game.scene.userData.vehicleEffects as {pools:number}).pools
+ it('a bot or other player lights the ground ahead of it at night, on the ground, not by day',()=>{
+  const s=scene(),sky=night(s,-1),v=stand(),dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local:false})
+  s.world().update(0)
+  expect(pools(s)).toBe(1)
+  // The patch lies on the ground (height 0 here) ahead of the vehicle (-z), not floating or sunk.
+  const mesh=s.game.scene.getObjectByName("Other vehicles' headlight pools") as T.Mesh,pos=mesh.geometry.attributes.position
+  const n=mesh.geometry.drawRange.count/3,ys=[],zs=[]
+  for(let i=0;i<Math.min(pos.count,84);i++){ys.push(pos.getY(i));zs.push(pos.getZ(i))}
+  expect(n).toBeGreaterThan(0)
+  for(const y of ys)expect(Math.abs(y)).toBeLessThan(.2)
+  expect(Math.min(...zs)).toBeLessThan(-10)
+  sky.sunDirection.value.y=1;s.world().update(0)
+  expect(pools(s)).toBe(0)
+  dispose()
+ })
+ it('never for your own vehicle (it has real lights), nor with the setting off',()=>{
+  const s=scene();night(s,-1)
+  const own=stand(),disposeOwn=attachVehicleEffects(s.game,s.terrain,own as unknown as Vehicle,{local:true})
+  s.world().update(0)
+  expect(pools(s)).toBe(0)
+  const other=stand(),disposeOther=attachVehicleEffects(s.game,s.terrain,other as unknown as Vehicle,{local:false})
+  params.set('light.groundPools',0);s.world().update(0)
+  expect(pools(s)).toBe(0)
+  params.set('light.groundPools',1);s.world().update(0)
+  expect(pools(s)).toBe(1)
+  disposeOther();disposeOwn()
+ })
+ it('none from a vehicle high above the ground, such as a jet in flight',()=>{
+  const s=scene();night(s,-1)
+  const v=stand(),dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local:false})
+  v.object.position.y=40;s.world().update(0)
+  expect(pools(s)).toBe(0)
+  dispose()
+ })
+})
