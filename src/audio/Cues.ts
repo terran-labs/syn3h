@@ -1,6 +1,6 @@
 export type GearCue = 'yoinkGrab' | 'yoinkFling' | 'yoinkGust' | 'bigRedCharge' | 'bigRedReady' | 'bigRedFizzle' | 'pesterLaunch' | 'pesterCatch' | 'thunderFire' | 'thunderBurst' | 'thunderCrackle'
-export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'|'bungeeLaunch'|'bungeeAttach'|'bungeeRelease'|'beam'|'tagged'|'materialize'|GearCue
-const notes:Record<Exclude<Cue,'beam'|'tagged'|'materialize'|GearCue>,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170],bungeeLaunch:[196,392,587],bungeeAttach:[147,98,196],bungeeRelease:[392,294,147]}
+export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'|'emerge'|'bungeeLaunch'|'bungeeAttach'|'bungeeRelease'|'beam'|'tagged'|'materialize'|GearCue
+const notes:Record<Exclude<Cue,'beam'|'tagged'|'materialize'|'emerge'|GearCue>,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170],bungeeLaunch:[196,392,587],bungeeAttach:[147,98,196],bungeeRelease:[392,294,147]}
 /** Seconds the materialize swoosh builds for when the caller does not say. */
 export const MATERIALIZE_SECONDS = 1.4
 export interface CueOptions {
@@ -16,6 +16,7 @@ export interface CueOptions {
 export function synthCue(context:BaseAudioContext,output:AudioNode,cue:Cue,noise:AudioBuffer,onEnd:()=>void=()=>{},options:CueOptions={}):()=>void {
   if(isGearCue(cue))return synthGearCue(context,output,cue,noise,onEnd)
   if(cue==='beam'||cue==='tagged'||cue==='materialize')return voiced(context,output,cue,noise,onEnd,options)
+  if(cue==='emerge')return emerge(context,output,noise,onEnd,options)
   const now=context.currentTime,sequence=notes[cue],step=cue==='win'?.18:cue==='lava'?.16:cue==='click'?.025:cue==='tick'?.045:.09
   const nodes:AudioNode[]=[],sources:AudioScheduledSourceNode[]=[]
   const gain=context.createGain();gain.gain.value=0;gain.connect(output);nodes.push(gain)
@@ -155,4 +156,25 @@ function synthGearCue(context: BaseAudioContext, output: AudioNode, cue: GearCue
     for (const source of sources) { try { source.stop() } catch { /* Already silent. */ } }
     clean()
   }
+}
+
+/**
+ * Something coming up out of the water: no plop, a rush of water pouring off it. Noise through a
+ * band that opens upward as the body clears and falls back as the run-off thins, with a low swell
+ * under it; quieter than the entry splash and twice as long.
+ */
+function emerge(context:BaseAudioContext,output:AudioNode,noise:AudioBuffer,onEnd:()=>void,options:CueOptions):()=>void {
+  const now=context.currentTime,duration=.85,level=Math.max(0,Math.min(2,options.level??1))
+  const gain=context.createGain();gain.gain.setValueAtTime(0,now)
+  gain.gain.linearRampToValueAtTime(.11*level+1e-4,now+.06);gain.gain.exponentialRampToValueAtTime(.0001,now+duration);gain.connect(output)
+  const n=context.createBufferSource(),band=context.createBiquadFilter();n.buffer=noise;n.loop=true
+  band.type='bandpass';band.Q.value=.9;band.frequency.setValueAtTime(500,now);band.frequency.exponentialRampToValueAtTime(2400,now+.18);band.frequency.exponentialRampToValueAtTime(900,now+duration)
+  const low=context.createOscillator(),lowGain=context.createGain();low.type='sine';low.frequency.setValueAtTime(140,now);low.frequency.exponentialRampToValueAtTime(70,now+duration);lowGain.gain.value=.35
+  n.connect(band).connect(gain);low.connect(lowGain).connect(gain)
+  n.start(now);low.start(now);n.stop(now+duration+.02);low.stop(now+duration+.02)
+  const nodes:AudioNode[]=[gain,n,band,low,lowGain]
+  let ended=false
+  const clean=()=>{if(ended)return;ended=true;for(const node of nodes)node.disconnect();onEnd()}
+  low.onended=clean
+  return ()=>{for(const source of [n,low]){try{source.stop()}catch{ /* A completed source is already silent. */ }}clean()}
 }

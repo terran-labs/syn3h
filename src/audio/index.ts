@@ -5,6 +5,12 @@ import { Engine, SLIP_ALLOW, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue, type CueOptions } from './Cues'
 /** Seconds clear of the water before a skip's touchdown splashes again. */
 const SKIP_SPLASH_GAP=.15
+/**
+ * Coming out of the water (the exit splash, src/world/water/spraySim.ts): a hull's centre, or a
+ * Zorb ball's top, this far under arms it, so a hull riding the swell never sounds; it sounds as
+ * the centre rises back through the surface faster than EMERGE_RISE m/s.
+ */
+const EMERGE_UNDER=1.3,EMERGE_RISE=.3
 import { CrashWatcher, impactStrength, synthImpact, type ImpactKind } from './Impacts'
 import { synthMaterialize, synthZorbPulse, type MaterializeVoice } from './VehicleCues'
 import type { SurfaceKind } from '../world/terrain/surface'
@@ -74,7 +80,7 @@ export class GameAudio implements System {
   private vehicleSource: () => readonly Vehicle[] = () => []
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
   private readonly cueStops = new Set<() => void>()
-  private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null;planingAt:number}>()
+  private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null;planingAt:number;under:boolean;deepest:number}>()
   private readonly materializing = new Map<object, MaterializeVoice>()
   private readonly crashes = new CrashWatcher()
   private impactSeed = 0
@@ -465,7 +471,19 @@ export class GameAudio implements System {
       // water, which the entry above misses when the hop never rose a metre. As loud as the hit.
       else if(planing&&now-previous.planingAt>SKIP_SPLASH_GAP)this.cue('splash',p,{level:THREE.MathUtils.clamp(Math.abs(v.body.linvel().y)/4,.25,1.2)})
     }
-    this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind,planingAt:planing?now:previous?.planingAt??-Infinity})
+    // Coming out going up: water running off, quieter than the entry, more of a rush, louder the
+    // faster and deeper. A Zorb's ball is what breaches, the loudest of them; it counts zorbed too.
+    const r=v.zorbed&&v.zorb?.collider&&v.zorb.radius>0?v.zorb.radius:0,c=r?v.zorb.collider!.translation():p
+    const sea=r?this.terrain?.liquidHeightAt?.(c.x,c.z)??-Infinity:liquid,rise=v.body.linvel().y
+    // Metres the centre is under the surface; a ball counts from its top.
+    const depth=Number.isFinite(sea)&&this.terrain?.liquidKindAt?.(c.x,c.z)==='water'?sea-c.y-r:-Infinity
+    let under=previous?.under??false,deepest=previous?.deepest??0
+    if(depth>EMERGE_UNDER){under=true;deepest=Math.max(deepest,depth)}
+    else if(under&&depth<(r?-r:0)){
+      if(this.enabled&&rise>EMERGE_RISE)this.cue('emerge',p,{level:THREE.MathUtils.clamp(rise/4*(1+.08*Math.min(30,deepest)),.2,1.2)*(r?1.6:1)})
+      under=false;deepest=0
+    }
+    this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind,planingAt:planing?now:previous?.planingAt??-Infinity,under,deepest})
   }
   fixedUpdate(): void {
     // A landing flag may clear before the next rendered frame on a slow device.
