@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { REST, REST_LOW, restStep } from '../../src/ui/galaxy/Galaxy'
+import { pitchHome, planeShown, REST, REST_LOW, restStep, SWING, swingStep } from '../../src/ui/galaxy/Galaxy'
+import { pitchReturn } from '../../src/ui/galaxy/cameraRest'
 
 /** Leave a tilt alone for `seconds` at `fps`, counting idle time from `idle`. */
 function leave(pitch: number, seconds: number, fps: number, idle = 0): number {
@@ -79,5 +80,28 @@ describe('the slow return to the default view', () => {
       if (settledAt < 0 && left < 0.01) settledAt = t
     }
     expect(settledAt).toBeGreaterThan(20); expect(settledAt).toBeLessThan(30)
+  })
+})
+
+// Bugs caught: after letting go the tilt taking many seconds to come back, or never landing so the
+// lobby keeps drawing (the owner, 25 November 2026: "smooth, but much faster than it currently
+// does"); the name drawn below the orbits' plane instead of fading. Times come from the registry.
+describe('the tilt after letting go', () => {
+  it('returns to the resting tilt with the spin-down, and stops within a bound set by its time constant', () => {
+    const tau = pitchReturn.value * SWING.coast, dt = 1 / 60
+    for (const from of [REST.pitch - 0.6, REST.pitch + 0.4]) {
+      let pitch = { aim: from, aimSpeed: 0.9, view: from, viewSpeed: 0 }, yaw = { aim: 0, aimSpeed: 2, view: 0, viewSpeed: 0 }, t = 0
+      const done = () => pitch.aim === REST.pitch && pitch.view === REST.pitch && pitch.aimSpeed === 0 && pitch.viewSpeed === 0
+      for (; !done() && t < 20 * tau; t += dt) { pitch = swingStep(pitchHome(pitch, dt, REST.pitch, tau), dt, false); yaw = swingStep(yaw, dt, false) }
+      expect(done()).toBe(true)
+      // It finishes on the order of the spin-down, not the slow idle settle's tens of seconds.
+      expect(t).toBeLessThan(20 * tau)
+    }
+  })
+  it('fades the name out below the plane and back in above, over its band', () => {
+    expect(planeShown(-20, 14)).toBe(1)
+    expect(planeShown(20, 14)).toBe(0)
+    let last = 1
+    for (let d = -20; d <= 20; d += 0.5) { const v = planeShown(d, 14); expect(v).toBeLessThanOrEqual(last); last = v }
   })
 })
