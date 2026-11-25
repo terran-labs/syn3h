@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RoomRegistry } from '../../server/registry'
 import { ROOM_FULL_STATUS } from '../../src/net'
 import { MAX_HOPS, isParallelRoom, parallelRoomName, takeMove } from '../../src/net/parallel'
-import { ParallelUniverses, type NoticeAction, type UniverseState } from '../../src/ui/parallelUniverse'
+import { ParallelUniverses, moveVeilLine, type NoticeAction, type UniverseState } from '../../src/ui/parallelUniverse'
 import { canonicalRoom, roomFromQuery } from '../../src/core/roomAddress'
 
 const WORLD = 'desert.12345'
@@ -96,9 +96,25 @@ describe('a parallel universe', () => {
     expect(joined.notices).toHaveLength(0); expect(joined.universe()?.kind).toBe('public')
   })
 
-  it('stops chasing full rooms after a few refusals and stays in local play', () => {
+  it('a friend whose invited room was still full is told it was that world, not the main one', () => {
+    const friend = page('https://mira.cc/?room=p-abcdefghijklmnopqrstuv&world=desert.12345')
+    friend.u.onJoinStatus(ROOM_FULL_STATUS)
+    const there = page(friend.navigations[0].href); there.u.onWelcome()
+    expect(there.notices[0].actions.map(a => a.label)).toEqual(['Copy link', 'Try that room again'])
+    there.notices[0].actions[1].run()
+    const retry = page(there.navigations[0].href)
+    expect(retry.navigations).toHaveLength(0)
+    retry.u.onJoinStatus(ROOM_FULL_STATUS)
+    const back = page(retry.navigations[0].href); back.u.onWelcome()
+    expect(back.notices[0].text).toBe("That world is still full, so you're back in your parallel universe.")
+    expect(moveVeilLine({ reason: 'still-full', asked: 'p-abcdefghijklmnopqrstuv' })).toBe('That world is still full. Back to your parallel universe.')
+    expect(moveVeilLine({ reason: 'returning', asked: 'lobby' })).toBe('Trying the main world.')
+  })
+
+  it('stops chasing full rooms: the third refusal in a row stays in local play', () => {
+    expect(MAX_HOPS).toBe(3)
     let href = 'https://mira.cc/'
-    for (let hop = 1; hop <= MAX_HOPS; hop++) {
+    for (let hop = 1; hop < MAX_HOPS; hop++) {
       const p = page(href); p.u.onJoinStatus(ROOM_FULL_STATUS)
       expect(p.navigations).toHaveLength(1); href = p.navigations[0].href
     }
@@ -120,6 +136,18 @@ describe('a parallel universe', () => {
     const inside = there.universe()
     if (inside?.kind === 'parallel') inside.back()
     expect(there.navigations[0].searchParams.has('room')).toBe(false)
+  })
+
+  it('with storage blocked, a full room means local play, said plainly, and no navigation', () => {
+    const throwing = () => { throw new Error('SecurityError: storage is blocked') }
+    vi.stubGlobal('sessionStorage', { getItem: throwing, setItem: throwing, removeItem: throwing })
+    const p = page('https://mira.cc/')
+    expect(p.u.onJoinStatus(ROOM_FULL_STATUS)).toBe(true)
+    expect(p.navigations).toHaveLength(0)
+    expect(p.notices.map(n => n.text)).toEqual(["This world is full, so you're exploring on your own with bots."])
+    vi.stubGlobal('sessionStorage', undefined)
+    const q = page('https://mira.cc/'); q.u.onJoinStatus(ROOM_FULL_STATUS)
+    expect(q.navigations).toHaveLength(0)
   })
 
   it('leaves any other join status to be shown as it is, and an old note does not outlive its moment', () => {

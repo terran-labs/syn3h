@@ -29,4 +29,5 @@ export function writeRoom(url: URL, room: string): URL {
 }
 
 /** The room in words for people: "Public room" for the default, otherwise its name. */
-export const roomLabel = (room: string): string => isDefaultRoom(room) ? 'Public room' : room
+/** A parallel universe (net/parallel.ts, "p-" and 22 random characters) is never named in words. */
+export const roomLabel = (room: string): string => isDefaultRoom(room) ? 'Public room' : /^p-[a-z0-9]{22}$/.test(canonicalRoom(room)) ? 'Parallel universe' : room

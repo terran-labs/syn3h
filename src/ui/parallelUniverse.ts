@@ -5,10 +5,46 @@
  * navigation to the room's entry address with autoplay, as a vehicle change by reload does.
  */
 import { DEFAULT_ROOM, canonicalRoom, isDefaultRoom, writeRoom } from '../core/roomAddress'
-import { arrivalLine, isParallelRoom, onRefused, parallelRoomName, putMove, takeMove, type RoomMove } from '../net/parallel'
+import { arrivalLine, isParallelRoom, onRefused, parallelRoomName, putMove, storageWorks, takeMove, type RoomMove } from '../net/parallel'
 import { ROOM_FULL_STATUS } from '../net'
 
 export interface NoticeAction { label: string; run(): void }
+
+/** What the loading veil says during a move (net/parallel.ts RoomMove): the main world only when it is the one asked for. */
+export function moveVeilLine(move: Pick<RoomMove, 'reason' | 'asked'>): string {
+  const main = move.asked === DEFAULT_ROOM
+  switch (move.reason) {
+    case 'full': return 'This world is full. Opening a parallel universe of it.'
+    case 'chosen': return 'Opening a parallel universe of this planet.'
+    case 'returning': return main ? 'Trying the main world.' : 'Trying that world again.'
+    case 'still-full': return main ? 'The main world is still full. Back to your parallel universe.' : 'That world is still full. Back to your parallel universe.'
+  }
+}
+/**
+ * Keep the loading veil up (index.html, html[data-room-move]) with `text` on its status line until
+ * `onScreen()` says the game is showing, the page's failure message shows, or 90 seconds pass.
+ */
+export function holdVeil(text: string, onScreen: () => boolean, doc: Document = document): void {
+  const root = doc.documentElement
+  const veil = doc.querySelector<HTMLElement>('.boot-veil')
+  const status = doc.querySelector<HTMLElement>('.boot-status')
+  if (status) status.textContent = text
+  root.dataset.bootLate = ''
+  root.dataset.roomMove = ''
+  // The veil's 60-second failsafe animation has long finished for anyone who waited in the lobby.
+  if (veil) veil.style.animation = 'none'
+  const started = Date.now()
+  const timer = setInterval(() => {
+    const fatal = doc.getElementById('fatal')
+    const failed = !!fatal && fatal.style.display !== '' && fatal.style.display !== 'none'
+    if (onScreen() || failed || Date.now() - started > 90_000) { clearInterval(timer); delete root.dataset.roomMove }
+  }, 100)
+}
+/** The game is on screen: in play, past the descent, and not waiting behind the tap that lets sound start. */
+export const gameOnScreen = (doc: Document = document): boolean => {
+  const shell = doc.querySelector('.mira-shell')
+  return !!shell && shell.classList.contains('is-playing') && !shell.classList.contains('is-descending') && doc.documentElement.dataset.boot !== 'ready'
+}
 export type UniverseState = { kind: 'public'; enter(): void } | { kind: 'parallel'; copy(): void; back(): void } | null
 export interface UniverseDeps {
   /** The room this page asked for. */
@@ -17,7 +53,7 @@ export interface UniverseDeps {
   entryURL(): URL
   /** The current world's code (planets.ts encodeWorld). */
   world(): string
-  navigate(url: URL): void
+  navigate(url: URL, move: RoomMove): void
   notice(text: string, actions: NoticeAction[]): void
   setUniverse(state: UniverseState): void
   copyLink(): void
@@ -43,12 +79,14 @@ export class ParallelUniverses {
     if (this.leaving) return
     this.leaving = true
     putMove(move)
-    this.d.navigate(url)
+    this.d.navigate(url, move)
   }
 
   /** Networking's join status. Returns true when the refusal was taken care of here. */
   onJoinStatus(message: string): boolean {
     if (message !== ROOM_FULL_STATUS) return false
+    // No storage to carry the move: stay in the local play networking has already started.
+    if (!storageWorks()) { this.d.notice("This world is full, so you're exploring on your own with bots.", []); return true }
     const next = onRefused(this.arrived, this.d.room())
     if (next.go === 'universe') this.go(this.roomURL(next.room), next.move)
     else if (next.go === 'back') this.go(new URL(next.url), next.move)

@@ -8,7 +8,7 @@ import { ResumeSession, RESUME_KEY } from './core/resume'
 import { applyStartWorld } from './core/startWorld'
 import { createWorldEntry, freshVehicle, seatAfterRebuild } from './core/worldEntry'
 import { currentPlanet, currentWorldName, encodeWorld, randomSeed } from './world/planets'
-import { ParallelUniverses } from './ui/parallelUniverse'
+import { ParallelUniverses, gameOnScreen, holdVeil, moveVeilLine } from './ui/parallelUniverse'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
 import { liquidEligible, liquidSelected, restoreGlassMaterial, liquidQualityHint, setGlassForVisit } from './ui/glassMaterial'
@@ -70,20 +70,18 @@ async function main(): Promise<void> {
     room: () => shell.room || roomFromQuery(query),
     entryURL: () => lobbyAddress.playURL(),
     world: () => encodeWorld(),
-    // The loading veil (index.html) comes up at once, so the descent hands straight over to the
-    // same veil the next page opens with: one continuous entry, never a frozen frame meanwhile.
-    // Its 60-second failsafe animation has long finished for anyone who waited in the lobby and
-    // would keep it hidden (forwards fill), so it is cancelled first.
-    navigate: url => {
-      const veil = document.querySelector<HTMLElement>('.boot-veil')
-      if (veil) veil.style.animation = 'none'
-      document.documentElement.dataset.boot = 'loading'
+    // The loading veil comes up at once with the move's line, so the descent hands straight over
+    // to the same veil the next page holds until its game is on screen: one continuous entry.
+    navigate: (url, move) => {
+      holdVeil(moveVeilLine(move), () => false)
       location.replace(url)
     },
     notice: (text, actions) => shell.showRoomNotice(text, actions),
     setUniverse: state => shell.setUniverse(state),
     copyLink: () => shell.copyRoomLink(),
   })
+  // Opened by a move: the veil stays up, saying why, until the game is on screen. Never the lobby between.
+  if (universes.arrived) holdVeil(moveVeilLine(universes.arrived), () => gameOnScreen())
   const game = new Game(canvas)
   await game.init()
 

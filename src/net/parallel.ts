@@ -58,8 +58,18 @@ export function putMove(move: RoomMove, store: Store | null = session()): void {
   try { store?.setItem(MOVE_KEY, JSON.stringify(move)) } catch { /* storage is optional: the move just goes unexplained */ }
 }
 
-/** At most this many refusals in a row before staying in local play with bots. */
+/** The refusal in a row that stays in local play with bots instead of moving again. */
 export const MAX_HOPS = 3
+
+/**
+ * Whether this tab can carry a move across a navigation. Without it nothing bounds a chain of
+ * moves and the arrival line is lost, and the address cannot carry them instead: it is the link
+ * people copy. So without storage a full room means local play, said plainly (ParallelUniverses).
+ */
+export function storageWorks(store: Store | null = session()): boolean {
+  if (!store) return false
+  try { store.setItem(MOVE_KEY + '.probe', '1'); const ok = store.getItem(MOVE_KEY + '.probe') === '1'; store.removeItem(MOVE_KEY + '.probe'); return ok } catch { return false }
+}
 
 /** What to do when the room this page joined refused us as full. */
 export type Refusal =
@@ -70,11 +80,12 @@ export type Refusal =
  * `arrived`: the move that opened this page; `room`: the room this page asked for. A player who
  * left a universe to try a room that is still full goes back to that same universe, said once;
  * anyone else refused goes to a fresh universe of this world. A fresh room cannot be full, so a
- * chain of refusals means something else is wrong: after MAX_HOPS, local play.
+ * chain of refusals means something else is wrong: the MAX_HOPS-th refusal in a row stays in
+ * local play.
  */
 export function onRefused(arrived: RoomMove | null, room: string, now = Date.now(), name = parallelRoomName): Refusal {
   const hops = (arrived?.hops ?? 0) + 1
-  if (hops > MAX_HOPS) return { go: 'local' }
+  if (hops >= MAX_HOPS) return { go: 'local' }
   if (arrived?.reason === 'returning' && arrived.back) return { go: 'back', url: arrived.back, move: { reason: 'still-full', asked: arrived.asked, hops, at: now } }
   return { go: 'universe', room: name(), move: { reason: 'full', asked: canonicalRoom(room || DEFAULT_ROOM), hops, at: now } }
 }
@@ -83,7 +94,7 @@ export function onRefused(arrived: RoomMove | null, room: string, now = Date.now
 export function arrivalLine(arrived: RoomMove | null): string | null {
   switch (arrived?.reason) {
     case 'full': return "This world is full, so you're in a parallel universe of it. Invite friends with your link."
-    case 'still-full': return "The main world is still full, so you're back in your parallel universe."
+    case 'still-full': return arrived.asked === DEFAULT_ROOM ? "The main world is still full, so you're back in your parallel universe." : "That world is still full, so you're back in your parallel universe."
     case 'chosen': return "You're in a parallel universe of this planet. Only people with your link can join."
     default: return null
   }
