@@ -6,8 +6,8 @@
  *
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
-import { MAX_ROOM_PLAYERS, type PlayerInfo } from '../shared/protocol'
-import { ASSIGN_TIMEOUT_MS, type AssignRequest, isPublicRoom, OFF_CACHE_MS, PUBLIC_BASE, RoomRegistry, type RegistryEntry } from './registry'
+import { CLOSE_BUSY, MAX_ROOM_PLAYERS, type PlayerInfo } from '../shared/protocol'
+import { ASSIGN_SLOW_MS, ASSIGN_TIMEOUT_MS, type AssignRequest, isPublicRoom, OFF_CACHE_MS, PUBLIC_BASE, PUBLIC_ROOM_HEADER, RoomRegistry, type RegistryEntry } from './registry'
 import { PresenceReporter } from './presenceReporter'
 import { CLOCK_MS, type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
@@ -98,16 +98,25 @@ export default {
       if (req.headers.get('Upgrade')?.toLowerCase() !== 'websocket') {
         return new Response('expected a websocket', { status: 426 })
       }
+      // Only this Worker may name an overflow room to a room object: never a caller.
+      if (req.headers.has(PUBLIC_ROOM_HEADER)) {
+        const headers = new Headers(req.headers)
+        headers.delete(PUBLIC_ROOM_HEADER)
+        req = new Request(req, { headers })
+      }
       const name = roomName(url.searchParams.get('room'))
       // Public room overflow: only clients that ask (assign=1) and only with the master switch
       // at "runtime" (then the runtime flag decides). Frozen clients never ask, so they keep
       // today's behaviour exactly. Assigned "lobby": the request goes on untouched.
       if (name === PUBLIC_BASE && url.searchParams.get('assign') === '1' && env.PUBLIC_OVERFLOW === 'runtime') {
         const seat = await assignPublic(env, url.searchParams.get('prefer'), url.searchParams.get('full'))
+        if (seat === null) return busy()
         if (seat !== name) {
-          const to = new URL(req.url)
-          to.searchParams.set('room', seat)
-          return env.ROOMS.get(env.ROOMS.idFromName(seat)).fetch(new Request(to.href, req))
+          // An overflow room ("lobby#2"): its own object, told its name in a header only this
+          // Worker sets. No ?room= value can name it (see server/registry.ts).
+          const headers = new Headers(req.headers)
+          headers.set(PUBLIC_ROOM_HEADER, seat)
+          return env.ROOMS.get(env.ROOMS.idFromName(seat)).fetch(new Request(req, { headers }))
         }
       }
       return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(req)
@@ -138,29 +147,57 @@ let offUntil = 0
 export function forgetOverflowCache(): void { offUntil = 0 }
 
 /**
- * The public room this arrival should join (server/registry.ts PublicSeats), or "lobby" when
- * the registry says overflow is off, answers nonsense, fails or takes over ASSIGN_TIMEOUT_MS.
+ * The public room this arrival should join (server/registry.ts PublicSeats), "lobby" when the
+ * registry says overflow is off, or null when it gave no usable answer within
+ * ASSIGN_TIMEOUT_MS (slow, failing or nonsense). Null is not sent to "lobby" blind: under a
+ * blast that would be a crowd at a full room. The client is closed with CLOSE_BUSY instead.
  */
-async function assignPublic(env: Env, prefer: string | null, full: string | null): Promise<string> {
+async function assignPublic(env: Env, prefer: string | null, full: string | null): Promise<string | null> {
   if (Date.now() < offUntil) return PUBLIC_BASE
   let timer: ReturnType<typeof setTimeout> | undefined
+  const started = Date.now()
+  let outcome = 'ok'
   try {
     const body: AssignRequest = { prefer, full, cap: MAX_ROOM_PLAYERS }
     const asked = env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID))
       .fetch(new Request('https://registry/assign', { method: 'POST', body: JSON.stringify(body) }))
       .then(async (r) => {
         if (r.headers.get('x-overflow') === 'off') offUntil = Date.now() + OFF_CACHE_MS
-        return r.ok ? r.text() : PUBLIC_BASE
+        return r.ok ? r.text() : null
       })
-    const late = new Promise<string>((resolve) => { timer = setTimeout(() => resolve(PUBLIC_BASE), ASSIGN_TIMEOUT_MS) })
+    const late = new Promise<null>((resolve) => { timer = setTimeout(() => { outcome = 'timeout'; resolve(null) }, ASSIGN_TIMEOUT_MS) })
     const seat = await Promise.race([asked, late])
-    return isPublicRoom(seat) ? seat : PUBLIC_BASE
+    if (isPublicRoom(seat)) return seat
+    if (outcome === 'ok') outcome = 'nonsense'
+    return null
   } catch (error) {
+    outcome = 'error'
     logError('error', error, { where: 'assign' })
-    return PUBLIC_BASE
+    return null
   } finally {
     clearTimeout(timer)
+    const ms = Date.now() - started
+    if (outcome !== 'ok' || ms > ASSIGN_SLOW_MS) logEvent('assign_slow', { ms, outcome })
   }
+}
+
+/**
+ * The room a socket request reaching a room object is for. An overflow room's name comes only
+ * from the Worker's header (which it strips from every caller); otherwise ?room=, slugged.
+ */
+export function roomNameFor(req: Request): string {
+  const assigned = req.headers.get(PUBLIC_ROOM_HEADER)
+  return isPublicRoom(assigned) ? assigned : roomName(new URL(req.url).searchParams.get('room'))
+}
+
+/** A socket that says the server is busy and closes (CLOSE_BUSY): the client retries once. */
+function busy(): Response {
+  const pair = new WebSocketPair()
+  const socket = pair[1] as HibernatingWebSocket & { accept(): void }
+  socket.accept()
+  socket.send(JSON.stringify({ type: 'error', message: 'busy' }))
+  socket.close(CLOSE_BUSY, 'busy')
+  return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit)
 }
 
 /** Constant time string comparison, so the switch's secret cannot be guessed by timing. */
@@ -463,12 +500,11 @@ export class RoomDO {
   async fetch(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname
     if (path === '/report' || path === '/totals' || path === '/presence' || path === '/assign' || path === '/overflow') return this.registryFetch(req, path)
-    const name = roomName(new URL(req.url).searchParams.get('room'))
-    const room = this.ensureRoom(name)
+    const room = this.ensureRoom(roomNameFor(req))
     const pair = new WebSocketPair()
     const server = pair[1]
     this.state.acceptWebSocket(server)
-    server.serializeAttachment({ room: name, at: Date.now() } satisfies Attachment)
+    server.serializeAttachment({ room: room.name, at: Date.now() } satisfies Attachment)
     room.connect(this.peer(server))
     logEvent('socket_open', { room: room.tag, sockets: this.state.getWebSockets().length })
     return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit)

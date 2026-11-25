@@ -16,6 +16,11 @@ import { wrapDistance } from './wrap'
 export const PROTOCOL_VERSION = 2
 /** Close code: this player's place was taken over by a newer connection with its secret. */
 export const CLOSE_REPLACED = 4003
+/**
+ * Close code: public room overflow could not assign a room in time (server/worker.ts). Only a
+ * client that asked for assignment (assign=1) ever receives it; it retries once.
+ */
+export const CLOSE_BUSY = 4005
 
 /** Binary message kinds (first byte). */
 export const BIN_STATE = 1
@@ -515,7 +520,9 @@ export type ServerMessage =
    * the first player into an idle reset room brought their world.
    */
   | { type: 'reset'; reason: 'idle' | 'host' | 'join'; from: number; params: Record<string, ParamWireValue>; game: GameState }
-  | { type: 'error'; message: string }
+  /** `room`: only from an overflow public room refusing (server/registry.ts), so the client's
+   * retry can name it; absent everywhere else, so other refusals are unchanged on the wire. */
+  | { type: 'error'; message: string; room?: string }
   /**
    * A line of chat from player or bot `from`, cleaned and filtered by the room, at server
    * time `t`. Sent to everyone in the room, the speaker included. Older clients ignore it.

@@ -32,8 +32,8 @@ export function logError(event: string, error: unknown, fields: LogFields = {}):
  */
 export function roomTag(name: string): string {
   if (name === PUBLIC_ROOM) return 'public'
-  // Overflow public rooms (server/registry.ts PublicSeats): lobby-2 logs as public-2.
-  const overflow = /^lobby-(\d{1,2})$/.exec(name)
+  // Overflow public rooms (server/registry.ts PublicSeats): lobby#2 logs as public-2.
+  const overflow = /^lobby#(\d{1,2})$/.exec(name)
   return overflow ? `public-${overflow[1]}` : sha256Hex(name).slice(0, 8)
 }
 

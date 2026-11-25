@@ -831,7 +831,8 @@ export class Room {
       return
     }
     if (this.players.size >= this.maxPlayers) {
-      this.sendTo(peer, { type: 'error', message: 'room is full' })
+      // An overflow public room ("lobby#2") names itself, for the client's one retry (full=).
+      this.sendTo(peer, { type: 'error', message: 'room is full', ...(this.name.includes('#') ? { room: this.name } : {}) })
       peer.close(4001, 'full')
       return
     }
