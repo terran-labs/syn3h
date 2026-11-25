@@ -61,6 +61,17 @@ const HEAD_FADE = 1.5
 const SOFT_END = 2.5
 /** A ball off the water for less than this (s) is skimming, not skipping: its trail stays joined. */
 const SKIM_GAP = .12
+/**
+ * Coming out of the water (`exitSplash`). A hull counts as out only after it has been wholly under:
+ * wetted fraction 1, then this many metres deeper; and it fires once, as it breaks back through
+ * moving up at least EXIT_RISE m/s. A ball is wholly under once its top is: its base deeper than
+ * its diameter. Bobbing, wallowing and floating never get there, so they never fire.
+ */
+const EXIT_BAND = .3, EXIT_RISE = .3
+/** A hull's fraction below which it has broken back out (a ball: its top above the surface). */
+const EXIT_OUT = .5
+/** Buggy mass and half beam, the reference an entry or exit is scaled against. */
+const REF_MASS = 30, REF_BEAM = 1.2
 
 /**
  * What meets the water. `ball` is a Zorb's radius, metres (0 for a hull): it touches at one
@@ -74,8 +85,20 @@ export interface WakeShape {
   near?: number
   /** Half the craft's beam, metres. */
   beam?: number
+  /** The craft's mass, kg: heavier hulls throw a heavier splash. Unset, a buggy's. */
+  mass?: number
 }
 const HULL_SHAPE: WakeShape = { ball: 0 }
+/**
+ * How big a craft's splashes are against a buggy's: by the square root of its mass and its beam,
+ * so a tank throws a slab and a buggy a spray. A ball is sized by its own patch instead.
+ */
+export function sizeScale(shape: WakeShape): number {
+  if (shape.ball) return 1
+  const m = Number.isFinite(shape.mass) && shape.mass! > 0 ? shape.mass! : REF_MASS
+  const b = Number.isFinite(shape.beam) && shape.beam! > 0 ? shape.beam! : REF_BEAM
+  return Math.max(.6, Math.min(2.5, Math.sqrt(m / REF_MASS) * .5 + (b / REF_BEAM) * .5))
+}
 /**
  * Half width of the patch where a ball of radius `r` meets water `depth` deep: the chord of
  * the sphere at that depth, at least a hand's width so a ball just kissing the water still
@@ -135,6 +158,12 @@ interface VehicleState {
   touching: boolean; speed: number; ball: number
   /** Seconds since it last touched the water. */
   dry: number
+  /** Metres below its wholly-wet point (integrated from its vertical speed), or its wetted fraction while not wholly wet. */
+  depth: number
+  /** Deepest its top went under since it was last wholly under, metres. */
+  deepest: number
+  /** It has been wholly under since it last came out: an exit may fire. */
+  under: boolean
 }
 
 export class SpraySim {
@@ -157,6 +186,13 @@ export class SpraySim {
   /** Per arm: what it draws as (3 a soft trail, the only kind drawn now; 0 unset). */
   readonly armKind: Uint8Array
   /** Multiplies every soft trail's and ring's strength and width (water.wakeStrength, water.wakeWidth). */
+  /** Exit splash scale (water.splash.exit), the Zorb breach's factor on it (water.splash.zorbBreach), and how much each metre of depth adds (water.splash.depthGain). */
+  exitScale = 1
+  zorbBreach = 2.5
+  depthGain = .08
+  /** Entry splashes, and exits, since the simulation began (for tests and evidence). */
+  entries = 0
+  exits = 0
   wakeStrength = 1
   wakeWidth = 1
   /**
@@ -295,7 +331,7 @@ export class SpraySim {
     }
     this.slotUsed[slot] = 1
     this.armKind.fill(0, slot * ARMS, slot * ARMS + ARMS)
-    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0 }
+    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0, depth: 0, deepest: 0, under: false }
     this.vehicles.set(id, s)
     return s
   }
@@ -367,16 +403,34 @@ export class SpraySim {
       else this.lay(s, x, y, z, speed, sub, teleported || skipped, scale)
     } else if (near > .02 && dt > 0) this.air(s, x, y, z, vx, vz, speed, shape.air === 'cushion', near, Math.max(.5, shape.beam ?? 1.5) * scale, dt, teleported || skipped, scale)
     else this.off(s)
-    if (entering) this.splash(x, y, z, vx, Math.min(vy, 0), vz, scale, ball)
+    // Size and weight: a tank throws a slab, a buggy a spray.
+    const size = sizeScale(shape)
+    if (entering) this.splash(x, y, z, vx, Math.min(vy, 0), vz, scale * size, ball)
+    // Coming out. Depth below the wholly-wet point is integrated from the vertical speed (the
+    // caller gives the surface and the wetted fraction, not the hull's height): a ball is wholly
+    // wet with its bottom metre under, a hull with its whole envelope under.
+    if (sub < .999) s.depth = sub
+    else s.depth = Math.max(s.depth, 1) - vy * dt
+    const top = ball ? 2 * ball : 1
+    if (s.depth > top + EXIT_BAND) { s.under = true; s.deepest = Math.max(s.deepest, s.depth - top) }
+    const out = ball ? s.depth < top : sub < EXIT_OUT
+    if (s.under && out && vy > EXIT_RISE && !teleported) {
+      this.exitSplash(x, y, z, vx, vy, vz, scale * size, ball, s.deepest)
+      s.under = false; s.deepest = 0
+    } else if (s.under && out) { s.under = false; s.deepest = 0 }
     s.submerged = sub; s.x = x; s.z = z
     this.version++
     return entering
   }
 
-  private drop(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, floor: number, kind: number, scale: number) {
-    // When full, overwrite a random live droplet rather than dropping new spray on the floor.
-    if (this.dropletCount >= this.cap.droplets) { this.refused++; return }
-    const i = this.dropletCount++, d = this.droplets, o = i * D
+  private drop(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, floor: number, kind: number, scale: number, priority = false) {
+    // When full, new spray is refused; a splash with priority (the Zorb breach) takes the oldest
+    // live droplet instead, so the showpiece is whole at the smallest pool.
+    let i: number
+    if (this.dropletCount < this.cap.droplets) i = this.dropletCount++
+    else if (priority) i = this.oldest()
+    else { this.refused++; return }
+    const d = this.droplets, o = i * D
     d[o + DX] = x; d[o + DY] = y; d[o + DZ] = z; d[o + DVX] = vx; d[o + DVY] = vy; d[o + DVZ] = vz
     // Ballistic droplets live until they land; the cap only bounds a stray one.
     // Drawn sizes vary (0.6 to 1.7 times), from their own hash so the motion's random
@@ -400,6 +454,7 @@ export class SpraySim {
   impact(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number): void { this.splash(x, y, z, vx, vy, vz, scale) }
 
   private splash(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number, ball = 0) {
+    this.entries++
     const impact = SpraySim.impact(vx, vy, vz)
     const k = splashShape(impact)
     // Whatever the impact, a splash takes at most half the pool, shared out by the throttle.
@@ -458,6 +513,69 @@ export class SpraySim {
     }
     this.lastSplash = impact
   }
+  /** Index of the live droplet that has lived the largest share of its life. */
+  private oldest(): number {
+    const d = this.droplets
+    let best = 0, worst = -1
+    for (let i = 0; i < this.dropletCount; i++) { const o = i * D, a = d[o + DAGE] / Math.max(1e-3, d[o + DLIFE]); if (a > worst) { worst = a; best = i } }
+    return best
+  }
+
+  /**
+   * Coming out of the water, going up: water carried up with the hull and shed. A column that
+   * follows the hull briefly and falls back, sheets thrown off its sides, run-off falling from its
+   * footprint, and a soft ring where it left; scaled by its upward speed. A ball rising from
+   * deep (the Zorb breach) is the largest splash in the game: a dome of water it lifts, a tall
+   * column, a wide crown and a strong ring, bigger the deeper it came from (`deepest`, metres its
+   * top went under). It takes priority over older droplets, so it is whole even at the smallest
+   * pool. A slow crawl up a shore gives a few drips and a faint ring.
+   */
+  private exitSplash(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number, ball: number, deepest: number) {
+    this.exits++
+    const rise = Math.max(0, vy)
+    const depth = 1 + this.depthGain * Math.max(0, Math.min(30, Number.isFinite(deepest) ? deepest : 0))
+    const strength = rise * depth * this.exitScale * (ball ? this.zorbBreach : 1)
+    if (!(strength > 0)) return
+    // 0 (a crawl) to 1 (a jet launching out) and up to 3 for a deep breach.
+    const k = Math.min(3, strength / 10)
+    const priority = ball > 0
+    const reach = ball || 1.3
+    const want = Math.max(1, (60 + 40 + 30) * k + 8 + (ball ? 120 * k : 0))
+    const budget = Math.floor(this.cap.droplets * (priority ? 1 : .5))
+    const share = Math.min((priority ? 1 : this.throttle) * scale, budget / want)
+    const n = (count: number) => Math.round(count * share)
+    // Column: water lifted with the hull, following it briefly and falling back.
+    for (let i = 0, c = n(60 * k); i < c; i++) {
+      const a = this.random() * Math.PI * 2, r = this.random() * reach * .6
+      this.drop(x + Math.cos(a) * r, y + .1, z + Math.sin(a) * r, vx * .5 + Math.cos(a) * .4, rise * (.7 + this.random() * .45), vz * .5 + Math.sin(a) * .4, (ball ? .15 : .08) + this.random() * (ball ? .2 : .12), y, 0, scale, priority)
+    }
+    // Sheets shed off the sides.
+    for (let i = 0, c = n(40 * k); i < c; i++) {
+      const a = this.random() * Math.PI * 2, out = 1 + this.random() * 2.2 * Math.min(1.5, k + .3)
+      this.drop(x + Math.cos(a) * reach, y + .2, z + Math.sin(a) * reach, vx * .4 + Math.cos(a) * out, rise * (.1 + this.random() * .3) + .3, vz * .4 + Math.sin(a) * out, .04 + this.random() * .06, y, 0, scale, priority)
+    }
+    // Run-off: drips falling from the footprint (all a crawl up a shore gives, with the ring).
+    for (let i = 0, c = n(30 * k + 8); i < c; i++) {
+      const a = this.random() * Math.PI * 2, r = Math.sqrt(this.random()) * reach
+      this.drop(x + Math.cos(a) * r, y + .25 + this.random() * .3, z + Math.sin(a) * r, vx * .8, this.random() * .4, vz * .8, .015 + this.random() * .02, y, 0, scale, priority)
+    }
+    if (ball) {
+      // The breach: a dome lifted round the ball, and a wide crown thrown out from its edge.
+      for (let i = 0, c = n(70 * k); i < c; i++) {
+        const a = i / Math.max(1, c) * Math.PI * 2 + this.random() * .2, r = ball * (.8 + this.random() * .25), out = .6 + this.random() * 1.2
+        this.drop(x + Math.cos(a) * r, y + .2, z + Math.sin(a) * r, Math.cos(a) * out, rise * (.5 + this.random() * .4), Math.sin(a) * out, .2 + this.random() * .25, y, 0, scale, priority)
+      }
+      for (let i = 0, c = n(50 * k); i < c; i++) {
+        const a = this.random() * Math.PI * 2, r = ball * 1.1, out = (2 + this.random() * 3) * Math.min(2, k)
+        this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (2 + this.random() * 3) * Math.min(2, k), Math.sin(a) * out, .08 + this.random() * .1, y, 0, scale, priority)
+      }
+    }
+    // A soft ring where it left; strong for a breach.
+    const i = this.ringCount < this.cap.rings ? this.ringCount++ : 0, o = i * R, rr = this.rings
+    rr[o + RX] = x; rr[o + RY] = y + WAKE_LIFT; rr[o + RZ] = z; rr[o + RAGE] = 0; rr[o + RLIFE] = 1.4 + Math.min(2, k)
+    rr[o + RSIZE] = reach * (ball ? 2.5 : 1.8) * scale; rr[o + RSTRENGTH] = Math.min(1, .2 + k * .3); rr[o + RSOFT] = 1
+  }
+
   /** A small ring where a drop of `size` (radius, m) landed. */
   private ripplet(x: number, y: number, z: number, size: number) {
     if (!this.cap.ripplets || !Number.isFinite(x + y + z)) return
