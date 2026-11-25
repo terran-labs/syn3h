@@ -121,10 +121,6 @@ export class PlayerPanel {
     el.addEventListener('focusin', () => { this.pinned = true })
     el.addEventListener('pointerup', () => { this.dragging = false })
     this.dialog = new EjectDialog(host)
-    document.addEventListener('keydown', event => {
-      if (event.key !== 'Escape' || el.hidden || this.dialog.open) return
-      event.preventDefault(); event.stopPropagation(); this.close()
-    }, { capture: true })
     document.addEventListener('pointerdown', event => {
       if (el.hidden || this.dialog.open) return
       const target = event.target as Element
@@ -136,6 +132,16 @@ export class PlayerPanel {
   }
 
   get openId(): number | null { return this.id }
+
+  /**
+   * Escape (Shell's key handler, which runs first): cancel the eject dialog, else close the
+   * panel. True when it used the key.
+   */
+  escape(): boolean {
+    if (this.dialog.open) { this.dialog.close(); return true }
+    if (!this.element.hidden) { this.close(); return true }
+    return false
+  }
 
   /** Where the current roster comes from (Shell), for hover opening. */
   setRoster(players: () => readonly SessionPlayer[] | undefined): void { this.players = players }

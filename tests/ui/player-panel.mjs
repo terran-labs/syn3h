@@ -32,7 +32,7 @@ async function mock(page, role) {
     window.panelFired = []
     const traits = new Map()
     mira.shell.setPlayerHooks({
-      moderation: id => id === miraNet.id ? { ok: false, reason: 'self' } : role === 'host' ? { ok: true, reason: 'host-private' } : { ok: false, reason: 'not-host' },
+      moderation: id => id === miraNet.id ? { ok: false, reason: 'self' } : role === 'host' ? { ok: true, reason: 'host-private' } : miraNet.players.get(id)?.role === 'creator' ? { ok: false, reason: 'target-creator' } : { ok: false, reason: 'not-host' },
       muteForAll: (id, on) => { window.panelFired.push(['muteForAll', id, on]); miraNet.players.get(id).muted = on },
       eject: (id, stop) => window.panelFired.push(['eject', id, stop.id]),
       botTraits: id => ({ values: { boldness: .78, curiosity: .41, sociability: .62, mischief: .3, patience: .55, ...traits.get(id) }, overridden: Object.keys(traits.get(id) ?? {}) }),

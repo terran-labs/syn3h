@@ -1757,10 +1757,12 @@ export class Shell implements System {
     // Space and Enter, and focus rests on one after any click on the panels.
     const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || element.closest('[role=listbox]') !== null)
     // The vehicle picker owns the arrow keys while it has focus (a radiogroup), as a list does.
-    const typing = field(event.target) || field(document.activeElement) || (event.target instanceof Element && event.target.closest('[role=radiogroup]') !== null)
+    const typing = field(event.target) || field(document.activeElement) || (event.target instanceof Element && event.target.closest('[role=radiogroup], [role=slider]') !== null)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
+      // The eject dialog, then the player panel, close before Escape frees the cursor or pauses.
+      if (this.playerPanel?.escape()) { event.preventDefault(); event.stopImmediatePropagation(); return }
       // Escape in a text field only leaves the field (chat closes itself): it takes another to
       // pause, and the interface mode stays as it was.
       const target = event.target
