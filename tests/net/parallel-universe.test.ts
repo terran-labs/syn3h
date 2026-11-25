@@ -181,6 +181,7 @@ describe('a parallel universe', () => {
     r.report(name, 2, 1000, 'volcanic')
     const presence = JSON.stringify(r.presence(1500)), totals = JSON.stringify(r.totals(1500))
     expect(presence).not.toContain(name); expect(totals).not.toContain(name)
-    expect(r.presence(1500).byRecipe).toEqual([{ recipeId: 'volcanic', rooms: 2, players: 18, oldestReportAt: 1000 }])
+    // Counts by planet only (rows may carry more counts, such as active players: never a name).
+    expect(r.presence(1500).byRecipe).toMatchObject([{ recipeId: 'volcanic', rooms: 2, players: 18 }])
   })
 })
