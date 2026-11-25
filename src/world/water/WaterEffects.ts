@@ -75,7 +75,7 @@ export class WaterEffects implements System {
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
-  private readonly shape:{ball:number;air:'cushion'|'downwash'|null;near:number;beam:number}={ball:0,air:null,near:0,beam:1}
+  private readonly shape:{ball:number;air:'cushion'|'downwash'|null;near:number;beam:number;mass:number}={ball:0,air:null,near:0,beam:1,mass:30}
   constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.lavaSpray=new Spray(game.scene,this.ripples,terrain,'lava');this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     this.motes=new Motes(game.scene);this.waterline=new Waterline(game.scene)
@@ -149,6 +149,7 @@ export class WaterEffects implements System {
         this.shape.air=hover?'cushion':jet?'downwash':null
         this.shape.near=(hover?1-clearance/HOVER_REACH:jet?1-clearance/JET_REACH:0)*presence
         this.shape.beam=hover?1.6:1.2
+        this.shape.mass=v.body.mass()
         const fraction=submergedFraction(bottom,top,surface)*presence
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)
