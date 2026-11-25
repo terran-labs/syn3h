@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-24 10:00 PST, by the Orchestrator. A replacement resumes from here.
+Last verified: 2026-11-24 20:20 PST, by the Orchestrator. A replacement resumes from here.
 
 ## Authority
 
@@ -11,8 +11,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2402 (release-118, one stack owns the bottom-centre strip: build notice, race status, the slow-frames offer, Preparing world and the pause bar), source 055b6772,
-frozen copy 20261124-094826-055b6772, Worker version 90095f4c, at https://mira.cc/ since 24 November 09:53 PST.
+Live: v26.11.2403 (release-119, a failed physics engine download retries by itself, five tries then Try again; the counter box refit for phones), source 7b90acc4,
+frozen copy 20261124-200634-7b90acc4, Worker version 05f0d69a, at https://mira.cc/ since 24 November 20:12 PST.
 The game is Mira from v26.11.2300 (LAST_SYN3H_VERSION v26.11.2206; notes heading "## Mira vX"). Kept named syn3h on
 purpose: the Worker, its workers.dev addresses, the Durable Object, the R2 bucket, x-syn3h-version, the token path,
 'buggy-syn3h', local paths and /tmp names (ship.sh outcomes are now /tmp/mira-ship-N*), the repository (docs/NAMES.md).
@@ -183,6 +183,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2400 | 116 | m-backdrop-2400 | ?canvasBackdrop=1, ?presentHold=1 and ?canvasAlpha=opaque test links; the counter box no longer covers the panels on a phone |
 | v26.11.2401 | 117 | m-icon-2401 | the redrawn app icon (mira3, every ring and world inside the square); the lobby name drawn as metal |
 | v26.11.2402 | 118 | m-stack-2402 | notices and buttons at the bottom of the screen no longer overlap |
+| v26.11.2403 | 119 | m-retry-2403 | a failed physics engine download retries by itself; the counter box fits a phone |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
