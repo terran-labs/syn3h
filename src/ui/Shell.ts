@@ -30,7 +30,7 @@ import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/s
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
-import { populationLabel, PresenceFeed, type Populations } from './galaxy/presence'
+import { activePlayersLabel, populationLabel, PresenceFeed, type Populations } from './galaxy/presence'
 import { nextTwinControl, twinWorldCode, type TwinAction } from './galaxy/twinActions'
 import { lobbyTwinsEnabled } from '../core/twinPreview'
 import { wordmarkSvg } from './brand/logo'
@@ -1880,9 +1880,16 @@ export class Shell implements System {
 
   private updateTwinPresence(values: Populations): void {
     for (const world of this.galaxyWorlds) {
-      const count = this.galaxyChips.get(world.id)?.querySelector('.galaxy-population')
-      const label = populationLabel(values.get(world.recipe ?? world.id) ?? null)
-      if (count && count.textContent !== label) count.textContent = label
+      const chip = this.galaxyChips.get(world.id)
+      const count = chip?.querySelector('.galaxy-population')
+      if (!chip || !count) continue
+      const value = values.get(world.recipe ?? world.id) ?? null
+      const detail = populationLabel(value)
+      const text = value ? (value.active ? activePlayersLabel(value.active) : '') : detail
+      if (count.textContent !== text) count.textContent = text
+      const spoken = document.getElementById(`twin-count-${world.id}`)
+      if (spoken && spoken.textContent !== detail) spoken.textContent = detail
+      chip.title = detail
     }
   }
 
@@ -2046,10 +2053,12 @@ export class Shell implements System {
         name.id = `twin-world-${world.id}`
         action.textContent = '· Public and shared'
         action.id = `twin-public-${world.id}`
-        count.id = `twin-count-${world.id}`
-        count.textContent = populationLabel(null)
-        chip.setAttribute('aria-labelledby', `${name.id} ${action.id}`)
-        chip.setAttribute('aria-describedby', count.id)
+        const spoken = document.createElement('span')
+        spoken.hidden = true
+        spoken.id = `twin-count-${world.id}`
+        spoken.textContent = count.textContent = chip.title = populationLabel(null)
+        chip.append(spoken)
+        chip.setAttribute('aria-labelledby', `${name.id} ${action.id} ${spoken.id}`)
       }
       chip.addEventListener('click', event => {
         if (this.twins && !world.forming && (event.detail === 0 || !this.galaxy?.live)) {
@@ -2100,7 +2109,7 @@ export class Shell implements System {
         for (const world of worlds) {
           if (world.id === 'custom') continue
           const chip = chips.get(world.id)!, value = values.get(world.recipe ?? world.id) ?? null
-          const text = value && value.players > 0 ? `${value.players} online` : ''
+          const text = value && value.active > 0 ? activePlayersLabel(value.active) : ''
           const count = chip.querySelector('.galaxy-population')!
           if (count.textContent !== text) count.textContent = text
           // The day length goes in the tooltip, not the label: the label stays two short lines.

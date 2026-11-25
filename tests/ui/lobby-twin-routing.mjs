@@ -94,7 +94,7 @@ async function controls(page, recipe, onScreen = true, actions = ['public', 'pri
   assert.match(names.private, /^Your .+ · Private to you$/, 'the private caption identifies its action')
   return {
     recipe: names.recipe,
-    public: page.getByRole('button', { name: names.public, exact: true }),
+    public: page.getByRole('button', { name: names.public }).and(page.locator('[data-world=' + JSON.stringify(names.recipe) + ']')),
     private: page.getByRole('button', { name: names.private, exact: true }),
   }
 }

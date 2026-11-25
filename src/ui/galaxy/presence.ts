@@ -2,8 +2,11 @@ import type { PresenceSnapshot } from '../../../shared/presence'
 import { lobbyTwinsEnabled } from '../../core/twinPreview'
 export type { PresenceSnapshot } from '../../../shared/presence'
 
-/** Public recipe totals only. Room identities and joining stay outside the lobby feed. */
-export interface Population { rooms: number; players: number }
+/**
+ * Public recipe totals only. Room identities and joining stay outside the lobby feed.
+ * `active`: players not paused, what the lobby shows; from an older server, all players.
+ */
+export interface Population { rooms: number; players: number; active: number }
 export type Populations = ReadonlyMap<string, Population | null>
 export const PRESENCE_TTL = 90_000
 export const PRESENCE_POLL = 30_000
@@ -16,6 +19,7 @@ export function readPresence(value: unknown): PresenceSnapshot | null {
   for (const row of v.byRecipe) {
     if (!row || (row.recipeId !== null && typeof row.recipeId !== 'string') || seen.has(row.recipeId)) return null
     if (![row.rooms, row.players, row.oldestReportAt].every(n => Number.isSafeInteger(n) && n >= 0) || row.oldestReportAt > v.generatedAt) return null
+    if (row.active !== undefined && !(Number.isSafeInteger(row.active) && row.active >= 0 && row.active <= row.players)) return null
     seen.add(row.recipeId)
   }
   return v
@@ -27,13 +31,25 @@ export function populations(snapshot: PresenceSnapshot | null, recipes: readonly
   return new Map(recipes.map(id => {
     if (!valid) return [id, null]
     const row = snapshot!.byRecipe.find(r => r.recipeId === id)
-    if (!row) return [id, { rooms: 0, players: 0 }]
-    return [id, now - row.oldestReportAt < PRESENCE_TTL ? { rooms: row.rooms, players: row.players } : null]
+    if (!row) return [id, { rooms: 0, players: 0, active: 0 }]
+    return [id, now - row.oldestReportAt < PRESENCE_TTL ? { rooms: row.rooms, players: row.players, active: row.active ?? row.players } : null]
   }))
 }
 
+/**
+ * A planet's count in the lobby: "1 active player", "N active players". Active means
+ * connected and not paused (the pause screen or a hidden page). The one wording for every
+ * count of people shown beside a planet; zero is for the caller (the caption shows nothing).
+ */
+export function activePlayersLabel(active: number): string {
+  return active === 1 ? '1 active player' : `${active} active players`
+}
+
+/** The planet's tooltip and spoken label: its active players and how many rooms they span. */
 export function populationLabel(value: Population | null): string {
-  return value ? `${value.players} connected across ${value.rooms} ${value.rooms === 1 ? 'room' : 'rooms'}` : 'Population unknown'
+  if (!value) return 'Population unknown'
+  if (value.active === 0) return 'No active players'
+  return `${activePlayersLabel(value.active)} across ${value.rooms} ${value.rooms === 1 ? 'room' : 'rooms'}`
 }
 
 /** The caller supplies actual lobby/tab visibility. No background polling or overlapping fetches. */

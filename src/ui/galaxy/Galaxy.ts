@@ -1642,7 +1642,7 @@ export class Galaxy {
       gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
       gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim); gl.uniform1f(u.uWorlds, this.worldsShown)
       gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
-      gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' || w.mapVariant?.startsWith('saved:') ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
+      gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' || w.mapVariant?.startsWith('saved:') ? -1 : this.population.get(w.recipe ?? w.id)?.active ?? -1))
       gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
       gl.uniform4fv(u.uWorld, places.flatMap((p, i) => [...p.position, Math.max(1e-3, p.radius * arrival[i])]))
       const settled = reveal === SETTLED
