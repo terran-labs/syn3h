@@ -6,7 +6,8 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 //    minimap's ring and the right panel from the right (1 px). Gear selector, accessories and
 //    chat share one left edge, stacked over the minimap in that order without overlapping, at
 //    1440x900 and 1280x800, both cursor modes. The drum is three rows and the same height in
-//    both modes, and the Wings, Zorb and Chat keys show in both.
+//    both modes. With the cursor free the Wings, Zorb and Chat rows show with their keys;
+//    captured, only the drum shows (the rows and the gear's detail fade out, in place).
 // 2. Nothing in the column covers the speed or height readouts (at a three-digit speed) or the reticle.
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
@@ -104,7 +105,11 @@ try {
       assert.ok(Math.abs(m.drum.top - m.edgeTop) <= 1, `${at}: the gear sits at the top left ${JSON.stringify([m.drum, m.edgeTop])}`)
       if (mode === 'free') drumFree = m.drum
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
-      assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys show ${JSON.stringify(m.keys)}`)
+      assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys are laid out ${JSON.stringify(m.keys)}`)
+      await page.waitForTimeout(400)
+      const shown = await page.evaluate(() => ['.hud-accessories', '.hud-chat', '.gear-selector .gs-detail', '.gear-selector .gs-drum'].map((s) => document.querySelector(s).checkVisibility({ opacityProperty: true, visibilityProperty: true })))
+      assert.deepEqual(shown, mode === 'free' ? [true, true, true, true] : [false, false, false, true], `${at}: rows, detail and drum shown ${JSON.stringify(shown)}`)
+      onLines(await lines(page), at)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }
