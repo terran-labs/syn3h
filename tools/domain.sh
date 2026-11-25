@@ -40,7 +40,10 @@ cd "$(dirname "$0")/.."
 . tools/smoke-run.sh
 REPO="$(pwd)"
 API=https://api.cloudflare.com/client/v4
-WORKER=syn3h
+# The Worker a host is attached to: production (syn3h) unless MIRA_DOMAIN_WORKER names the staging
+# Worker, which serves beta.mira.cc with its own rooms (ops/RELEASE.md, beta channel, 25 Nov 2026).
+WORKER="${MIRA_DOMAIN_WORKER:-syn3h}"
+case "$WORKER" in syn3h|syn3h-staging) ;; *) echo "domain.sh: MIRA_DOMAIN_WORKER must be syn3h or syn3h-staging" >&2; exit 2 ;; esac
 ZONES="syn3h.com mira.cc"
 # Never a Custom Domain: it would serve the game on a second origin (its own storage and invites).
 REDIRECT_ONLY=www.mira.cc
@@ -132,8 +135,12 @@ ZONE_NAME="${ZONE_NAME:-syn3h.com}"
 case " $ZONES " in *" $ZONE_NAME "*) ;; *) die "refusing zone $ZONE_NAME: only $ZONES" ;; esac
 case "$cmd" in check|'') ;; *) [ -n "$DRY" ] || cf_has_token || die "no Cloudflare token: put it in $MIRA_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN" ;; esac
 
-in_zone() { case "$1" in "$ZONE_NAME"|"www.$ZONE_NAME") return 0 ;; esac; return 1; }
-need_host_in_zone() { in_zone "$1" || die "refusing host $1: only $ZONE_NAME and www.$ZONE_NAME"; }
+# The staging Worker serves beta.<zone> and nothing else; production never serves beta.<zone>.
+in_zone() {
+  if [ "$WORKER" = syn3h-staging ]; then [ "$1" = "beta.$ZONE_NAME" ]; return; fi
+  case "$1" in "$ZONE_NAME"|"www.$ZONE_NAME") return 0 ;; esac; return 1
+}
+need_host_in_zone() { in_zone "$1" || die "refusing host $1 for Worker $WORKER: only $ZONE_NAME and www.$ZONE_NAME on syn3h, only beta.$ZONE_NAME on syn3h-staging"; }
 mira_only() { [ "$ZONE_NAME" = mira.cc ] || die "$cmd is for the mira.cc zone only"; }
 # The newest export of this zone; changing steps need one from the last two hours.
 fresh_export() {
