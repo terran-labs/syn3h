@@ -10,12 +10,12 @@
  * Both files are fetched from the site root without a Referer: the Worker serves a pinned
  * (?v=) page's assets by its Referer, and these must describe the live site, not the pin.
  */
+import { parseFeed, type Release } from './days'
 import { bareVersion, isNewer, latestVersion } from './version'
 
 declare const __MIRA_BUILD__: string | undefined
 
-/** One release: its player digest ("- " bullets, '' when it has none) and its full notes on GitHub. */
-export interface Release { version: string; date: string; summary: string; digest: string; url: string }
+export type { Release }
 
 export const FEED_URL = '/releases.json'
 export const VERSIONS_URL = '/v/versions.json'
@@ -39,8 +39,7 @@ let feed: Promise<Release[]> | undefined
 export function loadFeed(): Promise<Release[]> {
   feed ??= rootFetch(FEED_URL)
     .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() })
-    .then((body: { releases?: unknown }) => (Array.isArray(body.releases) ? body.releases : []).filter((r): r is Release =>
-      typeof r === 'object' && r !== null && bareVersion((r as Release).version) !== null && typeof (r as Release).summary === 'string'))
+    .then(parseFeed)
   feed.catch(() => { feed = undefined })
   return feed
 }
