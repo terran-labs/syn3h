@@ -141,8 +141,10 @@ function dayEntry(day: DayEntry): HTMLLIElement {
   line.append(text('span', day.label, 'update-day-date'))
   if (day.playing) line.append(text('span', 'You are playing this', 'update-badge is-running'))
   else if (day.isNew) line.append(text('span', 'New', 'update-badge is-new'))
-  line.append(text('span', day.count, 'update-day-count'))
-  line.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
+  // The count and the arrow wrap together, so the arrow is never left on a line of its own.
+  const meta = text('span', day.count, 'update-day-count')
+  meta.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
+  line.append(meta)
   button.append(line)
   if (day.summary) button.append(text('span', day.summary, 'update-day-summary'))
   heading.append(button)
