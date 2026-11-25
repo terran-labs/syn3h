@@ -237,7 +237,7 @@ if [ -n "$PROMOTE" ]; then
 fi
 if [ -z "$DRY" ] && [ -z "$STUB" ]; then
   [ -n "$PROMOTE" ] || need_secrets wrangler.staging.toml syn3h-staging
-  need_secrets wrangler.toml syn3h
+  need_secrets wrangler.toml syn3h # rename-keep: the production Worker's name
 fi
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
