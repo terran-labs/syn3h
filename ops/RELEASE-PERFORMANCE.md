@@ -11,13 +11,18 @@ v26.11.1518. Historic releases do not acquire invented retrospective measurement
 
 Run `tools/heavy.sh node tools/quality-frame-cost.mjs <frozen-checkout>` in a quiet
 slot and paste its table into the release notes. It serves the frozen build locally.
-Desktop Chrome measures Minimal through Cinematic at 1280 × 720, DPR 1, on Alpine
-seed 4 at 11:00 with the clock stopped. The same four mixed bots stay in view.
+Desktop Chrome measures all six presets on one page per backend at 1280 × 720, DPR 1.
+Alpine seed 4 stays at 23:00 so other vehicles can cast headlight pools. Four mixed bots
+are parked with their drivers paused. The tool applies each preset directly on its
+local page and waits 60 frames for it to settle. It interleaves presets, then reverses
+the order. Manual transition veils and their asynchronous preparation are outside
+the measurement.
 
-The median and 95th percentile use 240 consecutive game-frame intervals after each
-preset settles. GPU samples time the render passes separately when the backend exposes
-usable queries. Keep the browser, load and timing labels with the table. These
-figures describe this fixture and machine. They carry no release threshold.
+Each row covers 96 frames. Script time covers the game's callback through render submission.
+GPU tail is the remaining wait for the WebGPU queue or a one-pixel WebGL readback,
+including driver overhead. Total p50 and p95 use the sum per frame. Separate samples
+measure the native GPU span from first through last pass on WebGPU or with an elapsed
+query on WebGL 2 when supported. These observations carry no release threshold.
 
 ## Comparison contract
 
