@@ -19,8 +19,8 @@ function boundaryMask(element: HTMLElement): string | null {
   const offset = x ? element.scrollLeft : element.scrollTop
   const before = rtl ? range + offset : offset
   const after = range - before
-  const start = before > edgeEpsilon ? Math.min(fadeCap, before) : 0
-  const end = after > edgeEpsilon ? Math.min(fadeCap, after) : 0
+  const start = before > edgeEpsilon ? Math.min(fadeCap, viewport, before) : 0
+  const end = after > edgeEpsilon ? Math.min(fadeCap, viewport, after) : 0
   if (start === 0 && end === 0) return null
 
   // Offset the fade to the scrollport and retain opaque strips over borders and native gutters.
