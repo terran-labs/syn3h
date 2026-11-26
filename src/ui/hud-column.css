@@ -34,14 +34,18 @@
   --col-w: 210px;
   /* One row height for the gear drum and the rows below it: compact (it was 36 px for the gear
      and 30 px for the rows). */
-  --col-row: 28px;
+  --col-row: 24px;
   /* Between the drum and the rows below it; Chat follows the accessories at the row's own pitch. */
   --col-gap: 8px;
   /* The content line and the spine, from the column's left edge. */
   --col-inset: 24px;
   /* Top edges, stacked down from the shared top edge: the drum (three rows), then the
      accessories, then Chat. */
-  --col-gear-top: var(--edge-top);
+  /* The column's top inset matches its left (the owner, 25 November 2026: "farther down from
+     the top than they are from the left"): the first row's letters sit as far below the top
+     edge as the first node's ring sits right of the left edge (--edge-left less its 3 px
+     radius), allowing for the half row above the letters' tops. Never under the top safe area. */
+  --col-gear-top: max(env(safe-area-inset-top), calc(var(--edge-left) - var(--col-row) / 2 + 1px));
   --col-acc-top: calc(var(--col-gear-top) + 3 * var(--col-row) + var(--col-gap));
   --col-chat-top: calc(var(--col-acc-top) + var(--acc-rows, 1) * var(--col-row));
   /* One type scale. */
@@ -79,12 +83,17 @@
    selected gear, which is marked by a lit node on the spine beside its larger, brighter name;
    key caps in the column's one stroke. */
 :root .mira-shell.exploration-ui .gear-selector::before { display: none; }
-/* The spine runs from the first node's centre to the last's (the drum is a ring, so a gear sits
+/* The spine runs past the first and last node, fading out (below). (The drum is a ring, so a gear sits
    above and below the selected one whichever it is), one even line like the rows' below. */
 :root .mira-shell.exploration-ui .gear-selector .gs-spine { left: var(--col-spine); }
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-spine {
-  top: calc(var(--gs-pitch) / 2); height: calc(100% - var(--gs-pitch)); background: var(--s3-line-quiet);
+  /* Past the first and last node by a row, fading to nothing at both ends, so it reads as a
+     longer list turning through the three shown (the owner: "an actual carousel"). */
+  top: calc(var(--gs-pitch) / -2); height: calc(100% + var(--gs-pitch));
+  background: linear-gradient(transparent, var(--s3-line-quiet) var(--gs-pitch), var(--s3-line-quiet) calc(100% - var(--gs-pitch)), transparent);
 }
+/* The charge ring (gear.css .gs-ring), centred on the lit node. */
+:root .mira-shell.exploration-ui .gear-selector .gs-window .gs-ring { left: calc(var(--col-spine) + .5px - 8px); top: calc(50% - 8px); }
 :root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item,
 :root .mira-shell.exploration-ui .gear-selector .gs-detail { text-shadow: var(--col-text-under); }
 :root .mira-shell.exploration-ui .gear-selector .gs-window { left: 0; width: var(--gs-width); border: 0; box-shadow: none; background: none; }

@@ -12,6 +12,8 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
+// 10. The column sits as far below the top edge as its line's nodes sit right of the left edge,
+//     with the cursor free and captured (the owner, 25 November 2026).
 // 9. While a Grapple cord is attached its status and the way to let go are shown whole, clear
 //    of every gear name, the world name and the description: on a desktop beside the selected
 //    name (the hint, its key a keycap, with the cursor captured; with it free the hints say it),
@@ -19,8 +21,9 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 8. One name column: every visible gear name starts at the same x, the selected one's larger
 //    type included, and the charge bar (the meter) starts at the selected name's left edge, in
 //    both cursor modes and on phones (the owner, 25 November 2026).
-// 7. The charge bar (Plasma Thunder's charge here) paints nothing when idle, keeping its place,
-//    and part filled paints only its filled length (the owner, 25 November 2026).
+// 7. The charge ring (Plasma Thunder's charge here) is absent at rest, and sweeps from 12 o'clock
+//    the level's share of the circle round the lit node; there is no charge bar (the owner, 25
+//    November 2026).
 // 6. Every node sits on its line: each circle's centre x is its line's centre x (half a pixel),
 //    and each line runs from its first circle's centre to its last's (the owner, 25 November
 //    2026: the line ran past Wings and the circles sat left of it). Chat's unread count never
@@ -77,7 +80,7 @@ const lines = (page) => page.evaluate(() => {
     .filter((n) => n && n.y > d.top && n.y < d.bottom && n.x >= d.left)].sort((a, b) => a.y - b.y)
   const acc = document.querySelector('.hud-accessories'), rows = acc && acc.checkVisibility() && (() => { const c = getComputedStyle(acc, '::before'), b = r(acc); return { x: b.left + parseFloat(c.left) + parseFloat(c.width) / 2, top: b.top + parseFloat(c.top), bottom: b.bottom - parseFloat(c.bottom) } })()
   return {
-    gear: { line: { x: spine.left + spine.width / 2, top: spine.top, bottom: spine.bottom }, nodes: gear },
+    gear: { line: { x: spine.left + spine.width / 2, top: spine.top, bottom: spine.bottom, fade: getComputedStyle(document.querySelector('.gear-selector .gs-spine')).backgroundImage }, nodes: gear },
     rows: rows && { line: rows, nodes: [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) .acc-pip')].filter((p) => p.checkVisibility()).map((p) => centre(p)) },
   }
 })
@@ -87,6 +90,14 @@ const onLines = (m, at, ends = true) => {
     assert.ok(group.nodes.length, `${at}: ${name} has circles`)
     for (const n of group.nodes) assert.ok(Math.abs(n.x - group.line.x) <= .5, `${at}: a ${name} circle is centred on its line ${JSON.stringify(group)}`)
     if (!ends) continue
+    if (name === 'gear') {
+      // The drum's line runs on past its first and last circle and fades to nothing at both
+      // ends: a longer list turning through the rows shown (the owner, 25 November 2026).
+      const pitch = group.nodes.length > 1 ? (group.nodes.at(-1).y - group.nodes[0].y) / (group.nodes.length - 1) : 0
+      assert.ok(group.line.top <= group.nodes[0].y - pitch / 2 && group.line.bottom >= group.nodes.at(-1).y + pitch / 2, `${at}: the gear line runs past both end circles ${JSON.stringify(group)}`)
+      assert.match(group.line.fade, /^linear-gradient\(rgba\(0, 0, 0, 0\).*rgba\(0, 0, 0, 0\)\)$/, `${at}: the gear line fades to nothing at both ends`)
+      continue
+    }
     assert.ok(Math.abs(group.line.top - group.nodes[0].y) <= .5, `${at}: the ${name} line starts at its first circle ${JSON.stringify(group)}`)
     assert.ok(Math.abs(group.line.bottom - group.nodes.at(-1).y) <= .5, `${at}: the ${name} line ends at its last circle ${JSON.stringify(group)}`)
   }
@@ -130,6 +141,18 @@ const releaseHint = (page) => page.evaluate(() => {
     text: hint ? document.querySelector('.gear-selector .gs-release').textContent : '', letGo,
   }
 })
+/**
+ * The column's insets: the first visible row's letters from the top edge, and its node's ring from
+ * the left edge (the owner, 25 November 2026: "farther down from the top than they are from the
+ * left"). The letters' box top stands for their ink: at line-height 1 the two differ by under a pixel.
+ */
+const insets = (page) => page.evaluate(() => {
+  const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
+  const inDrum = (y) => y > drum.top && y < drum.bottom
+  const text = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item .gs-text')].map((t) => t.getBoundingClientRect()).filter((r) => inDrum(r.top + r.height / 2)).sort((a, b) => a.top - b.top)[0]
+  const node = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item')].map((b) => { const c = getComputedStyle(b, '::before'), r = b.getBoundingClientRect(); return { left: r.left + parseFloat(c.left), y: r.top + r.height / 2 } }).filter((n) => inDrum(n.y)).sort((a, b) => a.y - b.y)[0]
+  return { top: text.top, left: node.left }
+})
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
 try {
@@ -149,8 +172,8 @@ try {
         assert.ok(Math.abs(part.left - m.gear.left) <= 1, `${at}: ${name} shares the gear's left edge ${JSON.stringify([part, m.gear])}`)
       }
       assert.ok(m.pitch > 0 && Math.abs((m.drum.bottom - m.drum.top) - 3 * m.pitch) <= 1, `${at}: the drum is three rows ${JSON.stringify([m.drum, m.pitch])}`)
-      // The column starts at the top left, on the shared top edge (the owner, 21 November 2026).
-      assert.ok(Math.abs(m.drum.top - m.edgeTop) <= 1, `${at}: the gear sits at the top left ${JSON.stringify([m.drum, m.edgeTop])}`)
+      // The column starts at the top left; its top inset matches its left (10, below), which
+      // replaced the shared top edge (the owner, 25 November 2026).
       if (mode === 'free') drumFree = m.drum
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
       assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys are laid out ${JSON.stringify(m.keys)}`)
@@ -160,6 +183,9 @@ try {
       onLines(await lines(page), at)
       await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
       oneColumn(await names(page), at)
+      // 10. The top inset equals the left.
+      const inset = await insets(page)
+      assert.ok(Math.abs(inset.top - inset.left) <= 2, `${at}: the column is as far from the top as from the left ${JSON.stringify(inset)}`)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }
@@ -192,26 +218,37 @@ try {
         assert.deepEqual(await keyX(), still, `an unread count of ${n} moves no key`)
         onLines(await lines(page), `${w}x${h} unread ${n}`)
       }
-      // 7. The charge bar, driven through Plasma Thunder's own charge (0 to 1; below 0 is idle).
+      // 7. The charge ring, driven through Plasma Thunder's own charge (0 to 1; below 0 is idle).
       await page.keyboard.press('2')
-      await page.waitForFunction(() => document.querySelector('.gear-selector')?.dataset.gear === 'red' && !document.querySelector('.gear-selector .gs-level').hidden, null, { timeout: 10000 })
-      const bar = async (charge) => {
+      await page.waitForFunction(() => document.querySelector('.gear-selector')?.dataset.gear === 'red', null, { timeout: 10000 })
+      const ring = async (charge) => {
         await page.evaluate((c) => { window.miraChat.net.bigRed.charge = c }, charge)
-        await page.waitForTimeout(500)
+        // Measured once the ring carries this level (the game hands it over on its next frame,
+        // later on a loaded machine) and its sweep has finished moving.
+        await page.waitForFunction((c) => {
+          const svg = document.querySelector('.gear-selector .gs-window .gs-ring')
+          return Math.abs(parseFloat(svg.style.getPropertyValue('--level') || '0') - Math.max(0, c)) < .01
+            && [svg, svg.querySelector('circle')].every((e) => e.getAnimations().every((a) => a.playState !== 'running' || a.animationName === 'gs-ring-full'))
+        }, charge, { timeout: 10000 })
+        await page.waitForTimeout(200)
         return page.evaluate(() => {
-          const level = document.querySelector('.gear-selector .gs-meter:not(.is-leaving) .gs-level'), fill = level.querySelector('i'), s = getComputedStyle(level)
-          return { opacity: +s.opacity, track: [s.backgroundColor, s.boxShadow, s.filter], width: level.getBoundingClientRect().width, fill: fill.getBoundingClientRect().width }
+          const svg = document.querySelector('.gear-selector .gs-window .gs-ring'), r = svg.getBoundingClientRect(), s = getComputedStyle(svg)
+          const node = getComputedStyle(document.querySelector('.gear-selector .gs-window'), '::before'), w = document.querySelector('.gear-selector .gs-window').getBoundingClientRect()
+          const nodeX = w.left + parseFloat(node.left) + parseFloat(node.width) / 2, nodeY = w.top + parseFloat(node.top) + parseFloat(node.marginTop) + parseFloat(node.height) / 2
+          // The swept angle: the drawn share of the circle's pathLength of 100, in degrees.
+          // (Computed as "calc(66.67)" or "66.67px": the number is what counts.)
+          const offset = Number(/-?\d+(\.\d+)?/.exec(getComputedStyle(svg.querySelector('circle')).strokeDashoffset)?.[0])
+          return { opacity: +s.opacity, angle: (100 - offset) * 3.6, full: svg.classList.contains('is-full'), centred: Math.hypot(r.left + r.width / 2 - nodeX, r.top + r.height / 2 - nodeY), bars: document.querySelectorAll('.gear-selector .gs-level').length }
         })
       }
-      const idle = await bar(-1)
-      assert.ok(idle.opacity === 0 && idle.width > 0, `an idle bar paints nothing and keeps its place ${JSON.stringify(idle)}`)
-      assert.deepEqual(idle.track, ['rgba(0, 0, 0, 0)', 'none', 'none'], 'no track, outline or shadow along the bar')
+      const idle = await ring(-1)
+      assert.ok(idle.opacity === 0 && idle.bars === 0, `no ring at rest, and no charge bar anywhere ${JSON.stringify(idle)}`)
       for (const charge of [1 / 3, 1]) {
-        const part = await bar(charge)
-        assert.ok(part.opacity === 1 && Math.abs(part.fill - charge * part.width) <= 1, `a bar ${charge.toFixed(2)} charged paints that share of its length ${JSON.stringify(part)}`)
+        const part = await ring(charge)
+        assert.ok(part.opacity === 1 && Math.abs(part.angle - charge * 360) <= 4 && part.full === (charge >= 1) && part.centred <= .5, `the ring ${charge.toFixed(2)} charged sweeps that share of the circle round the lit node ${JSON.stringify(part)}`)
         oneColumn(await names(page), `charge ${charge.toFixed(2)}`)
       }
-      await bar(-1)
+      await ring(-1)
       // 9. A cord launched straight down (Bungee.launch's direction is for automated checks).
       await page.evaluate(() => window.miraNet.gear.select('bungee'))
       assert.equal((await releaseHint(page)).shown, false, 'no release hint without a cord')

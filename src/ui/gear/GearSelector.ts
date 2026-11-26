@@ -173,14 +173,19 @@ export class GearSelector {
   /** Under the selected gear's name: its status and its charge or recharge bar. */
   private readonly meter = document.createElement('div')
   private readonly statusEl = document.createElement('p')
-  private readonly levelEl = document.createElement('div')
+  /**
+   * The charge ring round the selected gear's node (the owner, 25 November 2026: "a donut circle
+   * begin from the 12:00 position and extend around the outside ... as it charges, then have it
+   * glow a little bit when fully charged"): Plasma Thunder's charge, Grapple's cord tension,
+   * Yoink's hold. One SVG stroke drawn to the level's share of its length; nothing at 0.
+   */
+  private readonly ringEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
   /** The way out of what the gear holds (a cord, a grabbed vehicle), beside its status. */
   private readonly releaseEl = document.createElement('span')
   /** Desktop: what the gear holds and how to let go, the first line of the detail beside the name. */
   private readonly heldEl = document.createElement('p')
   private readonly heldStatusEl = document.createElement('span')
   private releaseShown = ''
-  private readonly levelFill = document.createElement('i')
   private readonly hintsEl = document.createElement('ul')
   private readonly keyHintEl = document.createElement('p')
   private readonly abort = new AbortController()
@@ -236,10 +241,12 @@ export class GearSelector {
     this.descEl.className = 'gs-desc'
     this.statusEl.className = 'gs-status'
     this.statusEl.hidden = true
-    this.levelEl.className = 'gs-level'
-    this.levelEl.hidden = true
-    this.levelEl.setAttribute('aria-hidden', 'true')
-    this.levelEl.append(this.levelFill)
+    // Centred on the lit node, inside the window (gear.css, hud-column.css), so it never moves it.
+    this.ringEl.setAttribute('class', 'gs-ring is-idle')
+    this.ringEl.setAttribute('viewBox', '0 0 16 16')
+    this.ringEl.setAttribute('aria-hidden', 'true')
+    this.ringEl.innerHTML = '<circle cx="8" cy="8" r="6.5" pathLength="100"/>'
+    window_.append(this.ringEl)
     this.hintsEl.className = 'gs-hints'
     this.hintsEl.setAttribute('aria-label', 'Controls')
     this.keyHintEl.className = 'gs-keyhint'
@@ -261,7 +268,7 @@ export class GearSelector {
     // Under the name: the bar (and on touch the status, the bar after it, so it never moves the
     // words when it appears). On a desktop the status and the way to let go sit beside the name
     // instead, the detail's first line (gear.css, hud-column.css): clear of the rows below.
-    this.meter.prepend(this.statusEl, this.levelEl)
+    this.meter.prepend(this.statusEl)
     this.detail.append(this.heldEl, this.descEl, this.hintsEl, this.keyHintEl)
 
     root.append(spine, window_, this.drum, this.detail)
@@ -301,11 +308,13 @@ export class GearSelector {
   private showLevel(own: GearControls | undefined): void {
     const level = levelStep(own?.level)
     if (level === this.level) return
-    if ((level < 0) !== (this.level < 0)) this.levelEl.hidden = level < 0
     this.level = level
-    if (level >= 0) this.levelFill.style.transform = `scaleX(${level})`
-    // Idle (nothing charged, taut or held) the bar paints nothing but keeps its place (gear.css).
-    this.levelEl.classList.toggle('is-idle', level <= 0)
+    // The share of the ring drawn (its circle's pathLength is 100), from 12 o'clock clockwise.
+    // Idle (nothing charged, taut or held) there is no ring; full, it completes and glows.
+    const shown = Math.max(0, level)
+    this.ringEl.style.setProperty('--level', String(shown))
+    this.ringEl.classList.toggle('is-idle', shown <= 0)
+    this.ringEl.classList.toggle('is-full', shown >= 1)
   }
 
   dispose(): void {
