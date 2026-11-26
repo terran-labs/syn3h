@@ -95,6 +95,8 @@ import './card-chrome.css'
 import './bottom-stack.css'
 import './room-notice.css'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
+import { ReportSheet, chatOnPage } from './report/ReportSheet'
+import { REPORT_ICON } from './report/sheetHtml'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -293,7 +295,7 @@ export class Shell implements System {
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span class="nav-glyph" aria-hidden="true">≡</span>${PANELS_CHEVRONS_UP}<span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="panel-action exit-stay">Stay</button><button type="button" class="panel-action exit-leave">Leave world</button></div></div></div>
-    <div class="pause-actions" role="group" aria-label="Paused" hidden><button type="button" class="pause-exit liquid-glass" aria-haspopup="dialog" aria-label="Leave world">${pauseIcon(LEAVE_WORLD_ICON)}<span class="pause-word"><span class="pause-long">Exit world</span><span class="pause-short">Exit</span></span></button><button type="button" class="pause-about liquid-glass" aria-haspopup="dialog" aria-label="Welcome and how to play">${pauseIcon(WELCOME_ICON)}<span class="pause-word">Welcome</span></button><button type="button" class="pause-shot liquid-glass" aria-label="Save a screenshot" aria-describedby="pause-shot-keys">${pauseIcon(SHOT_ICON)}<span class="pause-word"><span class="pause-long">Screenshot <kbd>S</kbd></span><span class="pause-short">Photo</span></span></button><span class="pause-shot-hint" role="status" aria-live="polite" hidden></span><span class="pause-shot-keys" id="pause-shot-keys" aria-hidden="true">S saves a screenshot. W, A, D or the arrows resume.</span></div>
+    <div class="pause-actions" role="group" aria-label="Paused" hidden><button type="button" class="pause-exit liquid-glass" aria-haspopup="dialog" aria-label="Leave world">${pauseIcon(LEAVE_WORLD_ICON)}<span class="pause-word"><span class="pause-long">Exit world</span><span class="pause-short">Exit</span></span></button><button type="button" class="pause-about liquid-glass" aria-haspopup="dialog" aria-label="Welcome and how to play">${pauseIcon(WELCOME_ICON)}<span class="pause-word">Welcome</span></button><button type="button" class="pause-shot liquid-glass" aria-label="Save a screenshot" aria-describedby="pause-shot-keys">${pauseIcon(SHOT_ICON)}<span class="pause-word"><span class="pause-long">Screenshot <kbd>S</kbd></span><span class="pause-short">Photo</span></span></button><button type="button" class="pause-report liquid-glass" aria-haspopup="dialog" aria-label="Report a bug" data-tip="Report a bug">${pauseIcon(REPORT_ICON)}<span class="pause-word pause-long">Report a bug</span></button><span class="pause-shot-hint" role="status" aria-live="polite" hidden></span><span class="pause-shot-keys" id="pause-shot-keys" aria-hidden="true">S saves a screenshot. W, A, D or the arrows resume.</span></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -498,6 +500,10 @@ export class Shell implements System {
     // one never also resumes.
     this.element.querySelector('.pause-exit')!.addEventListener('click', () => this.askExit(), { signal })
     this.element.querySelector('.pause-shot')!.addEventListener('click', () => { void this.takeShot() }, { signal })
+    // Report a bug (src/ui/report): the same picture and diagnostics, ready to post. Diagnostics' own button pauses first.
+    this.reportSheet = new ReportSheet(this.element, { capture: () => this.captureShot(), report: () => this.performanceSource?.diagnosticReport?.(), secrets: () => { const chat = chatOnPage(this.element); return { room: this.room, chat: chat.chat, names: [this.nameInput.value, ...(chat.names ?? [])] } }, fileName: () => shotFileName(currentWorldName(), currentPlanet().label, new Date()), touch: () => this.touch.available, closed: () => {} }, signal)
+    this.element.querySelector('.pause-report')!.addEventListener('click', () => { void this.reportSheet.open() }, { signal })
+    document.addEventListener('mira:report-bug', () => { this.requestPause(); if (this.userPaused) void this.reportSheet.open() }, { signal })
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
     // The dialog's own Escape (cancel) and any other close route through closeAbout.
@@ -1351,7 +1357,9 @@ export class Shell implements System {
   }
   /** Copy this room's invite link, as the invite view's Copy does. */
   copyRoomLink(): void { void this.copyInvite() }
-  configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
+  configurePerformance(source: PerformanceSource): void { this.performanceSource = source; this.performancePanel.configure(source) }
+  private performanceSource?: PerformanceSource
+  private reportSheet!: ReportSheet
   /** True from the click or key press that enters a world until play begins or the entry is abandoned. */
   private enteringByGesture = false
   /**
@@ -1502,7 +1510,7 @@ export class Shell implements System {
     if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user')
   }
   private requestResume(): void {
-    if (!this.userPaused || this.aboutOpen) return
+    if (!this.userPaused || this.aboutOpen || this.reportSheet?.isOpen) return
     if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null)
     // The click, tap or key that resumes is a gesture: go straight back to driving.
     if (this.capturesCursor) void this.captureCursor(); else { this.touchPanels = false; this.syncPanels() }
@@ -1518,7 +1526,7 @@ export class Shell implements System {
     const pause = this.element.querySelector<HTMLButtonElement>('.rail-pause')
     if (pause) { const word = user ? 'Resume' : 'Pause'; pause.setAttribute('aria-label', word); pause.dataset.tip = word; pause.querySelector('path')!.setAttribute('d', user ? PLAY_ICON : PAUSE_ICON) }
     this.element.querySelector<HTMLElement>('.pause-actions')!.hidden = !user
-    if (!user) { this.shotReady = null; const hint = this.element.querySelector<HTMLElement>('.pause-shot-hint'); if (hint) hint.hidden = true }
+    if (!user) { this.reportSheet?.close(); this.shotReady = null; const hint = this.element.querySelector<HTMLElement>('.pause-shot-hint'); if (hint) hint.hidden = true }
     this.whisper(user)
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
@@ -1570,8 +1578,7 @@ export class Shell implements System {
       const ready = this.shotReady; this.shotReady = null
       const result = ready ? { outcome: await shareShot(ready), file: ready } : await (async () => {
         // The device's full resolution, whatever Auto resolution chose for play (Game.snapshot).
-      const frame = this.game.snapshot({ full: true })
-        const blob = frame ? await encodeShot(frame) : null
+        const blob = await this.captureShot()
         return blob ? deliverShot(blob, shotFileName(currentWorldName(), currentPlanet().label, new Date()), this.touch.available) : null
       })()
       if (!result) { say('The view could not be captured', false); return }
@@ -1583,6 +1590,8 @@ export class Shell implements System {
       if (!waiting) this.shotTimer = setTimeout(() => say('', false), 2200)
     }
   }
+  /** The pause screen's picture, encoded: Screenshot's and Report a bug's one capture. */
+  private async captureShot(): Promise<Blob | null> { const frame = this.game.snapshot({ full: true }); return frame ? encodeShot(frame) : null }
   /** A picture made but refused by the share sheet for want of a fresh tap: the next tap shares it. Dropped on resume. */
   private shotReady: File | null = null
   private shotTimer?: ReturnType<typeof setTimeout>
@@ -1591,6 +1600,8 @@ export class Shell implements System {
     if (document.documentElement.dataset.boot === 'ready') return
     // A lobby sheet is open: it owns the keyboard (LobbySheet), and no shortcut fires behind it.
     if (this.lobbySheets.some(sheet => sheet?.isOpen)) return
+    // Report a bug owns the keyboard as the guide does; the dialog's own Escape closes it.
+    if (this.reportSheet?.isOpen) { event.stopImmediatePropagation(); return }
     if (this.aboutOpen) {
       // The guide owns the keyboard: Tab, links and disclosures work natively inside it, and
       // no shortcut or driving key reaches the game. Escape closes it and does nothing else.

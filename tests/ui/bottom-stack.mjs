@@ -3,6 +3,7 @@
 // 24 November 2026), and any other two things that place themselves at bottom centre on their
 // own. What must stay true, at a phone upright and on its side, a laptop and a large desktop:
 // - paused, with the build notice: every shown item of the strip is clear of every other;
+// - paused: every pause button lies wholly inside the viewport (four of them on a phone);
 // - in play, with the build notice and the slow-frames offer: likewise, and none
 //   covers a thumb control;
 // - Help and incoming Chat can both be read before and after a vehicle change.
@@ -137,6 +138,10 @@ try {
     // The pause bar's own buttons can be pressed where they are drawn.
     const covered = await page.evaluate(() => [...document.querySelectorAll('.pause-actions button')].map(b => { const r = b.getBoundingClientRect(); const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return b.contains(top) ? null : `${b.className.split(' ')[0]} under ${top?.tagName}.${String(top?.className).split(' ').slice(0, 2).join('.')}` }).filter(Boolean))
     assert.deepEqual(covered, [], `${tag} paused: every pause button is on top where it is drawn`)
+    // Bug caught: a fourth pause button (Report a bug) pushed past the screen's edge on a phone,
+    // which the overlap checks above cannot see. Every pause button lies wholly inside the view.
+    const outside = await page.evaluate(() => [...document.querySelectorAll('.pause-actions button')].filter(b => { const r = b.getBoundingClientRect(); return r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight }).map(b => b.className.split(' ')[0]))
+    assert.deepEqual(outside, [], `${tag} paused: every pause button lies inside the viewport`)
     assert.deepEqual(errors, [], `${tag}: no page errors`)
     await context.close()
     console.log(`${tag}: bottom stack ok`)

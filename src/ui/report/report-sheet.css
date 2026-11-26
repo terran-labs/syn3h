@@ -1,0 +1,55 @@
+/* Report a bug (ReportSheet.ts): a small card over the pause screen in the in-play guide's look
+   (theme-halo.css .in-play-about). It fades in; it never slides, and nothing behind it moves.
+   No shadow on any text or icon inside its glass buttons. */
+html .mira-shell.exploration-ui .report-sheet {
+  box-sizing: border-box; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; margin: auto;
+  border: 1px solid var(--s3-line); border-radius: var(--halo-r, 16px); background: rgb(3 7 12 / .95); color: var(--s3-ink);
+  overflow: auto; overscroll-behavior: contain; text-align: left;
+}
+html .mira-shell.exploration-ui .report-sheet[open] { animation: report-sheet-in .2s ease-out both; }
+@keyframes report-sheet-in { from { opacity: 0; } }
+.mira-shell.exploration-ui .report-sheet { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* As dark as the in-play Welcome guide's backdrop, and everything else steps out, as it does
+   there and on the pause screen: nothing reads through or beside the sheet. Fades only. */
+.mira-shell.exploration-ui .report-sheet::backdrop { background: rgb(0 3 8 / .8); }
+.mira-shell.is-reporting > :not(.report-sheet, .wi-tooltip),
+body:has(> .mira-shell.is-reporting) > :is(.touch-controls, .mira-nametags, .daydream-pill) {
+  opacity: 0 !important; visibility: hidden; pointer-events: none;
+  transition: opacity .3s ease-out, visibility 0s linear .3s !important;
+}
+.mira-shell.exploration-ui .report-sheet > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 8px 8px 22px;
+  border-bottom: 1px solid transparent; border-image: var(--rule) 1;
+}
+.mira-shell.exploration-ui .report-sheet h2 { margin: 0; outline: none; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-transform: uppercase; color: var(--s3-accent); }
+.mira-shell .report-body { display: grid; gap: 10px; padding: 16px 22px 20px; }
+/* The thumbnail's box is fixed before the picture arrives, so nothing shifts when it does. */
+.mira-shell .report-shot { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: rgb(255 255 255 / .05); border: 1px solid var(--s3-line-quiet); }
+.mira-shell .report-thumb { display: block; width: 100%; height: 100%; object-fit: cover; }
+.mira-shell .report-thumb:not([src]) { visibility: hidden; }
+.mira-shell .report-shot-wait { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; color: var(--s3-dim); opacity: 0; transition: opacity .2s ease; }
+.mira-shell .report-sheet.is-capturing .report-shot-wait { opacity: 1; }
+/* Above the shell's general label rule (shell.css), which is larger. */
+.mira-shell .report-sheet .report-label { display: block; margin: 4px 0 0; font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--s3-dim); }
+.mira-shell .report-sheet .report-label span { margin-left: 6px; letter-spacing: .04em; text-transform: none; opacity: .7; }
+.mira-shell .report-sheet :is(.report-what, .report-text) {
+  margin: 0;
+  box-sizing: border-box; width: 100%; padding: 10px 12px; border: 1px solid var(--s3-line); border-radius: 10px;
+  background: rgb(255 255 255 / .05); color: var(--s3-ink); font: 400 15px/1.35 'Barlow', sans-serif;
+}
+/* 16 px: iOS Safari zooms the whole page into a smaller field when it takes focus. */
+.mira-shell .report-sheet .report-what { min-height: 44px; font-size: 16px; }
+/* The sheet's small text size, set outright, and a fixed height that shows six lines and scrolls the rest. */
+.mira-shell .report-sheet .report-text { height: calc(6 * 13px * 1.4 + 22px); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; -webkit-user-select: text; font: 400 13px/1.4 ui-monospace, Menlo, monospace; color: var(--s3-dim); }
+.mira-shell .report-sheet :is(.report-what, .report-text):focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 2px; }
+.mira-shell .report-how { margin: 2px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--s3-dim); }
+.mira-shell .report-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+html .mira-shell.exploration-ui .report-sheet button.panel-action, html[data-glass-material] .mira-shell.exploration-ui .report-sheet button.panel-action:not([hidden]) { min-height: 44px; padding: 8px 18px; font: 400 13.5px 'Barlow', sans-serif; letter-spacing: .04em; text-shadow: none; cursor: pointer; }
+/* Post in Discord is the primary action: wider, heavier, a brighter body. Still no text shadow. */
+html:is([data-glass-material], *) .mira-shell.exploration-ui .report-sheet .report-actions button.report-discord:not([hidden]) { flex: 1 1 auto; font-weight: 600; border-color: rgb(255 255 255 / .6); background: rgb(255 255 255 / .14); }
+html:is([data-glass-material], *) .mira-shell.exploration-ui .report-sheet .report-actions button.report-discord:not([hidden]):hover { background: rgb(255 255 255 / .2); }
+.mira-shell .report-sheet .report-save { justify-self: start; }
+.mira-shell .report-status { min-height: 1.4em; margin: 0; font-size: 13px; color: var(--s3-accent-2); }
+@media (pointer: coarse) { html .mira-shell.exploration-ui .report-sheet button.panel-action, html[data-glass-material] .mira-shell.exploration-ui .report-sheet button.panel-action:not([hidden]) { min-height: 48px; } }
+@media (max-width: 520px) { .mira-shell .report-body { padding: 14px 16px 18px; } .mira-shell .report-actions > * { flex: 1 1 100%; } }
+@media (prefers-reduced-motion: reduce) { .mira-shell.is-reporting > * { transition: none !important; } html .mira-shell.exploration-ui .report-sheet[open] { animation: none; } .mira-shell .report-shot-wait { transition: none; } }
