@@ -210,6 +210,8 @@ try {
       assert.equal((await release()).shown, false, 'the hint goes with the cord')
       await page.keyboard.press('Escape'); await page.waitForTimeout(300)
       await page.keyboard.press('1')
+      await page.waitForTimeout(50)
+      await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
       // Room chat off (the host's chat.on): no Chat row, and the line ends at the last row left.
       for (const [id, value] of [['chat.on', false], ['chat.show', false]]) {
         await page.evaluate(([id, value]) => window.mira.params.set(id, value), [id, value])
