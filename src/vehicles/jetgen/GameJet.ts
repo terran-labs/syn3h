@@ -6,6 +6,7 @@ import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
 import { markReducedShowroomDetail } from '../skins/showroom'
+import { jetScale } from './size'
 
 type Level = 0 | 1 | 2
 
@@ -21,8 +22,10 @@ type Level = 0 | 1 | 2
 export class GameJet {
   readonly object = new THREE.Group()
   readonly design = SHIPPED_JET
-  /** The pilot's eye in the jet's frame. Known without building the close model. */
-  readonly eye = new THREE.Vector3(...VANGUARD_EYE)
+  /** Uniform scale from the design to jet.length (./size.ts), applied to the whole model. */
+  readonly size = jetScale()
+  /** The pilot's eye in the jet's frame, at this size. Known without building the close model. */
+  readonly eye = new THREE.Vector3(...VANGUARD_EYE).multiplyScalar(this.size)
   /** Thrust cones behind the nozzles and under the hover ports: one draw, shown at every level. */
   readonly plume = new JetPlume(MK2_FITTINGS)
   readonly tailLights = new JetTailLights()
@@ -40,7 +43,7 @@ export class GameJet {
   private detachDetail = () => {}
   private attached = false
 
-  constructor() { this.plume.setColor(this.accent); this.object.add(this.plume.mesh, this.tailLights.mesh) }
+  constructor() { this.object.scale.setScalar(this.size); this.plume.setColor(this.accent); this.object.add(this.plume.mesh, this.tailLights.mesh) }
 
   /** Close model: full cockpit, animated gear and vectoring petals. Built on first use. */
   get near(): NextJet {

@@ -43,7 +43,9 @@ describe('approved Mk2 game model', () => {
     const jet = new GameJet()
     expect(jet.near.clearance).toBeGreaterThanOrEqual(.25)
     expect(jet.near.object.userData.cockpit).toBe(true)
-    expect(jet.near.ridePosition!.position.toArray()).toEqual(jet.eye.toArray())
+    // The close model is drawn inside the jet's scale (jetgen/size.ts): its eye is at design size.
+    const eye = jet.eye.clone().divideScalar(jet.size).toArray()
+    jet.near.ridePosition!.position.toArray().forEach((c, i) => expect(c).toBeCloseTo(eye[i], 6))
     expect(roleOf(jet.near.materials.glass)).toBe('canopy')
     expect(roleOf(jet.near.materials.glow)).toBe('glow')
     jet.update(1, .2, -.2, 1)

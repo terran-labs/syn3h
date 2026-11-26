@@ -7,6 +7,7 @@ import { defaultPreset, definePresets } from '../../shared/presets'
 import { atmosphereValue } from '../world/weather/params'
 import { Vehicle } from './Vehicle'
 import { GameJet } from './jetgen/GameJet'
+import { jetScale } from './jetgen/size'
 
 export const jetHoverDrag = defineParam({id:'jet.hoverDrag',label:'Hover drag',group:'Jet',scope:'world',default:.01,min:.005,max:.015,step:.0001})
 /**
@@ -94,12 +95,20 @@ export const JET_LIFT_KEYS: 1 | -1 = 1
 const clamp = THREE.MathUtils.clamp
 const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1))
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
-const nozzlePosition = new THREE.Vector3(0,0,2.971839)
+/** The main nozzle, where flight thrust acts, at the design size (scaled by the jet's size). */
+const NOZZLE_AT_DESIGN = new THREE.Vector3(0,0,2.971839)
 
 /** Mira VhiclJet.cs 84-211, terra.jet.prefab and CoreSettings.cs 52-56. */
 export class Jet extends Vehicle {
   readonly kind = 'jet' as const
-  readonly camOffset = 5
+  /** Camera distance: the original's 5 at the design size, scaled with the jet. */
+  readonly camOffset: number
+  /**
+   * Uniform scale from the design to jet.length (jetgen/size.ts): the model, collider, gear,
+   * nozzle, eye, camera and effect points. Mass and inertia stay the original's.
+   */
+  readonly size: number
+  private readonly nozzlePosition: THREE.Vector3
   readonly ridePosition = new THREE.Object3D()
   private readonly model: GameJet
   private gearAmount = 0
@@ -143,7 +152,12 @@ export class Jet extends Vehicle {
   constructor(game:Game,terrain:Terrain,position:THREE.Vector3,heading=0) {
     super(game,terrain,position,heading)
     this.object.add(this.ridePosition)
-    // Prefab MeshCollider uses the original convex Collider mesh at Y=-.1.
+    const size=this.size=jetScale()
+    this.camOffset=5*size
+    this.nozzlePosition=NOZZLE_AT_DESIGN.clone().multiplyScalar(size)
+    // Prefab MeshCollider uses the original convex Collider mesh at Y=-.1. Mass and inertia come
+    // from the original hull at its design size, so the jet handles the same at any size; the
+    // collider then takes the scaled hull and adds no mass of its own.
     const hull=RAPIER.ColliderDesc.convexHull(hullVertices)
     if(!hull) throw new Error('Invalid Mira jet collider')
     const collider=this.game.world.createCollider(hull.setMass(200).setCollisionGroups(Vehicle.chassisGroups()),this.body)
@@ -151,10 +165,13 @@ export class Jet extends Vehicle {
     const inertia=new THREE.Vector3().copy(this.body.principalInertia()).multiplyScalar(.75)
     const inertiaFrame=this.body.principalInertiaLocalFrame()
     collider.setDensity(0)
+    const scaledHull=RAPIER.ColliderDesc.convexHull(hullVertices.map(v=>v*size))
+    if(!scaledHull) throw new Error('Invalid scaled jet collider')
+    collider.setShape(scaledHull.shape)
     this.body.setAdditionalMassProperties(200,{x:0,y:0,z:0},inertia,inertiaFrame,true)
     this.body.recomputeMassPropertiesFromColliders()
     // The prefab's landing-gear cube is 3.5 x 1 x 3.5, under the animated gear transform.
-    this.gearCollider=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.75,.5,1.75).setTranslation(0,-.783,-.3).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
+    this.gearCollider=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.75*size,.5*size,1.75*size).setTranslation(0,-.783*size,-.3*size).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.gearCollider.setEnabled(false)
     this.model = new GameJet()
     this.object.add(this.model.object)
@@ -192,7 +209,7 @@ export class Jet extends Vehicle {
     if(['KeyQ','KeyE','KeyR','KeyF'].some(code=>this.game.input.held?.(code)))return
     const p=this.body.translation()
     // Keep a newly spawned or just-landed jet planted, including before contact data is ready.
-    if(p.y-this.terrain.heightAt(p.x,p.z)<=2.6)return
+    if(p.y-this.terrain.heightAt(p.x,p.z)<=2.6*this.size)return
     let grounded=false
     for(let i=0;i<this.body.numColliders();i++){
       const collider=this.body.collider(i)
@@ -235,8 +252,9 @@ export class Jet extends Vehicle {
       this.colliderGear=this.gearAmount
       this.gearCollider.setEnabled(this.gearAmount>0)
       if(this.gearAmount>0){
-        this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
-        this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+        const s=this.size
+        this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount*s,.5*this.gearAmount*s,1.75*s))
+        this.gearCollider.setTranslationWrtParent({x:0,y:(-.083-.7*this.gearAmount)*s,z:-.3*s})
       }
     }
     if(this.hoverMode){
@@ -251,7 +269,7 @@ export class Jet extends Vehicle {
         const hold=clamp(.5/Math.max(.3,up.y)-velocity.y*.15,0,1)
         // Fade the hold out near the ground. A jet resting on its gear (hull about 1.3 m up)
         // must keep its weight, or it is frictionless and slides down any slope.
-        const nearGround=clamp((position.y-this.terrain.heightAt(position.x,position.z)-1.6)/1,0,1)
+        const nearGround=clamp((position.y-this.terrain.heightAt(position.x,position.z)-1.6*this.size)/this.size,0,1)
         input.z=lerp(input.z,hold,jetHoverHold.value*nearGround);this.smoothed.z=input.z
       }
       // Q (lift below zero): a controlled descent toward jet.descentRate, never a push down.
@@ -288,7 +306,7 @@ export class Jet extends Vehicle {
       const thrust=new THREE.Vector3(0,0,-1).applyQuaternion(thrustRotation).applyQuaternion(q).multiplyScalar(throttle*jetFlightThrust.value*weight*.99)
       // The force equations stay original; only the four nozzle petals move visually.
       this.vectorPitch = thrustPitch; this.vectorYaw = -thrustYaw
-      const nozzle=nozzlePosition.clone().applyQuaternion(q).add(position)
+      const nozzle=this.nozzlePosition.clone().applyQuaternion(q).add(position)
       this.body.addForceAtPoint(thrust,nozzle,true)
       // Control surfaces need air; reaction thrusters take over as it thins, so the jet still
       // pitches and rolls in a vacuum. They are off at full atmosphere: Earthlike flight is unchanged.

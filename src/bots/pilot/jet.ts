@@ -84,8 +84,8 @@ const flightPitchTorque = () => 200 * jetSteer.value * .2 * jetControlResponse.v
 const flightRollTorque = () => 200 * jetSteer.value * .75 * jetControlResponse.value
 /** Lift per (m/s)^2 per unit of angle of attack near sea level: jet.lift .5 * 1.225 * 15. */
 const LIFT_PER_V2 = .5 * 1.225 * 15
-/** Body origin height when resting on the deployed landing gear. */
-const GEAR_HEIGHT = 1.3
+/** Body origin height when resting on the deployed landing gear, at the jet's design size. */
+const GEAR_HEIGHT_AT_DESIGN = 1.3
 const DEG = Math.PI / 180
 const clamp = THREE.MathUtils.clamp
 /** Air density at a height, as Jet.ts reads it (the world's own air scaling aside). */
@@ -106,6 +106,8 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
   const up = new THREE.Vector3(), forward = new THREE.Vector3(), wantUp = new THREE.Vector3()
   const error = new THREE.Vector3(), torque = new THREE.Vector3(), righting = new THREE.Vector3()
   const worldUp = new THREE.Vector3(0, 1, 0)
+  // The jet is drawn and collides at jet.length (jetgen/size.ts): its gear height scales with it.
+  const gearHeight = GEAR_HEIGHT_AT_DESIGN * ((vehicle as { size?: number }).size ?? 1)
   const inertia = new THREE.Vector3()
   const inertiaFrame = new THREE.Quaternion(), inverseInertiaFrame = new THREE.Quaternion()
   // Rapier reports principal moments in their own frame, not the vehicle's XYZ axes.
@@ -160,7 +162,7 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     input.fire = false
 
     const height = pos.y - surface(pos.x, pos.z)
-    status.airborne = height > GEAR_HEIGHT + .4
+    status.airborne = height > gearHeight + .4
     status.flipped = up.y < .3
     const dx = goal.x - pos.x, dz = goal.z - pos.z, dist = Math.hypot(dx, dz)
 
@@ -214,7 +216,7 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     let vxWant = ux * speed, vzWant = uz * speed
     const recovering = up.y < .6
     // On the ground (or nearly), climb first: leaning on the gear just scrapes.
-    const lowFactor = clamp((height - GEAR_HEIGHT - 1) / 2.5, 0, 1)
+    const lowFactor = clamp((height - gearHeight - 1) / 2.5, 0, 1)
     let ax = (vxWant - vel.x) * tune.velocityGain, az = (vzWant - vel.z) * tune.velocityGain
     // Jet hover drag scales velocity by (1 - k |v| dt); feed forward the same to hold speed.
     const hSpeed = Math.hypot(vel.x, vel.z), dragK = .01 * hSpeed

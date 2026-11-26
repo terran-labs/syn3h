@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
 import { Jet, JET_LIFT_KEYS, jetFlightThrust, jetHoverHold } from '../../src/vehicles/Jet'
+import { jetScale } from '../../src/vehicles/jetgen/size'
 import type { GameJet } from '../../src/vehicles/jetgen/GameJet'
 import { harness } from './harness'
 import { flightSpeedAfter, vectorRate } from './jetScenarios'
@@ -76,7 +77,8 @@ describe('Jet hover and flight',()=>{
   finally{jetHoverHold.value=hold;v.dispose();h.world.free()}
  })
  it('landing gear holds a resting jet up and its collider follows the gear when it retracts',()=>{
-  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,2.5,0));v.isLocal=false
+  // 2.5 m at the design size: the hold's ground band scales with the jet (jetgen/size.ts).
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,2.5*jetScale(),0));v.isLocal=false
   // Hover mode lowers the gear in one second; the hold lets go near the ground, so the jet lands.
   h.step(v,400);const onGear=v.body.translation().y
   expect(Math.abs(v.body.linvel().y)).toBeLessThan(.05)

@@ -230,7 +230,9 @@ export class NextJet {
 
   /** Lowest point of each foot in the jet's frame, for tests and for placing a collider. */
   footHeights(): number[] {
-    this.object.updateMatrixWorld(true)
+    // Parents first: under a scaled jet (jetgen/size.ts) a stale parent matrix would mix the
+    // scaled foot positions with an unscaled inverse.
+    this.object.updateWorldMatrix(true, true)
     const inverse = new THREE.Matrix4().copy(this.object.matrixWorld).invert()
     return this.legs.map(l => l.foot.getWorldPosition(new THREE.Vector3()).applyMatrix4(inverse).y - .042)
   }
