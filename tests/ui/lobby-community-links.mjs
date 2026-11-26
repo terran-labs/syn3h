@@ -214,7 +214,9 @@ async function checkLayout(page, touch, requested, result) {
   assert.equal(discordBox.top, studioBox.top)
   result.githubToVersionGap = versionBox.left - githubBox.right
   assert.ok(result.githubToVersionGap > 0, 'GitHub is entirely outside the first-tap version rectangle')
-  assert.ok(discordBox.right < studioBox.left && githubBox.bottom < discordBox.top)
+  // The two rows' tap targets must not overlap; touching is fine (the compact pair's boxes meet
+  // exactly between the rows, the owner, 26 November 2026).
+  assert.ok(discordBox.right < studioBox.left && githubBox.bottom <= discordBox.top)
   assert.equal(result.textStarts[0], result.textStarts[1])
   assert.deepEqual(requested, [], 'external destinations receive no request before activation')
   await page.screenshot({ path: resolve(out, result.id + '.png') })

@@ -34,5 +34,10 @@ export function communityNav(version: HTMLButtonElement): HTMLElement {
   }
   // Keep the same version element so Updates and any extra handlers stay attached.
   nav.firstElementChild?.after(version)
+  // Rows for the compact pair (lobby-settings.css): GitHub and the version on top, Discord and
+  // terranlabs.com below.
+  const [github, , discord, studio] = [...nav.children]
+  for (const el of [github, version]) el?.classList.add('lobby-row-top')
+  for (const el of [discord, studio]) el?.classList.add('lobby-row-bottom')
   return nav
 }

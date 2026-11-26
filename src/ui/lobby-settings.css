@@ -71,6 +71,16 @@
 @media (hover: hover) { .mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover::after { opacity: 1; } }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:active, :focus-visible)::after { opacity: 1; }
 .mira-shell.exploration-ui .lobby-version-dock :is(.lobby-version, .lobby-community a):focus-visible { outline: 1px solid rgb(244 244 244 / .5); outline-offset: -9px; border-radius: 8px; }
+/* A compact pair (the owner, 26 November 2026: "closer to the first line and lower left"): the
+   two rows 28 px apart, the icons' 20 px and a little air, not the big buttons' pitch. Each target
+   stays 44 px tall without overlapping the other's: the top row's content sits low in its box and
+   the bottom row's high, so the two boxes meet between the rows. The bottom box ends at the dock's
+   foot, so its whole 44 px stays on screen. */
+.lobby-version-dock .lobby-community { grid-template-rows: 44px 44px; row-gap: 0; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community > :is(a, button) { box-sizing: border-box; height: 44px; min-height: 44px; align-items: center; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community > .lobby-row-top { padding-block: 20px 4px; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community > .lobby-row-bottom { padding-block: 4px 20px; }
+
 /* Put the update dot after the version so the two text starts stay aligned. */
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
   content: ''; order: 1; flex: none;
