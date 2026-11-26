@@ -78,7 +78,10 @@
    it"). As on Updates, the header does not scroll: the guide's body starts below the X's row, so
    its top edge, and the 28 px fade along it, never move, and nothing passes under the X. */
 .lobby-sheet-about .lobby-sheet-panel { --x-row: 78px; }
-.mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-body { margin-top: var(--x-row); padding-top: 4px; }
+/* The fade along the scroller's top is shallower than elsewhere (16 px), so the first line starts
+   just under it; the bottom keeps the usual 44 px. */
+.mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-body { margin-top: var(--x-row); padding-top: 16px;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 16px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 16px, #000 calc(100% - 44px), transparent); }
 @media (max-width: 600px), (max-height: 500px) { .lobby-sheet-about .lobby-sheet-panel { --x-row: 70px; } }
 @media (max-width: 600px) and (min-height: 501px) { .lobby-sheet-about .lobby-sheet-body { padding-right: 12px; } }
 

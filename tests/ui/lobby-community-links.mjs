@@ -207,7 +207,8 @@ async function checkLayout(page, touch, requested, result) {
     const overlapY = Math.min(box.bottom, caption.bottom) - Math.max(box.top, caption.top)
     assert.ok(overlap <= 1 || overlapY <= 1, `caption overlaps the community dock: ${name}`)
   }
-  if (width < 500) assert.ok(Math.abs((controls.left + controls.right) / 2 - width / 2) <= 1)
+  // On a phone the Settings and Welcome stack stands at the lower right, as on a desktop (the owner, 26 November 2026).
+  if (width < 500) assert.ok(width - controls.right <= 24, `the stack stands at the right edge (${controls.right} of ${width})`)
   assert.ok(result.targets.every(target => target.hit && target.width >= 44 && target.height >= 44))
   assert.equal(githubBox.left, discordBox.left)
   assert.equal(versionBox.left, studioBox.left)

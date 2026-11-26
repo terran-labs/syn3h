@@ -211,16 +211,16 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
   if(below){
    // At the top of the sheet: what must show without scrolling, inside the body and above its bottom fade.
    const shown=await ring.evaluate((r,below)=>{
-    const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+28, bottom=b.bottom-44
+    const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+16, bottom=b.bottom-44
     // `part`: how much of the box from its top must show (a dot is drawn at its 40 px target's middle).
     const inView=(el,part=1)=>{const e=el.getBoundingClientRect();return e.top>=top-1&&e.top+e.height*part<=bottom+1}
     const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'),0.6)}
     // The next section: its heading, and the top of its first card (its title row, 40 px).
-    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');if(card){const e=card.getBoundingClientRect();out.card=e.top>=top-1&&e.top+40<=bottom+1}else out.card=false}
+    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');if(card){const e=card.getBoundingClientRect();out.card=e.top>=top-1&&e.top+40<=bottom+1;out.cardTop=Math.round(e.top);out.limit=Math.round(bottom)}else out.card=false}
     return out
    },below)
    console.log(JSON.stringify({ring:name,atTop:shown}))
-   assert.ok(shown.scrollTop===0&&Object.entries(shown).every(([k,v])=>k==='scrollTop'||v===true),`${name}: at the top of Welcome, the caption, dots${below==='section'?' and the next section':''} show without scrolling ${JSON.stringify(shown)}`)
+   assert.ok(shown.scrollTop===0&&Object.entries(shown).every(([k,v])=>['scrollTop','cardTop','limit'].includes(k)||v===true),`${name}: at the top of Welcome, the caption, dots${below==='section'?' and the next section':''} show without scrolling ${JSON.stringify(shown)}`)
   }
   // The lobby's two buttons and Welcome's header (the owner, 26 November 2026). Bugs caught: on a
   // phone the buttons left showing over Welcome, or still taking taps or focus there; the X not
@@ -297,9 +297,9 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
    await page.waitForTimeout(200)
    const fit=await ring.evaluate(r=>{
     const problems=[], body=r.closest('.lobby-sheet-body').getBoundingClientRect(), rr=r.getBoundingClientRect(), cs=getComputedStyle(r), reach=k=>parseFloat(cs.getPropertyValue(`--reach-${k}`))||0
-    // What can be seen: inside the sheet's scrolling body below its top fade (28 px, fixed and
+    // What can be seen: inside the sheet's scrolling body below its top fade (16 px, fixed and
     // still, under the X's row; lobby-sheet.css), the screen, and the ring's own clip (welcome.css).
-    const clip={l:Math.max(0,rr.left-reach('left')),t:body.top+28,r:Math.min(innerWidth,rr.right+reach('right')),b:body.bottom}
+    const clip={l:Math.max(0,rr.left-reach('left')),t:body.top+16,r:Math.min(innerWidth,rr.right+reach('right')),b:body.bottom}
     const seen=el=>{const b=el.getBoundingClientRect();const l=Math.max(b.left,clip.l),t=Math.max(b.top,clip.t),rt=Math.min(b.right,clip.r),bt=Math.min(b.bottom,clip.b);return rt-l>1&&bt-t>1?{l,t,r:rt,b:bt}:null}
     const hit=(a,b)=>a&&b&&a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1
     const box=sel=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();return b.width?{l:b.left,t:b.top,r:b.right,b:b.bottom}:null}
