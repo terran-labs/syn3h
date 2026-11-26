@@ -25,6 +25,7 @@ import { markedName, legibleTint } from '../playerMarks'
 import { chatLink } from './chatLink'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
+import { keycap } from '../keycap'
 import './chat.css'
 
 /** What the card needs from the shell: a place in the stack, and the panels. */
@@ -435,7 +436,9 @@ export class ChatCard {
     this.log.replaceChildren(...this.options.channel.visible().map((l) => this.lineElement(l, false)))
     if (!this.log.children.length) {
       const empty = document.createElement('li'); empty.className = 'chat-empty'
-      empty.textContent = 'Nothing said yet. Press Y to say hello.'
+      // A touch screen has no Y key: the field below is the way in there (the owner's iPhone review).
+      if (this.host.element.classList.contains('has-touch')) empty.textContent = 'Nothing said yet. Say hello below.'
+      else empty.append('Nothing said yet. Press ', keycap('Y'), ' to say hello.')
       this.log.append(empty)
     }
   }

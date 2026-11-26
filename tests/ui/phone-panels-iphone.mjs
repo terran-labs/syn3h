@@ -69,6 +69,9 @@ try {
       const card = document.querySelector('.wi-card[data-section=chat]').getBoundingClientRect(), body = document.querySelector('.wi-card[data-section=chat] > .wi-body').getBoundingClientRect(), form = document.querySelector('.chat-form').getBoundingClientRect(), field = document.querySelector('.chat-field').getBoundingClientRect()
       return { cardBottom: card.bottom, bodyBottom: body.bottom, formBottom: form.bottom, formTop: form.top, fieldBottom: field.bottom, fieldHeight: field.height }
     })
+    // A phone has no Y key: the empty chat points at the field instead.
+    const empty = await page.locator('.chat-log .chat-empty').textContent().catch(() => null)
+    if (empty !== null) assert.equal(empty, 'Nothing said yet. Say hello below.', `${name}: the empty chat names no key on a phone`)
     const one = await chat()
     assert.ok(one.formBottom <= one.bodyBottom + 1 && one.bodyBottom - one.formBottom <= 24, `${name}: the field sits at the card's foot (${JSON.stringify(one)})`)
     await page.screenshot({ path: `${shots}/${name}-chat.png` })
