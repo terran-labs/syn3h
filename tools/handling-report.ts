@@ -25,6 +25,7 @@ import { FIXED_DT, initPhysics } from '../src/core/physics'
 import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
 import { JET_PRESETS } from '../src/vehicles/Jet'
 import * as buggy from '../tests/vehicles/miraScenarios'
+import { onGround } from '../tests/vehicles/groundScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
 import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
@@ -161,6 +162,13 @@ async function miraBuggy(): Promise<VehicleReport> {
   for (const v of [30, 60, 90]) for (const [lock, name] of [[0.25, 'quarter'], [1, 'full']] as const) {
     const r = await at(() => buggy.steerStep(v, lock))
     detail.push(fig(`${name} lock for 1 s at ${v} m/s: largest slide angle`, 'deg', r.worstSlip), fig(`${name} lock for 1 s at ${v} m/s: settled after letting go`, 's', r.settled))
+  }
+  // The same on real ground: the flattest straight strip of the generated island for seeds 1 to 3
+  // (tests/vehicles/groundScenarios.ts); seed 0 is a flat slab through the same code, the control.
+  for (const seed of [0, 1, 2, 3]) for (const v of [30, 60]) for (const kick of [false, true]) {
+    const r = await at(() => onGround(seed, v, kick))
+    const what = `${seed ? `Island ${seed} (strip within ${r.roughness.toFixed(1)} m)` : 'Flat control'}, ${kick ? `40 deg slide at ${v} m/s, counter-steer` : `full lock for 1 s at ${v} m/s`}`
+    detail.push(fig(`${what}: largest slide angle`, 'deg', r.worstSlip), fig(`${what}: settled`, 's', r.settled), fig(`${what}: least upright (1 level)`, '', r.upright))
   }
   const flick = await at(() => buggy.flick(45))
   detail.push(fig('Flick left-right at 45 m/s: largest slide angle', 'deg', flick.worstSlip), fig('Flick left-right at 45 m/s: slide angle 2 s after letting go', 'deg', flick.endSlip))
