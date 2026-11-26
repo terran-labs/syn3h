@@ -78,6 +78,12 @@ export interface System {
 }
 
 const MAX_STEPS_PER_FRAME = 5
+/**
+ * A manual quality change behind its veil (Game.prepareManualQuality): past the soft point the veil
+ * says it is still preparing and keeps waiting; at the hard bound the new level is given up.
+ * WebGL 2 at Cinematic on a loaded machine has been measured needing more than 15 s.
+ */
+export const MANUAL_PREPARE_SOFT_MS = 15_000, MANUAL_PREPARE_HARD_MS = 45_000
 
 // ES modules are all fetched before any of them runs, and this one runs once three, Rapier
 // and their dependencies have run. On the unbundled dev server the gap from navigation
@@ -799,6 +805,8 @@ export class Game {
    */
   holdDraws = false
   private applyingQuality = false
+  /** Manual quality changes given up at MANUAL_PREPARE_HARD_MS (evidence and tests). */
+  manualQualityFallbacks = 0
 
   private manualVehicleLevels = new WeakMap<object, number>()
 
@@ -833,6 +841,8 @@ export class Game {
     signal.addEventListener('abort', cancel, { once: true })
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     let applied = false
+    // The level this change replaces, for falling back to if the new one cannot be prepared.
+    const previous = this.quality.governor.level
     this.applyingQuality = true
     try {
       const prepare = async () => {
@@ -848,10 +858,27 @@ export class Game {
         stop.signal.throwIfAborted()
         await this.warmVisibleQuality(stop.signal, progress, prepareGlass)
       }
-      const result = await withDeadline(Promise.race([prepare(), cancelled]), 15_000)
+      // MANUAL_PREPARE_SOFT_MS is a point to tell the player it is taking a while, not a cut-off:
+      // stopping the warm there lowered the veil with looks unbuilt, to compile in view. The veil
+      // stays until the preparation (and the pipelines its batch already requested) has finished,
+      // up to MANUAL_PREPARE_HARD_MS; past that the level is not kept, and the previous one returns.
+      const work = Promise.race([prepare(), cancelled])
+      let result = await withDeadline(work, MANUAL_PREPARE_SOFT_MS)
+      if (!result.ok && result.reason === 'timeout' && !signal.aborted) {
+        console.warn('Manual graphics preparation passed', MANUAL_PREPARE_SOFT_MS, 'ms; still preparing')
+        progress('Preparing graphics')
+        result = await withDeadline(work, MANUAL_PREPARE_HARD_MS - MANUAL_PREPARE_SOFT_MS)
+      }
       if (!result.ok && !signal.aborted) {
-        console.warn('Manual graphics preparation', result.reason)
-        if (!applied) apply()
+        console.warn('Manual graphics preparation', result.reason, applied ? '- returning to the previous level' : '')
+        if (applied && result.reason === 'timeout') {
+          stop.abort()
+          progress('Could not prepare this level: staying at the previous one')
+          this.manualQualityFallbacks++
+          // The shell queues this behind its veil (Shell.ts manualChange), where the previous level,
+          // live a moment ago, prepares at once.
+          this.quality.setLevel(previous)
+        } else if (!applied) apply()
       }
     } finally {
       stop.abort()
