@@ -47,6 +47,9 @@ const running = new WeakMap<HTMLElement, () => void>()
  */
 export function startHudReveal(root: HTMLElement): void {
   running.get(root)?.()
+  // A reveal must never throw on entry: without a real shell element (a test's stand-in, or
+  // anywhere without the DOM's observer) there is simply no reveal.
+  if (typeof root?.classList?.contains !== 'function' || typeof MutationObserver === 'undefined') return
   if (!hudRevealOn.value || hudRevealTotal() <= 0 || !root.classList.contains('is-playing')) return
   root.style.setProperty('--reveal-ms', `${hudRevealMs.value}ms`)
   root.style.setProperty('--reveal-step', `${hudRevealStep.value}ms`)
