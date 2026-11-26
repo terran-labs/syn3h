@@ -31,10 +31,28 @@
    idle status line is. It opens Updates (the owner, 21 November 2026: no Updates button besides),
    so it reads as a link: a fine underline, a small arrow after it, brighter under the pointer, and
    a 44 px target round the small type. A hook for the Updates view (data-lobby-version). */
-.lobby-version-dock { position: fixed; z-index: 30; left: max(6px, calc(env(safe-area-inset-left) - 8px)); bottom: max(2px, calc(env(safe-area-inset-bottom) - 10px)); pointer-events: none; }
-.lobby-version-dock > * { pointer-events: auto; }
+.lobby-version-dock { position: fixed; display: grid; justify-items: start; z-index: 30; left: max(6px, calc(env(safe-area-inset-left) - 8px)); bottom: max(2px, calc(env(safe-area-inset-bottom) - 10px)); pointer-events: none; }
+.mira-shell.exploration-ui:has(.lobby-settings-host) .lobby-version-dock { visibility: hidden; }
+.lobby-version-dock :is(button, a) { pointer-events: auto; }
+.lobby-version-dock .lobby-community {
+  display: grid; grid-template-columns: 44px max-content; align-items: center; justify-items: start; gap: 4px;
+}
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community a {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px;
+  box-sizing: border-box; padding: 0 12px; border-radius: var(--glass-control-radius, 24px);
+  color: rgb(236 236 236 / .84); text-decoration: none; white-space: nowrap;
+  font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .04em; text-transform: none;
+  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8));
+}
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community a.lobby-community-text { grid-area: 2 / 2; padding-inline-start: 2px; }
+.lobby-version-dock .lobby-community svg {
+  width: 20px; height: 20px; flex: none; fill: currentColor;
+}
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community a:is(:hover, :focus-visible) { color: #fff; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community a:hover { outline: var(--control-hover-outline); outline-offset: -4px; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-community a:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -4px; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 14px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px 0 2px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
   font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: none; color: rgb(236 236 236 / .84);
   text-decoration: underline; text-decoration-color: rgb(236 236 236 / .4); text-decoration-thickness: 1px; text-underline-offset: 4px;
@@ -44,9 +62,10 @@
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
-/* A newer version is out: a small steady dot before the version. */
+/* Put the update dot after the version so the two text starts stay aligned. */
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
-  content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .8);
+  content: ''; order: 1; flex: none;
+  width: 6px; height: 6px; border-radius: 50%; background: var(--s3-accent-2, #f7f7f7); box-shadow: 0 0 6px rgb(255 255 255 / .8);
 }
 
 /* The card: the sidebar's right-edge place, one card (#lobby-settings) and one glass surface. It
@@ -136,7 +155,7 @@ html .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-b
   .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { flex: 0 1 auto; }
   /* The same stack as on a desktop, narrower and tighter to the corner. */
   .lobby-gear-dock { width: 128px; gap: 6px; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
-  .mira-shell.exploration-ui .lobby-version-dock .lobby-version { padding: 0 12px; font-size: 11px; letter-spacing: .06em; }
+  .mira-shell.exploration-ui .lobby-version-dock .lobby-version { font-size: 11px; letter-spacing: .06em; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
   .mira-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: auto; max-height: calc(100dvh - 6px - var(--card-foot)); padding: 6px 6px calc(var(--gear-height, 44px) + 4px); gap: 4px; }

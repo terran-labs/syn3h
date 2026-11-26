@@ -37,6 +37,7 @@ import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
 import { CARD_CLOSE } from './cardClose'
 import { channel, type Channel } from '../core/channel'
+import { communityNav } from './communityLinks'
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -157,8 +158,8 @@ export class LobbySettings {
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
     this.version.textContent = label; this.version.title = `Version ${label}: what is new`; this.version.setAttribute('aria-label', `Version ${label}, open Updates`); this.version.setAttribute('aria-haspopup', 'dialog')
     this.dock.append(this.gear, this.about)
-    // The version sits apart, in the lower left (versionDock): plain shadowed text, no card.
-    this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
+    // The version and community links share the lower-left dock.
+    this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(communityNav(this.version))
 
     this.host.className = 'lobby-settings-host'
     // One section open at a time, and the card scrolls inside: on a short screen Graphics alone
