@@ -24,7 +24,7 @@ const HOSTS = ['https://mira.cc', 'https://beta.mira.cc']
 const key = randomBytes(24).toString('base64url')
 const hash = createHash('sha256').update(key).digest('hex')
 
-const dir = join(homedir(), '.config', 'syn3h')
+const dir = join(homedir(), '.config', 'syn3h') // rename-keep: the owner's local config folder
 mkdirSync(dir, { recursive: true, mode: 0o700 })
 const file = join(dir, 'creator-links.txt')
 const body = [
