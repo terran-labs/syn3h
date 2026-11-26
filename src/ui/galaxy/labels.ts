@@ -36,7 +36,8 @@ function coversDisc(body: ScreenDisc, place: ScreenDisc): boolean {
 export interface ScreenBox { left: number; top: number; right: number; bottom: number }
 
 const CONTROL_MARGIN = 8
-const CAPTION_INSET = 6
+/** The least gap between a caption and the screen's edge, px. */
+export const CAPTION_INSET = 6
 const CAPTION_SEPARATION = 2
 const MOON_CLEARANCE = 5
 // The bright bloom extends beyond the physical solar core, even on the near side of its depth.
@@ -118,6 +119,8 @@ export type CaptionContent = 'full' | 'with-count' | 'name'
 export interface CaptionOption {
   box: ScreenBox
   content: CaptionContent
+  /** Which side of its globe it sits on ('below', 'above', 'left', 'right', or a glare-avoiding spot). */
+  anchor?: string
   inGlare?: true
   inline?: 'start' | 'end'
   blockEnd?: true
@@ -189,29 +192,30 @@ export function captionOptions(place: LabelPlace, metrics: CaptionMetrics, space
     }
     const side = place.radius + gap + size.width / 2
     const middleY = place.y - size.height / 2
-    const anchors = [
-      [place.x, place.y + place.radius + gap],
-      [place.x, place.y - place.radius - gap - size.height],
-      [place.x - side, middleY],
-      [place.x + side, middleY],
+    const anchors: [number, number, string][] = [
+      [place.x, place.y + place.radius + gap, 'below'],
+      [place.x, place.y - place.radius - gap - size.height, 'above'],
+      [place.x - side, middleY, 'left'],
+      [place.x + side, middleY, 'right'],
     ]
     const [belowX, belowY] = anchors[0]
     const below = { left: belowX - size.width / 2, right: belowX + size.width / 2, top: belowY, bottom: belowY + size.height }
     const belowInGlare = solarClearance(below, captionRows(below, inkSizes)[0]) <= 0
-    const build = (positions: readonly number[][]) => positions.flatMap(([x, y]) => {
+    type Scored = CaptionOption & { solarGap: number }
+    const build = (positions: readonly (readonly [number, number, string])[]): Scored[] => positions.flatMap(([x, y, anchor]): Scored[] => {
       const box = placeCaption(x, y, size, width, height, blockers)
       if (!box || discClearance(box, place) <= 1 || (sun && discClearance(box, sun) <= 1) ||
           otherBodies.some(body => discClearance(box, body) <= bodyGap)) return []
       const toward: CaptionOption['inline'] = place.x < (box.left + box.right) / 2 ? 'start' : 'end'
       const alignments: Pick<CaptionOption, 'inline' | 'blockEnd'>[] = [{}, { inline: toward }]
       if (place.y >= box.bottom) alignments.splice(1, 0, { blockEnd: true }, { inline: toward, blockEnd: true })
-      let bright: (CaptionOption & { solarGap: number }) | undefined
+      let bright: Scored | undefined
       for (const alignment of alignments) {
         const ink = captionRows(box, inkSizes, alignment.inline, alignment.blockEnd)
         // Leave a pixel for placement rounding and the difference between line and glyph bounds.
         if (!ink.some(row => discClearance(row, place) <= nameHeight - 1)) continue
         const solarGap = solarClearance(box, ink[0])
-        const option = { box, content, solarGap, ...alignment }
+        const option: Scored = { box, content, anchor, solarGap, ...alignment }
         if (solarGap > 0) return [option]
         bright ??= option
       }
@@ -222,12 +226,12 @@ export function captionOptions(place: LabelPlace, metrics: CaptionMetrics, space
       choices.sort((a, b) => b.solarGap - a.solarGap)
       // A diagonal on the outward side can clear a neighbouring caption beside the globe.
       const outward = place.x < sun.x ? place.x - side : place.x + side
-      choices.push(...build([[outward, anchors[1][1]], [outward, belowY]]))
+      choices.push(...build([[outward, anchors[1][1], 'outward-above'], [outward, belowY, 'outward-below']]))
       // Slide the outward line just above or below the streak if its normal side
       // position is occupied. Keep the slide within one caption height of that side.
       if (streak) {
         const edge = [streak.top - nameHeight - 1, streak.bottom + 1]
-        choices.push(...build(edge.filter(y => Math.abs(y - middleY) <= size.height).map(y => [outward, y])))
+        choices.push(...build(edge.filter(y => Math.abs(y - middleY) <= size.height).map((y, i) => [outward, y, i ? 'streak-below' : 'streak-above'] as const)))
       }
     }
     for (const { solarGap, ...choice } of choices) {
@@ -251,6 +255,26 @@ export interface CaptionCandidate {
 }
 
 const overlaps = (a: CaptionOption, b: CaptionOption): boolean => boxesOverlap(a.box, b.box, CAPTION_SEPARATION)
+
+/** One placement decision, as a string: same key, same side, lines and alignment. */
+export const captionKey = (option: CaptionOption): string => `${option.content}|${option.anchor ?? ''}|${option.inline ?? ''}|${option.blockEnd ? 1 : 0}`
+
+/**
+ * Put each caption's previous decision first among its options, so a name keeps its side and
+ * lines for as long as they remain valid (the owner, 26 November 2026: "graceful motion only").
+ * Without this the first free option in a fixed order wins every frame, and a name at the edge
+ * of a rule flips between sides as the planets orbit. An option it left becomes its first
+ * choice again only once the one it holds stops working: that is the hysteresis.
+ */
+export function preferPrevious(captions: readonly CaptionCandidate[], previous: ReadonlyMap<string, string>): CaptionCandidate[] {
+  return captions.map(caption => {
+    const key = previous.get(caption.id)
+    const index = key === undefined ? -1 : caption.options.findIndex(option => captionKey(option) === key)
+    if (index <= 0) return caption
+    const options = [...caption.options]; const [kept] = options.splice(index, 1)
+    return { ...caption, options: [kept, ...options] }
+  })
+}
 
 /**
  * Keep priority order for unavoidable suppression. Before giving up, try moving up to three

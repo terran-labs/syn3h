@@ -469,9 +469,12 @@ html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:f
 .mira-shell:not(.galaxy-flat) button.galaxy-label:not(#galaxy-caption):is([data-caption-content="with-count"], [data-caption-content="name"]) {
   min-height: 24px;
 }
+/* A line the name drops (for room) fades rather than vanishing; the name keeps its place. */
+.mira-shell button.galaxy-label .galaxy-caption-text > small { transition: opacity .35s ease-out, visibility 0s linear 0s; }
 .mira-shell:not(.galaxy-flat) .galaxy-label[data-caption-content="with-count"] .galaxy-biome,
 .mira-shell:not(.galaxy-flat) .galaxy-label[data-caption-content="name"] .galaxy-caption-text > small {
-  position: absolute; visibility: hidden; pointer-events: none;
+  position: absolute; visibility: hidden; pointer-events: none; opacity: 0;
+  transition: opacity .35s ease-out, visibility 0s linear .35s;
 }
 /* A planet hovered (or held under a finger, or its caption focused, or chosen and flown to)
    brings its caption to full strength in its corona's colour, easing in over 220 ms and out over
@@ -492,6 +495,8 @@ html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:f
   .mira-shell.galaxy-flat button.galaxy-label .galaxy-caption-text > small { transition: none; }
 }
 .galaxy-open button.galaxy-label:not(#galaxy-caption):not(.is-suppressed) { pointer-events: auto; cursor: pointer; }
+/* Reduced motion: a name changing side fades out where it was before it moves (Shell captionMotion). */
+.mira-shell button.galaxy-label:not(#galaxy-caption).is-reflowing { opacity: 0; transition: opacity .35s ease-out; }
 /* A name that loses its place fades out, then leaves the tab order and hit testing once it is
    gone; one that gets its place back fades in. Never a cut. */
 .mira-shell button.galaxy-label:not(#galaxy-caption).is-suppressed { visibility: hidden; opacity: 0; transition: opacity .35s ease-out, color .35s ease-out, visibility 0s linear .35s; }

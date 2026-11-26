@@ -35,7 +35,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, pickLobbyTarget, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionLayout, captionOptions, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
+import { CAPTION_INSET, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -106,6 +106,15 @@ import { REPORT_ICON } from './report/sheetHtml'
  * galaxy, so turning this on brings it back. Worlds are shaped in play, in the World card.
  */
 const OFFER_CUSTOM_PLANET: boolean = false
+/** A hidden planet name returns only after its place has stayed free this long, ms. */
+const CAPTION_SHOW_HOLD_MS = 450
+/** A name's fade is .35 s (shell.css); reduced motion moves a name only once it has faded, with a frame to spare. */
+const CAPTION_FADE_MS = 400
+/** Time constant of a name's glide to a new place, s: about 95 percent there in .35 s. */
+const CAPTION_GLIDE_SECONDS = 0.117
+/** The fastest a gliding name moves, px/s: about 4 px a frame at 60 fps, so a long move never leaps. */
+export const CAPTION_GLIDE_SPEED = 240
+const clampTo = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 /** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
 const SHEET_BACKDROP = 0.7
 /** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
@@ -2113,10 +2122,21 @@ export class Shell implements System {
           const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
           candidates.push({ id: place.id, options, priority, moon: row.moon })
         }
-        const layout = captionLayout(candidates)
+        // A name keeps its side and lines while they still work (labels.ts preferPrevious).
+        const layout = captionLayout(preferPrevious(candidates, this.captionKeys))
+        const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
+        const dt = Math.min(0.1, Math.max(0, (now - this.captionClock) / 1000)); this.captionClock = now
         const canChoose = !chosen && !this.dropping && !this.overlay.inert && this.element.classList.contains('galaxy-open')
         for (const [id, chip] of chips) {
-          const placement = layout.get(id), suppressed = !placement
+          let placement = layout.get(id)
+          // A hidden name comes back only once its place has stayed free a moment, so a name at
+          // the edge of a rule does not blink as the planets orbit (the owner: "graceful motion only").
+          if (placement && chip.classList.contains('is-suppressed')) {
+            const since = this.captionFree.get(id) ?? now
+            this.captionFree.set(id, since)
+            if (now - since < CAPTION_SHOW_HOLD_MS) placement = undefined
+          } else if (!placement) this.captionFree.delete(id)
+          const suppressed = !placement
           const key = keys.get(id)!
           // Move focus before hiding its current button. If the caption returns while the
           // fallback has focus, keep that focus until the player leaves the world choice.
@@ -2131,11 +2151,17 @@ export class Shell implements System {
           const tabIndex = suppressed || useKey ? -1 : 0
           if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
           if (!placement) continue
+          placement = this.captionMotion(id, chip, placement, now, dt, still)
           if (chip.dataset.captionContent !== placement.content) chip.dataset.captionContent = placement.content
           const inline = placement.inline ?? 'center'
           if (chip.dataset.captionInline !== inline) chip.dataset.captionInline = inline
           chip.classList.toggle('is-caption-bottom-aligned', placement.blockEnd === true)
-          this.placeChip(chip, (placement.box.left + placement.box.right) / 2, placement.box.top)
+          const glide = this.captionGlide.get(id)!
+          // Drawn at its place plus whatever is left of a glide from its last one, never past the edge inset.
+          const halfWidth = (placement.box.right - placement.box.left) / 2, boxHeight = placement.box.bottom - placement.box.top
+          const x = clampTo((placement.box.left + placement.box.right) / 2 + glide.x, CAPTION_INSET + halfWidth, innerWidth - CAPTION_INSET - halfWidth)
+          const y = clampTo(placement.box.top + glide.y, CAPTION_INSET, innerHeight - CAPTION_INSET - boxHeight)
+          this.placeChip(chip, x, y)
         }
         if (focusedKey) updateRing()
       },
@@ -2168,6 +2194,46 @@ export class Shell implements System {
     if (rowsChanged) this.galaxy?.refreshCaptions()
   })
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
+  /** Each name's last placement decision, so the next frame prefers it (labels.ts preferPrevious). */
+  private readonly captionKeys = new Map<string, string>()
+  /** When a hidden name's place first came free, ms. */
+  private readonly captionFree = new Map<string, number>()
+  /** What is left of a name's glide from its last place to its new one, px, and the box it was drawn at. */
+  private readonly captionGlide = new Map<string, { x: number; y: number; key: string; left: number; top: number; until: number; held?: CaptionOption }>()
+  private captionClock = performance.now()
+  /**
+   * A name that changes side or lines glides there: its offset from the new place starts at the
+   * old one and eases away (about 95 percent in .35 s), so the text never jumps. With reduced
+   * motion it does not move: it fades out where it was, takes its new place, and fades back in.
+   */
+  private captionMotion(id: string, chip: HTMLButtonElement, placement: CaptionOption, now: number, dt: number, still: boolean): CaptionOption {
+    const key = captionKey(placement)
+    let glide = this.captionGlide.get(id)
+    if (!glide) { glide = { x: 0, y: 0, key, left: placement.box.left, top: placement.box.top, until: 0 }; this.captionGlide.set(id, glide) }
+    if (glide.key !== key) {
+      if (still) {
+        // Fade out in place first; the change is applied once the name is gone.
+        if (!glide.held) { glide.held = this.lastPlacement.get(id) ?? placement; glide.until = now + CAPTION_FADE_MS; chip.classList.add('is-reflowing') }
+        if (now < glide.until && glide.held) return glide.held
+        glide.held = undefined; chip.classList.remove('is-reflowing'); glide.x = glide.y = 0
+      } else {
+        const lastDrawn = this.chipDrawn.get(chip)
+        if (lastDrawn && Number.isFinite(lastDrawn.x)) { glide.x = lastDrawn.x - (placement.box.left + placement.box.right) / 2; glide.y = lastDrawn.y - placement.box.top }
+      }
+      glide.key = key
+    }
+    // Ease the offset away: exponentially when it is small, at the glide speed when it is large.
+    const left = Math.hypot(glide.x, glide.y)
+    if (left > 0) {
+      const step = Math.min(left, left * (1 - Math.exp(-dt / CAPTION_GLIDE_SECONDS)), CAPTION_GLIDE_SPEED * dt)
+      const keep = (left - step) / left
+      glide.x *= keep; glide.y *= keep
+      if (left - step < .25) glide.x = glide.y = 0
+    }
+    this.captionKeys.set(id, key); this.lastPlacement.set(id, placement)
+    return placement
+  }
+  private readonly lastPlacement = new Map<string, CaptionOption>()
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly galaxyWorldKeys = new Map<string, HTMLButtonElement>()
