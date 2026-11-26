@@ -134,6 +134,8 @@ export class PlayerPanel {
     const el = this.element
     el.id = 'player-panel'
     el.className = 'player-panel'
+    // The cards' CSS glass face (glass.css), for a surface the Liquid shader does not draw.
+    el.dataset.glassSurface = 'scroll'
     el.hidden = true
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'false')
     this.body.className = 'pp-body'

@@ -109,8 +109,29 @@ async function contrastOverBusy(page, file) {
     results.push([selector, Math.round(ratio * 100) / 100])
   }
   await page.evaluate(() => document.querySelector('#pp-fixture')?.remove())
-  for (const [selector, ratio] of results) assert.ok(ratio >= 4.5, `${selector} reads at ${ratio}:1 over a busy backdrop`)
   return results
+}
+
+/**
+ * The same check in every glass style the player can choose (the panel follows the cards' own
+ * material). MIRA_PANEL_NO_FLOOR=1 turns the panel's temporary floor off and only reports, to
+ * compare the shared card face alone.
+ */
+async function contrastEveryStyle(page, out, size) {
+  const noFloor = process.env.MIRA_PANEL_NO_FLOOR === '1'
+  if (noFloor) await page.evaluate(() => document.querySelector('#player-panel').classList.add('no-floor'))
+  const report = {}
+  for (const [style, name] of [[0, 'liquid'], [1, 'frost'], [2, 'flat']]) {
+    await page.evaluate(style => mira.params.set('hud.glass', style), style)
+    await page.waitForFunction(name => document.documentElement.dataset.glassMaterial === name || name === 'liquid', name)
+    await page.waitForTimeout(300)
+    const shown = await page.evaluate(() => document.documentElement.dataset.glassMaterial)
+    const results = await contrastOverBusy(page, resolve(out, `${size}-host-bot-busy-${name}${noFloor ? '-nofloor' : ''}.png`))
+    report[shown] = Object.fromEntries(results.map(([selector, ratio]) => [selector.includes('why') ? 'hint' : 'label', ratio]))
+    if (!noFloor) for (const [selector, ratio] of results) assert.ok(ratio >= 4.5, `${selector} reads at ${ratio}:1 over a busy backdrop in ${shown}`)
+  }
+  await page.evaluate(() => { mira.params.set('hud.glass', mira.params.get('hud.glass').def.default); document.querySelector('#player-panel').classList.remove('no-floor') })
+  return report
 }
 
 /** Every name in the card starts at the same x, people and bots alike. */
@@ -245,7 +266,7 @@ try {
       await noOverlap(host)
       await insideBand(host, touch)
       await host.screenshot({ path: resolve(out, `${size}-host-bot.png`) })
-      if (!touch) console.log(`${size} contrast over a busy backdrop:`, JSON.stringify(await contrastOverBusy(host, resolve(out, `${size}-host-bot-busy.png`))))
+      if (!touch) console.log(`${size} contrast over a busy backdrop${process.env.MIRA_PANEL_NO_FLOOR === '1' ? ' (floor off, report only)' : ''}:`, JSON.stringify(await contrastEveryStyle(host, out, size)))
       await host.locator('#player-panel .pp-reset-all').click(); await host.locator('#player-panel .pp-reset-all').click()
       await bold.locator('.reset-control:not(.is-live)').waitFor({ timeout: 15000 })
       assert.equal(Number(await bold.locator('input').inputValue()), before, 'the set reset did not return Boldness to its nature')
