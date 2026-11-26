@@ -92,12 +92,13 @@ export function groundHit(origin: T.Vector3, dir: T.Vector3, reach: number, heig
 
 /**
  * The player's spot lights' settings from the pose: same angle, an even fall from the axis
- * (penumbra 1), no fall with distance within the reach (decay 0). Brightness at the reference
- * distance is kept: SPOT_MATCH scales the old candela figures for decay 0.
+ * (penumbra 1), a linear fall with distance (decay 1) that three.js eases to nothing at the
+ * reach: a hot zone near the car that eases away, not a slab to the reach. SPOT_MATCH scales
+ * the old candela figures for decay 1, and a little under, so the lit soil keeps its colour.
  */
-export const SPOT_PENUMBRA = 1, SPOT_DECAY = 0
-/** Old intensities were for decay 2: at 4 m they gave I / 16, so decay 0 takes a sixteenth. */
-export const SPOT_MATCH = 1 / 16
+export const SPOT_PENUMBRA = 1, SPOT_DECAY = 1
+/** Old intensities were for decay 2: at 4 m they gave I / 16; decay 1 gives I / 4 there, so a quarter, then half again. */
+export const SPOT_MATCH = 1 / 8
 const spotAxis = new T.Vector3()
 /** Pose a spot light at lamp `x` (vehicle frame, already scaled) on a vehicle drawn at `size`. */
 export function poseSpot(spot: T.SpotLight, pose: LampPose, x: number, size = 1): void {

@@ -26,7 +26,7 @@
  *
  * Where the light falls is not drawn by hand: each pixel of the patch evaluates the same spot
  * equation as the player's own lamps, from the vehicle's one lamp pose (lamps.ts): the lamp's
- * place and axis, its spread with an even fall from the axis, no fall with distance within its
+ * place and axis, its spread with an even fall from the axis, a linear fall with distance to its
  * reach, and the ground facing the lamp. So a pool is exactly where the beam in mist (cones.ts)
  * lands, bright centre and soft skirt out to the full spread. A lamp too high for its lower
  * edge to reach the ground throws no pool at all.
@@ -68,8 +68,8 @@ export const POOL_RANGE = 220
 const FADE_FAR = 40
 /** Light added at the pool's brightest point at strength 1, times the ground's colour. Tuned by frames. */
 export const POOL_PEAK = 10
-/** The spot equation's value (spread fall times the ground facing the lamp) that POOL_PEAK is for. */
-export const POOL_REFERENCE = .2
+/** The spot equation's value (spread fall times the ground facing the lamp over distance) that POOL_PEAK is for: 3 m ahead. */
+export const POOL_REFERENCE = .067
 /**
  * The lamp's own colour added in the hot centre, as a share of POOL_PEAK: where a real beam is
  * strong the lit ground saturates toward the beam's warm white; the edges keep the ground's
@@ -216,8 +216,8 @@ export class GroundPools {
 /**
  * The pool's light: the spot equation the player's own lamps use (lamps.ts poseSpot), evaluated
  * at each pixel from its pool's lamp: an even fall from the axis to nothing at the spread
- * (penumbra 1), no fall with distance within the reach (decay 0, three.js's cutoff at the
- * reach), times the ground facing the lamp. Tinted by the ground's colour and added.
+ * (penumbra 1), a linear fall with distance (decay 1, with three.js's cutoff at the reach),
+ * times the ground facing the lamp. Tinted by the ground's colour and added.
  */
 function poolMaterial(): T.MeshBasicNodeMaterial {
   const material = new T.MeshBasicNodeMaterial()
@@ -229,7 +229,8 @@ function poolMaterial(): T.MeshBasicNodeMaterial {
   const spot = smoothstep(lampA.w, float(1), dot(l.negate(), axisA.xyz)) as N
   const facing = max(l.y, float(0)) as N
   const cutoff = pow(clamp(float(1).sub(pow(distance.div(axisA.w), 4)), 0, 1), 2) as N
-  const shape = clamp(spot.mul(facing).mul(cutoff).div(POOL_REFERENCE), 0, 1.5) as N
+  // decay 1, as the player's own spots: a linear fall with distance.
+  const shape = clamp(spot.mul(facing).mul(cutoff).div(max(distance, float(.5))).div(POOL_REFERENCE), 0, 1.5) as N
   const lamp = vec3(BEAM.r, BEAM.g, BEAM.b) as N
   material.colorNode = lamp.mul(tint).mul(shape).add(lamp.mul(pow(shape, POOL_CORE_POWER).mul(POOL_CORE))).mul(strength.mul(POOL_PEAK)) as N
   material.transparent = true

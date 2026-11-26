@@ -402,7 +402,8 @@ class VehicleEffects {
       const sunY=w.sunY()
       // The buggy's beam follows the headlight setting (headlights.ts); other kinds are unchanged.
       // Decay 0 within the reach (lamps.ts): SPOT_MATCH keeps the old brightness near the car.
-      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)*SPOT_MATCH
+      // The jet's one spot carries what the buggy's two share: a third of its old figure lights its ground as the buggy's does.
+      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?600:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)*SPOT_MATCH
       const pose=lampPoseFor(v.kind);this.spots.forEach((spot,i)=>poseSpot(spot,pose,this.spotX[i],this.size))
       this.headlightRig.beamIntensity=intensity
     }
