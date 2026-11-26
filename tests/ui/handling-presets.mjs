@@ -27,8 +27,14 @@ for (const mode of ['desktop', 'phone']) {
       else { if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape'); if (!(await rail.isVisible())) await page.locator('.inspector-toggle').click() }
     }
     await rail.waitFor({ state: 'visible' })
+    // Let the panels finish arriving first: a tap during a phone's opening motion lands on a
+    // header that is still moving (the same wait as tests/ui/sidebar.mjs).
+    const settled = () => page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations({ subtree: true }).some(a => a.playState === 'running'), null, { timeout: 15000 })
+    await settled()
     const card = page.locator('.wi-card[data-section=world]')
     if (!(await card.evaluate((c) => c.classList.contains('is-open')))) await card.locator('.wi-head').click()
+    await page.waitForFunction(() => document.querySelector('.wi-card[data-section=world]')?.classList.contains('is-open'), null, { timeout: 10000 })
+    await settled()
     const vehicles = card.locator('details.wi-group[data-group=Vehicles]')
     if (!(await vehicles.evaluate((d) => d.open))) await vehicles.locator(':scope > summary').click()
     const fold = card.locator('details.wi-group[data-group=Buggy]')
