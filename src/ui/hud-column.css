@@ -35,6 +35,11 @@
   /* One row height for the gear drum and the rows below it: compact (it was 36 px for the gear
      and 30 px for the rows). */
   --col-row: 24px;
+  /* The gear drum's own pitch, tighter (the owner, 26 November 2026: "the line height, the white
+     space between these, should be much, much lower ... a compact, integrated control"): the
+     names stay separate lines, the selected one's larger type clear of its neighbours. The
+     Wings, Zorb and Chat rows below keep --col-row, which their key caps need. */
+  --col-gear-row: 16px;
   /* Between the drum and the rows below it; Chat follows the accessories at the row's own pitch. */
   --col-gap: 8px;
   /* The content line and the spine, from the column's left edge. */
@@ -45,8 +50,11 @@
      the top than they are from the left"): the first row's letters sit as far below the top
      edge as the first node's ring sits right of the left edge (--edge-left less its 3 px
      radius), allowing for the half row above the letters' tops. Never under the top safe area. */
-  --col-gear-top: max(env(safe-area-inset-top), calc(var(--edge-left) - var(--col-row) / 2 + 1px));
-  --col-acc-top: calc(var(--col-gear-top) + 3 * var(--col-row) + var(--col-gap));
+  /* The first name's capitals level with the world name's (the planet's name at the top centre,
+     .fh-top): their tops share one line (the owner, 26 November 2026). --col-name-cap is where
+     the world name's capitals start, --col-name-half the first row's capitals' half height. */
+  --col-gear-top: max(env(safe-area-inset-top), calc(var(--col-name-cap, 37px) - var(--col-gear-row) / 2 + var(--col-name-half, 3.5px)));
+  --col-acc-top: calc(var(--col-gear-top) + 3 * var(--col-gear-row) + var(--col-gap));
   --col-chat-top: calc(var(--col-acc-top) + var(--acc-rows, 1) * var(--col-row));
   /* One type scale. */
   --col-type: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
@@ -76,7 +84,7 @@
   left: var(--col-left); top: var(--col-gear-top); bottom: auto; transform: none;
   /* Three rows, the selected gear and one either side (the owner, 18 November 2026), at one
      spacing whether the cursor is free or captured: unlocking only reveals the number glyphs. */
-  --gs-width: var(--col-w); --gs-pitch: var(--col-row); --gs-slots: 3;
+  --gs-width: var(--col-w); --gs-pitch: var(--col-gear-row); --gs-slots: 3;
 }
 /* The drum's look, on every device (touch keeps its own placement and sizes, gear.css):
    no dark falloff behind it, legibility from the one text shadow alone; no pill around the

@@ -152,9 +152,15 @@
    The description shows only while the panels do (Shell's .is-panels); phones hide the drum
    then (exploration.css), so on a phone it never shows. It sits under the drum. */
 :root .gear-selector[data-touch] {
-  --gs-slots: 3; --gs-pitch: 38px; --gs-width: 164px; --gear-detail-width: 0px;
-  top: var(--gear-top, var(--edge-top)); transform: none;
+  /* Tighter rows (the owner, 26 November 2026), each still a full row to tap, and the first
+     name's capitals level with the world name's at the top right (--gear-name-cap, where those
+     capitals start below the top edge; --gear-name-half, the first row's capitals' half height). */
+  --gs-slots: 3; --gs-pitch: 26px; --gs-width: 164px; --gear-detail-width: 0px;
+  top: var(--gear-top, max(env(safe-area-inset-top), calc(var(--gear-name-base, var(--edge-top)) + var(--gear-name-cap, 3px) - var(--gs-pitch) / 2 + var(--gear-name-half, 4px)))); transform: none;
 }
+/* The world name sits on the top edge only on an upright phone (inspector/focus-readouts.css);
+   elsewhere, a phone on its side included, it keeps its 34 px from the top. */
+@media not ((max-width: 700px) and (orientation: portrait)) { :root .gear-selector[data-touch] { --gear-name-base: 34px; } }
 .gear-selector[data-touch] .gs-desc { display: none; }
 /* On touch the drum runs at full strength (outdoors over sky and snow), and small type is thin
    type: the neighbours draw at least 0.86 of the selected name's size, not 0.76. */
