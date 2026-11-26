@@ -15,10 +15,20 @@ import { defineParam } from '../../../shared/params'
 export const hoverGlowHue = defineParam<number>({ id: 'hover.glowHue', label: 'Lift and thrust glow colour (hue)', group: 'Hovercraft', scope: 'world', default: 190, min: 0, max: 360, step: 1 })
 export const hoverGlowStrength = defineParam<number>({ id: 'hover.glowStrength', label: 'Lift and thrust glow strength', group: 'Hovercraft', scope: 'world', default: 1, min: 0, max: 3, step: .05 })
 export const hoverRingSpeed = defineParam<number>({ id: 'hover.ringSpeed', label: 'Lift rings travelling down (per second)', group: 'Hovercraft', scope: 'world', default: 1.2, min: 0, max: 4, step: .05 })
-/** Shape of the lift glow: in port radii long (scaled by clearance each frame), and the rear plume. */
-const HOVER_SHAPE = { main: 4, port: 7, ports: 'frustum' as const }
-/** Length of a lift glow at length 1, metres (HOVER_SHAPE.port lift-port radii of .15 m). */
-const RING_REACH = HOVER_SHAPE.port * .15
+/**
+ * Lift glow layouts, while the owner chooses (hover.liftLayout): 0 a column of bands at each
+ * port; 1 thin separate rings at each port, spreading like ripples to about three times the
+ * port's width and fading out before the ground; 2 one ring set under the whole hull. Each is
+ * a mesh and a set of parameters on the same thruster program.
+ */
+export const hoverLiftLayout = defineParam<number>({ id: 'hover.liftLayout', label: 'Lift glow layout (0 columns, 1 ripples, 2 one under the hull)', group: 'Hovercraft', scope: 'world', default: 1, min: 0, max: 2, step: 1 })
+const LAYOUTS = [
+  { shape: { main: 4, port: 7, ports: 'frustum' as const, portWidth: [.7, 1.6] as const }, rings: 3.5, solid: .12, sharp: 10, reach: 1, hull: false },
+  { shape: { main: 4, port: 7, ports: 'frustum' as const, portWidth: [1.1, 3] as const }, rings: 3, solid: 0, sharp: 30, reach: .85, hull: false },
+  { shape: { main: 4, port: 2.2, ports: 'frustum' as const, portWidth: [.85, 1.9] as const }, rings: 3.5, solid: 0, sharp: 30, reach: .85, hull: true },
+]
+/** Lift-port radius on the Lowwing, metres; the hull-wide set's radius. */
+const PORT_R = .15, HULL_R = .95
 const plumeGeometry = new Map<string, THREE.BufferGeometry>()
 
 /**
@@ -40,20 +50,37 @@ export class GameHover {
   private attached = false
   /** The exhaust: one draw on the shared thruster program, shown at every level. */
   readonly plume: JetPlume
+  private readonly rear: { x: number; y: number; z: number; r: number; ry: number }
+  private readonly liftPorts: { x: number; y: number; z: number; r: number }[]
+  private shownLayout = -1
+
+  private layout(): number { return Math.max(0, Math.min(LAYOUTS.length - 1, Math.round(hoverLiftLayout.value))) }
+
+  /** The cones for a lift layout: the four ports, or one set centred under the hull. */
+  private geometry(layout: number): THREE.BufferGeometry {
+    const key = `${this.design.id}:${layout}`
+    let geometry = plumeGeometry.get(key)
+    if (!geometry) {
+      const l = LAYOUTS[layout], p = this.liftPorts
+      const ports = l.hull ? [{ x: 0, y: Math.min(...p.map(q => q.y)), z: p.reduce((a, q) => a + q.z, 0) / p.length, r: HULL_R }] : p
+      geometry = createPlumeGeometry({ nozzles: [this.rear], ports }, l.shape); shareable.add(geometry); plumeGeometry.set(key, geometry)
+    }
+    this.shownLayout = layout
+    return geometry
+  }
 
   constructor(readonly design: HoverSpec) {
     this.levels = [new HoverBody(design, 0, true), new HoverBody(design, 1, true), new HoverBody(design, 2, true)]
     markReducedShowroomDetail(this.levels[1].object)
     this.object.add(...this.levels.map(h => h.object))
-    // Cones from the close model's own rear duct and lift ports, made once per design.
+    // Cones from the close model's own rear duct and lift ports, made once per design and layout.
     const close = this.levels[0], t = close.thruster.position
-    const fittings = { nozzles: [{ x: 0, y: t.y, z: t.z + .1, r: .37, ry: .12 }], ports: close.ports.map(([x, y, z]) => ({ x, y, z, r: .15 })) }
-    let geometry = plumeGeometry.get(design.id)
-    if (!geometry) { geometry = createPlumeGeometry(fittings, HOVER_SHAPE); shareable.add(geometry); plumeGeometry.set(design.id, geometry) }
-    this.plume = new JetPlume(fittings, geometry)
+    this.rear = { x: 0, y: t.y, z: t.z + .1, r: .37, ry: .12 }
+    this.liftPorts = close.ports.map(([x, y, z]) => ({ x, y, z, r: PORT_R }))
+    this.plume = new JetPlume({ nozzles: [this.rear], ports: this.liftPorts }, this.geometry(this.layout()))
     this.plume.mesh.name = 'hover-thrust'
     this.object.add(this.plume.mesh)
-    this.exhaust(0, 0, RING_REACH)
+    this.exhaust(0, 0, 2.5)
     this.object.updateMatrixWorld(true)
     this.bounds.setFromObject(this.levels[0].object)
     this.setLevel(0)
@@ -79,11 +106,15 @@ export class GameHover {
    * running shows nothing.
    */
   private exhaust(throttle: number, running: number, ground: number): void {
+    const layout = this.layout(), l = LAYOUTS[layout]
+    if (layout !== this.shownLayout) this.plume.mesh.geometry = this.geometry(layout)
     const strength = hoverGlowStrength.value * running
-    this.plume.setLook({ hue: hoverGlowHue.value, length: 1, brightness: 1, heat: .08, diamonds: 0, pinch: 0, sheath: .6, flicker: .15, portRings: 3.5, portSpeed: hoverRingSpeed.value, portSolid: .12, portSharp: 10 })
-    // The rings run down to the ground, and brighten as it comes within a metre or two.
+    this.plume.setLook({ hue: hoverGlowHue.value, length: 1, brightness: 1, heat: .08, diamonds: 0, pinch: 0, sheath: .6, flicker: .15, portRings: l.rings, portSpeed: hoverRingSpeed.value, portSolid: l.solid, portSharp: l.sharp })
+    // The rings run down toward the ground (all the way, or fading out short of it), and
+    // brighten as it comes within a metre or two.
     const near = Math.max(0, Math.min(1, 1 - (ground - 1) / 3))
-    const reach = Math.max(.35, Math.min(3, ground / RING_REACH))
+    const designed = l.shape.port * (l.hull ? HULL_R : PORT_R)
+    const reach = Math.max(.35, Math.min(3, ground * l.reach / designed))
     this.plume.setLevels(.35 + .55 * throttle, (.25 + .9 * throttle) * strength, reach, (.35 + .35 * throttle) * (.5 + .5 * near) * strength)
   }
 
@@ -91,7 +122,7 @@ export class GameHover {
    * Steering in -1..1, throttle in 0..1, and the hull's height above the ground in metres.
    * Only the visible level is touched.
    */
-  update(steer: number, throttle: number, braking: boolean, running = true, dt = 0, ground = RING_REACH): void {
+  update(steer: number, throttle: number, braking: boolean, running = true, dt = 0, ground = 2.5): void {
     this.exhaust(throttle, running ? 1 : 0, ground)
     const h = this.levels[this.level]
     if (this.level === 0) { h.setVector(steer * .35); h.fan?.update(dt, throttle, running) }

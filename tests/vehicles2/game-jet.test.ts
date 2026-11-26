@@ -30,7 +30,7 @@ describe('approved Mk2 game model', () => {
         const cost = visibleCost(jet.object)
         jet.plume.mesh.visible = true; jet.tailLights.mesh.visible = true
         expect(cost.triangles).toBeLessThanOrEqual([12000, 2800, 500][level])
-        // Medium: body, glass and glow, plus the moving ring surfaces and the petals with the
+        // Medium: body and glass (the throat is lit by the plume), plus the moving ring surfaces and the petals with the
         // boom collars, which must still be seen to move at that distance.
         expect(cost.draws).toBeLessThanOrEqual([9, 5, 1][level])
         expect(visibleCost(jet.object).draws - cost.draws).toBe(2)

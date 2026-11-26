@@ -57,7 +57,7 @@ export class GameJet {
   /** Close model: full cockpit, animated gear and vectoring petals. Built on first use. */
   get near(): NextJet {
     if (!this.nearModel) {
-      const jet = this.nearModel = new NextJet(this.design, .6)
+      const jet = this.nearModel = new NextJet(this.design, .6, { glow: false })
       jet.optimize()
       this.adopt(jet)
     }
@@ -73,7 +73,7 @@ export class GameJet {
       // They cost two draws: the surfaces in one, the petals and collars in another. Neither
       // casts a shadow: the body's shadow carries the shape at 30 m and beyond, and the parts'
       // own would be two more draws per jet in the shadow pass.
-      jet = this.mediumModels[pose] = new NextJet(this.design, .1, { flaps: true })
+      jet = this.mediumModels[pose] = new NextJet(this.design, .1, { flaps: true, glow: false })
       jet.setGear(pose)
       if (pose === 0) jet.gear.removeFromParent()
       jet.optimize({ staticGear: true })

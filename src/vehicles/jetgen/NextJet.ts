@@ -67,8 +67,11 @@ export class NextJet {
   /**
    * @param detail 1 is full detail, lower values cut the triangle count (see Builder).
    * @param o.flaps build the control surfaces as moving parts even below detail 0.4.
+   * @param o.glow false leaves out the nozzles' and ports' own glow: the game jet's exhaust
+   *   (JetPlume, the shared thruster shader) lights the throat with its white-hot root instead,
+   *   so that material is never compiled. The labs keep it.
    */
-  constructor(readonly design: JetDesign, readonly detail = 1, o: { flaps?: boolean } = {}) {
+  constructor(readonly design: JetDesign, readonly detail = 1, o: { flaps?: boolean; glow?: boolean } = {}) {
     // The vehicle pattern (src/vehicles/PATTERN.md): no look is authored here. Each surface is
     // tagged with a role and the shared showroom shading builds the scales, clear coat, flakes,
     // canopy, night fill and lava glow, the same as on every other vehicle. The plain numbers
@@ -100,6 +103,7 @@ export class NextJet {
     if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance(); this.cockpit = true }
     for (const mat of Object.keys(this.materials) as Mat[]) {
       const parts = pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
+      if (mat === 'glow' && o.glow === false) { parts.forEach(g => g.dispose()); continue }
       const merged = this.merge(parts)
       const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-${mat}`; mesh.castShadow = mat !== 'glow'; mesh.receiveShadow = mat !== 'glow'
       this.object.add(mesh)

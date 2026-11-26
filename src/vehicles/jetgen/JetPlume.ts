@@ -33,6 +33,8 @@ export interface PlumeShape {
   main: number; port: number
   /** Port cones: 'cone' narrows to a point (the jet's lift jets); 'frustum' widens toward the ground (a maglev glow). */
   ports: 'cone' | 'frustum'
+  /** A frustum's width at the port and at its far end, in port radii. */
+  portWidth?: readonly [number, number]
 }
 
 /**
@@ -166,12 +168,13 @@ export function createPlumeGeometry(fittings: PlumeFittings, shape: PlumeShape =
     // Rear cores carry enough stations for the diamonds to pinch, maglev ports for their rings;
     // jet ports and sheaths are smooth.
     const stations: [number, number][] = port ? (shape.ports === 'frustum'
-      ? Array.from({ length: 14 }, (_, i) => { const s = i / 13; return [s, .7 + .9 * s] as [number, number] })
+      ? Array.from({ length: 14 }, (_, i) => { const s = i / 13, [w0, w1] = shape.portWidth ?? [.7, 1.6]; return [s, w0 + (w1 - w0) * s] as [number, number] })
       : [[0, .62], [.1, .7], [.4, .48], [.75, .2], [1, .01]])
       // The sheath leaves the nozzle at its own width and spreads behind it, so it never glows on the hull.
       : sheath ? Array.from({ length: 8 }, (_, i) => { const s = i / 7, spread = 1 + (SHEATH_WIDTH - 1) * Math.min(1, s / .25); return [s, spread * Math.max(.02, coreProfile(s)) / coreProfile(0)] as [number, number] })
         : Array.from({ length: 28 }, (_, i) => { const s = i / 27; return [s, Math.max(.01, coreProfile(s))] as [number, number] })
-    const around = 10
+    // Maglev frustums are wide and seen from below: enough sides that a big ring stays round.
+    const around = port && shape.ports === 'frustum' ? 32 : 10
     const rings = stations.map(([s, f]) => Array.from({ length: around }, (_, i) => {
       const a = i / around * Math.PI * 2, u = Math.cos(a) * r * f, v = Math.sin(a) * (port ? r : ry) * f
       return port ? new THREE.Vector3(x + u, y - s * L, z + v) : new THREE.Vector3(x + u, y + v, z + s * L)
