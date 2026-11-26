@@ -2102,6 +2102,10 @@ export class Shell implements System {
         const sun = this.galaxy?.sunScreen
         const candidates = []
         const visible = new Set<string>()
+        // Where names are on screen now, not only where the layout last put them: a name fading
+        // out, gliding, or waiting to move keeps its drawn box, and no other name may take it.
+        const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
+        const reserved = this.drawnReservations(now)
         for (const place of places) {
           const chip = chips.get(place.id)!
           if (place.visible) visible.add(place.id)
@@ -2117,14 +2121,14 @@ export class Shell implements System {
           const name = this.chipSize.get(row.name), biome = this.chipSize.get(row.biome)
           if (!name?.width || !name.height || !biome?.width || !biome.height) continue
           const count = row.count?.textContent ? this.chipSize.get(row.count) : undefined
-          const options = captionOptions(place, { scale, name, biome, count, moon: row.moon }, space, places, sun)
+          const others = [...reserved].filter(([other]) => other !== place.id).map(([, box]) => box)
+          const options = captionOptions(place, { scale, name, biome, count, moon: row.moon }, others.length ? { ...space, blockers: [...space.blockers, ...others] } : space, places, sun)
           if (!options.length) continue
           const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
           candidates.push({ id: place.id, options, priority, moon: row.moon })
         }
         // A name keeps its side and lines while they still work (labels.ts preferPrevious).
         const layout = captionLayout(preferPrevious(candidates, this.captionKeys))
-        const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
         const dt = Math.min(0.1, Math.max(0, (now - this.captionClock) / 1000)); this.captionClock = now
         const canChoose = !chosen && !this.dropping && !this.overlay.inert && this.element.classList.contains('galaxy-open')
         for (const [id, chip] of chips) {
@@ -2137,6 +2141,11 @@ export class Shell implements System {
             if (now - since < CAPTION_SHOW_HOLD_MS) placement = undefined
           } else if (!placement) this.captionFree.delete(id)
           const suppressed = !placement
+          // Leaving: its drawn box stays reserved while it fades, so nothing lands on it.
+          if (suppressed && !chip.classList.contains('is-suppressed') && !chip.hidden) {
+            const box = this.drawnBox(id, chip)
+            if (box) this.captionReserve.set(id, { box, until: now + CAPTION_FADE_MS })
+          }
           const key = keys.get(id)!
           // Move focus before hiding its current button. If the caption returns while the
           // fallback has focus, keep that focus until the player leaves the world choice.
@@ -2211,9 +2220,15 @@ export class Shell implements System {
     let glide = this.captionGlide.get(id)
     if (!glide) { glide = { x: 0, y: 0, key, left: placement.box.left, top: placement.box.top, until: 0 }; this.captionGlide.set(id, glide) }
     if (glide.key !== key) {
-      if (still) {
+      // Glide only along a clear path: past another shown name it fades out, moves, and fades in.
+      const from = this.drawnBox(id, chip)
+      const crossing = !still && !!from && this.pathCrosses(id, from, placement.box)
+      if (still || crossing) {
         // Fade out in place first; the change is applied once the name is gone.
-        if (!glide.held) { glide.held = this.lastPlacement.get(id) ?? placement; glide.until = now + CAPTION_FADE_MS; chip.classList.add('is-reflowing') }
+        if (!glide.held) {
+          glide.held = this.lastPlacement.get(id) ?? placement; glide.until = now + CAPTION_FADE_MS; chip.classList.add('is-reflowing')
+          if (from) this.captionReserve.set(id, { box: from, until: glide.until })
+        }
         if (now < glide.until && glide.held) return glide.held
         glide.held = undefined; chip.classList.remove('is-reflowing'); glide.x = glide.y = 0
       } else {
@@ -2234,6 +2249,45 @@ export class Shell implements System {
     return placement
   }
   private readonly lastPlacement = new Map<string, CaptionOption>()
+  /** Drawn boxes held for names that are fading out or waiting to move, until a time. */
+  private readonly captionReserve = new Map<string, { box: ScreenBox; until: number }>()
+  /** A name's box where it is drawn now: its last placement's size at its drawn position. */
+  private drawnBox(id: string, chip: HTMLButtonElement): ScreenBox | undefined {
+    const placement = this.lastPlacement.get(id), at = this.chipDrawn.get(chip)
+    if (!placement || !at || !Number.isFinite(at.x)) return undefined
+    const half = (placement.box.right - placement.box.left) / 2
+    return { left: at.x - half, right: at.x + half, top: at.y, bottom: at.y + placement.box.bottom - placement.box.top }
+  }
+  /** Boxes no other name may take now: reservations still running, and every gliding name's drawn box. */
+  private drawnReservations(now: number): Map<string, ScreenBox> {
+    const out = new Map<string, ScreenBox>()
+    for (const [id, held] of this.captionReserve) { if (held.until > now) out.set(id, held.box); else this.captionReserve.delete(id) }
+    for (const [id, glide] of this.captionGlide) {
+      if (!glide.x && !glide.y) continue
+      const chip = this.galaxyChips?.get(id), box = chip && this.drawnBox(id, chip)
+      if (box) out.set(id, box)
+    }
+    return out
+  }
+  /** Whether a straight glide from one box to another would pass over another shown name. */
+  private pathCrosses(id: string, from: ScreenBox, to: ScreenBox): boolean {
+    const chips = this.galaxyChips
+    if (!chips) return false
+    const others: ScreenBox[] = []
+    for (const [other, chip] of chips) {
+      if (other === id || chip.hidden || chip.classList.contains('is-suppressed')) continue
+      const box = this.drawnBox(other, chip); if (box) others.push(box)
+    }
+    // A name fading out still shows until it has gone.
+    const now = performance.now()
+    for (const [other, held] of this.captionReserve) if (other !== id && held.until > now) others.push(held.box)
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8, dx = (to.left - from.left) * t, dy = (to.top - from.top) * t
+      const box = { left: from.left + dx, right: from.right + dx, top: from.top + dy, bottom: from.bottom + dy }
+      if (others.some(o => box.left < o.right && box.right > o.left && box.top < o.bottom && box.bottom > o.top)) return true
+    }
+    return false
+  }
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly galaxyWorldKeys = new Map<string, HTMLButtonElement>()
