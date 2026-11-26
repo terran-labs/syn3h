@@ -21,6 +21,8 @@ export const liquidSelected = () => glassStyle.value === GLASS_LIQUID && liquidE
 export const respectReducedTransparency = false
 // Flat's default comes from the bright-patch contrast audit. Liquid keeps the owner's 25%.
 export const defaultTint = (style = glassStyle.value) => style === GLASS_LIQUID ? 25 : surfaceCoverage.def.default
+// A small contrast margin over the native Flat default on bright low-tier scenes.
+export const liquidFallbackTintFloor = () => Math.min(surfaceCoverage.def.max ?? 100, defaultTint(GLASS_FLAT) + 3)
 let paintedTint = defaultTint() as number
 export const currentTint = () => paintedTint
 const tintListeners = new Set<() => void>()
@@ -81,9 +83,17 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
   let previousStyle = glassStyleChoice(glassStyle.value).value
   paintedTint = surfaceCoverage.value
   let frame = 0
+  function paintFlatFill() {
+    // Low tiers render a selected Liquid style with Flat's CSS face. Keep the
+    // contrast floor in the paint path so the slider and saved tint stay put.
+    const tint = glassStyle.value === GLASS_LIQUID && !liquidEligible()
+      ? Math.max(paintedTint, liquidFallbackTintFloor())
+      : paintedTint
+    document.documentElement.style.setProperty('--interface-tint', fill(flatFill, tint))
+  }
   function paintTint() {
     const root = document.documentElement
-    root.style.setProperty('--interface-tint', fill(flatFill, paintedTint))
+    paintFlatFill()
     root.style.setProperty('--interface-frost-tint', fill(frostFill, paintedTint))
     for (const notify of tintListeners) notify()
   }
@@ -127,8 +137,10 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
     } else if (id === surfaceCoverage.def.id) {
       easeTint()
       try { localStorage.setItem('mira.surfaceCoverage', String(surfaceCoverage.value)) } catch { /* Session only. */ }
+      return
     } else if (id !== qualityLevel.def.id) return
     paintStyle()
+    paintFlatFill()
   })
   return () => { unsubscribe(); if (frame) cancelAnimationFrame(frame) }
 }
