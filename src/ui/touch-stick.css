@@ -200,7 +200,7 @@ html .mira-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liqu
   transition: transform .32s cubic-bezier(.3, 1.6, .5, 1), background-color .12s ease-out;
 }
 :is(.touch-controls .touch-actions .liquid-glass, .gear-actions > button.liquid-glass):is(.held, :active):not([data-glass-surface="shader"], :disabled),
-html .mira-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:active:not([data-glass-surface="shader"]) {
+html .mira-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle.liquid-glass:is(:active, .held):not([data-glass-surface="shader"]) {
   transform: scale(var(--thumb-press-scale)); transition: transform .2s cubic-bezier(.3, 1.6, .5, 1), background-color .06s ease-out;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -254,7 +254,10 @@ html .mira-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle {
   font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; white-space: nowrap;
 }
 /* The drawn pill is 36 px; the finger gets 44. */
-html .mira-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle::after { content: ""; position: absolute; inset: -4px 0; }
+html .mira-shell.exploration-ui.has-touch .hud-navigation .inspector-toggle::after { content: ""; position: absolute; inset: -4px 0; background: none; box-shadow: none; }
+/* (That box is only the finger's: it must paint nothing. It shares ::after with the glass's top
+   highlight, glass.css, and in Flat, where the glass leaves ::after off, this rule switched it
+   back on with the highlight's gradient, drawn as a pale arc above the pill's top edge.) */
 html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-glyph { display: none; }
 html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-label { display: inline; }
 html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons {
@@ -274,20 +277,25 @@ html:has(> body .mira-shell.exploration-ui.has-touch.is-playing:not(.is-panels) 
   opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .2s ease-out, visibility 0s linear .2s;
 }
 
-/* A sunk buggy's Zorb cue (Shell.cueZorb), instead of a message: once every 2.6 s the ZORB
-   button swells to the glass "on" look (its body, rim and sheen, src/ui/glass.css) with a soft
-   glow, and at that peak one ring leaves it and fades; then it settles to rest, which is
-   whatever the class sets. The ring
-   is the outline, since the glass draws with both pseudo-elements; it follows the round
-   corners. Reduced motion holds the peak look, without the ring. */
+/* A sunk buggy's Zorb cue (Shell.cueZorb), instead of a message: the ZORB button breathes, a
+   slow soft rise and fall of its own brightness with a hairline at its edge that fades with it,
+   every 3 s. Nothing grows outward (the owner, 26 November 2026: "a gentle pulse would make
+   more sense to me than that massive expanding ring"). It reads apart from the on state: on is
+   steady, the cue breathes. Liquid breathes its glass (rim and sheen) a little richer, still on
+   the button. Reduced motion holds a steady highlight. */
 @keyframes zorb-cue {
-  0%, 38% { outline-color: rgb(255 255 255 / 0); outline-offset: 0; }
-  50% { --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); filter: drop-shadow(0 0 9px rgb(255 255 255 / .55)) drop-shadow(0 0 2px rgb(0 0 0 / .35)); outline-color: rgb(255 255 255 / .85); outline-offset: 2px; }
-  92%, 100% { outline-color: rgb(255 255 255 / 0); outline-offset: 20px; }
+  0%, 100% { outline-color: rgb(255 255 255 / 0); }
+  50% { --glass-rim: 1; --glass-sheen: .9; background-color: var(--glass-body-on, rgb(255 255 255 / .16)); outline-color: rgb(255 255 255 / .5); }
 }
-.touch-controls .touch-actions button.is-cued { outline: 1.5px solid rgb(255 255 255 / 0); animation: zorb-cue 2.6s ease-in-out infinite; }
+@keyframes zorb-cue-flat {
+  0%, 100% { background-color: var(--interface-tint); outline-color: rgb(255 255 255 / 0); }
+  50% { background-color: color-mix(in srgb, white 16%, var(--interface-tint)); outline-color: rgb(255 255 255 / .45); }
+}
+.touch-controls .touch-actions button.is-cued { outline: 1px solid rgb(255 255 255 / 0); outline-offset: 0; animation: zorb-cue 3s ease-in-out infinite; }
+html[data-glass-material="flat"] .touch-controls .touch-actions button.is-cued { animation-name: zorb-cue-flat; }
 @media (prefers-reduced-motion: reduce) {
-  .touch-controls .touch-actions button.is-cued { animation: none; outline: 0; --glass-rim: 1; --glass-sheen: 1; background-color: var(--glass-body-on, rgb(255 255 255 / .18)); filter: drop-shadow(0 0 9px rgb(255 255 255 / .55)) drop-shadow(0 0 2px rgb(0 0 0 / .35)); }
+  .touch-controls .touch-actions button.is-cued { animation: none; --glass-rim: 1; --glass-sheen: .9; background-color: var(--glass-body-on, rgb(255 255 255 / .16)); outline-color: rgb(255 255 255 / .45); }
+  html[data-glass-material="flat"] .touch-controls .touch-actions button.is-cued { background-color: color-mix(in srgb, white 16%, var(--interface-tint)); }
 }
 
 /* Driving notices (the slow-frames offer, race status: .drive-notices, glass.css) on touch. They

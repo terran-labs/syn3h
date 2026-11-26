@@ -142,7 +142,23 @@ html[data-glass-material="flat"] .liquid-glass {
   background: var(--interface-tint); color: white; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: none;
 }
-html[data-glass-material="flat"] .liquid-glass:is(:active, .held, [aria-pressed="true"]) { background: var(--interface-tint); }
+/* Flat's button states (the owner, 26 November 2026: "All flat buttons need an active state"):
+   one set of fills for every button, so rest, held (for as long as a finger or the mouse is
+   down: Brake), on (latched: Wings, Zorb) and held while on all differ at a glance, over bright
+   sky and dark ground alike. Held is a clear step lighter; on is lighter still and keeps a thin
+   white ring; held while on is the lightest. Before, Flat painted them all the same tint. */
+html[data-glass-material="flat"] {
+  --button-held-fill: color-mix(in srgb, white 32%, var(--interface-tint));
+  --button-on-fill: color-mix(in srgb, white 22%, var(--interface-tint));
+  --button-held-on-fill: color-mix(in srgb, white 44%, var(--interface-tint));
+  --button-on-ring: inset 0 0 0 1.5px rgb(255 255 255 / .9);
+}
+html[data-glass-material="flat"] .liquid-glass:is(:active, .held) { background: var(--button-held-fill); }
+html[data-glass-material="flat"] .liquid-glass[aria-pressed="true"] { background: var(--button-on-fill); box-shadow: var(--button-on-ring); }
+html[data-glass-material="flat"] .liquid-glass[aria-pressed="true"]:is(:active, .held) { background: var(--button-held-on-fill); }
+/* The panels' own buttons (the rail's Pause and Leave world, Close panels) wear the panel
+   material (below); in Flat they take the same held fill while pressed. */
+html[data-glass-material="flat"] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(.rail-command > button, .rail-foot > button, .panels-close):is(:active, .held):not(:disabled) { background: var(--button-held-fill); }
 html[data-glass-material="flat"] .liquid-glass::before,
 html[data-glass-material="flat"] .liquid-glass::after,
 html[data-glass-material="frost"] .liquid-glass::after { content: none; }

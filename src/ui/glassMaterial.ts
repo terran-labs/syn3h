@@ -26,6 +26,28 @@ export const liquidFallbackTintFloor = () => Math.min(surfaceCoverage.def.max ??
 let paintedTint = defaultTint() as number
 export const currentTint = () => paintedTint
 const tintListeners = new Set<() => void>()
+/*
+ * iOS Safari applies :active to a touched button only when the page listens for touches. One
+ * passive listener, doing nothing, turns it on, so every button's held look (glass.css) shows
+ * from the moment a finger lands until it lifts. It never delays or blocks scrolling.
+ */
+if (typeof document !== 'undefined') {
+  document.addEventListener('touchstart', () => {}, { passive: true })
+  // Even so, a button inside the touch-handling HUD (the Panels control, Close panels) gets no
+  // :active from a finger. Every touched button wears .held, the thumb buttons' own pressed
+  // class, from the moment the finger lands until it lifts or slides away. Only classes added
+  // here are taken off here: the thumb controls (TouchControls) keep managing their own.
+  const ours = new Map<number, Element>()
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType !== 'touch') return
+    const button = (e.target as Element | null)?.closest?.('button, [role="button"]')
+    if (!button || button.classList.contains('held')) return
+    button.classList.add('held'); ours.set(e.pointerId, button)
+  }, { capture: true, passive: true })
+  const lift = (e: PointerEvent) => { ours.get(e.pointerId)?.classList.remove('held'); ours.delete(e.pointerId) }
+  for (const type of ['pointerup', 'pointercancel'] as const) document.addEventListener(type, lift, { capture: true, passive: true })
+}
+
 export function onPaintedTint(listener: () => void) {
   tintListeners.add(listener)
   return () => tintListeners.delete(listener)
