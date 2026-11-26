@@ -415,6 +415,8 @@ export class Shell implements System {
         again.addEventListener('click', () => { this.tips.forget(); this.inspector.setStatus('Tips will show again for each vehicle.') })
         row.append(again); return row
       },
+      // A new player: Game open on a desktop; touch screens (phones and tablets) start from the list.
+      startOpen: this.touch.available || matchMedia('(pointer: coarse)').matches ? [] : ['game'],
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
     // function of cursor locking." With the cursor captured you are driving and only the
