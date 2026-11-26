@@ -182,6 +182,13 @@ html[data-touch-hand="left"] .mira-shell.is-panels .gear-selector[data-touch] .g
   user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
 }
 html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actions-left, calc(max(var(--thumb-margin, 24px), var(--safe-left)) + var(--gear-thumb-offset))); }
+/* Where that column would reach the minimap (GearSelector.placeActions): one row above the grid,
+   level with the Panels control and just past it, the first action nearest the grid's side. */
+.gear-actions.is-above {
+  --gear-thumb-offset: calc(var(--thumb-pair-width, 136px) + var(--thumb-gap, 12px));
+  bottom: calc(var(--thumb-top, 166px) + var(--thumb-gap, 12px)); flex-direction: row-reverse;
+}
+html[data-touch-hand="left"] .gear-actions.is-above { flex-direction: row; }
 :root .gear-actions button.gs-action {
   /* Size and type only: the surface is the shared glass button's (.liquid-glass.glass-round). */
   width: var(--thumb-size, 62px); height: var(--thumb-size, 62px); min-height: 0; padding: 0 4px; margin: 0; border-radius: 50%;

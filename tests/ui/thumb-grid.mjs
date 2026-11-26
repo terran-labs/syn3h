@@ -74,7 +74,7 @@ const grappleAttached = (page) => page.evaluate(() => {
 const grappleDetached = (page) => page.evaluate(() => { const rack = window.miraNet.gear; if (rack.__realControls) rack.controls = rack.__realControls; rack.select('beam') })
 
 try {
-  for (const [orient, device] of [['portrait', 'iPhone 14'], ['landscape', 'iPhone 14 landscape']]) {
+  for (const [orient, device] of [['portrait', 'iPhone 14'], ['small', 'iPhone SE'], ['landscape', 'iPhone 14 landscape']]) {
     const context = await browser.newContext({ ...devices[device] })
     for (const vehicle of ['buggy', 'tank', 'hovercraft', 'jet']) {
       const { page, errors } = await open(context, vehicle, orient)
@@ -91,7 +91,7 @@ try {
         }
       }
       await page.evaluate(() => window.mira.params.set('touch.leftHanded', false))
-      if (!layoutOnly && vehicle === 'buggy') await play(page, orient)
+      if (!layoutOnly && vehicle === 'buggy' && orient !== 'small') await play(page, orient)
       check(errors.length === 0, `${orient} ${vehicle}: page errors ${JSON.stringify(errors)}`)
       await page.close()
     }
