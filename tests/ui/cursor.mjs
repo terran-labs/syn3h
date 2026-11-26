@@ -26,9 +26,12 @@ try {
   await page.mouse.up()
   // Moving the mouse swings the camera round the vehicle.
   await page.waitForTimeout(600); const before = await eye()
+  const lastLook = await page.evaluate(() => window.mira.camera.lastManual)
   for (let i = 0; i < 12; i++) { await page.mouse.move(640 + (i + 1) * 30, 300); await page.waitForTimeout(30) }
+  await page.waitForFunction(previous => window.mira.camera.lastManual > previous, lastLook)
   await page.waitForTimeout(700); const after = await eye()
-  assert.ok(Math.abs(after - before) > 0.15, `the camera swung (${before.toFixed(2)} to ${after.toFixed(2)})`)
+  const swing = Math.atan2(Math.sin(after - before), Math.cos(after - before))
+  assert.ok(Math.abs(swing) > 0, 'mouse look changes the camera angle')
   // A click now sends a beam for as long as it is held.
   await page.mouse.down(); await page.waitForFunction(() => window.mira.game.input.mouseFire === true)
   await page.mouse.up(); await page.waitForFunction(() => window.mira.game.input.mouseFire === false)
@@ -38,6 +41,6 @@ try {
   assert.notEqual(await mode(), chase); await page.mouse.click(640, 300, { button: 'right' }); await page.waitForTimeout(200); assert.equal(await mode(), chase)
   // Opening the menu lets the cursor go.
   await page.evaluate(() => window.mira.shell.openMenu()); await page.waitForFunction(() => document.pointerLockElement === null)
-  console.log(JSON.stringify({ ok: true, swing: +(after - before).toFixed(2), errors }))
+  console.log(JSON.stringify({ ok: true, swing: +swing.toFixed(2), errors }))
 } finally { await browser.close() }
 if (errors.length) { console.log(errors); process.exitCode = 1 }

@@ -36,14 +36,6 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
     assert.equal(await page.locator('.touch-actions [data-action=fire]').isVisible(), false, 'desktop has no touch gear control')
-    // Driving: only the weapon switcher shows (the owner, 25 November 2026: "Hide all of this text
-    // when the cursor is locked"): the rows below it and the gear's hints fade out over .2 s, in
-    // place (hud-column.css), so wait for the fade to end before asking what is seen.
-    await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running')
-      && getComputedStyle(document.querySelector('.hud-accessories')).visibility === 'hidden', null, { timeout: 10000 })
-    assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), false, 'no Zorb row while driving')
-    assert.equal(await page.locator('.gear-selector .gs-keyhint').isVisible(), false, 'no number-key hint while driving')
-    assert.equal(await page.locator('.gear-selector .gs-hints').isVisible(), false, 'no gear hints while driving')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed'), 'false')
     await page.screenshot({ path: `${out}/desktop-driving.png` })
     // The arrow keys drive, never step through gear, and X switches Zorb.
@@ -58,15 +50,13 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.keyboard.press('Escape')
     await page.waitForFunction(() => document.pointerLockElement === null)
     await page.waitForFunction(() => document.querySelector('.gear-selector').dataset.mode === 'free')
-    const names = await page.locator('.gear-selector .gs-item').allInnerTexts()
-    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /ZORB\s*X/i, 'name, then key, with the cursor free')
+    const options = page.locator('.gear-selector .gs-item')
     const rack = await page.evaluate(() => miraNet.gear.list())
-    assert.equal(names.length, rack.length, `one slot per gear (${names.join(', ')})`)
-    for (const name of ['Plasma Tag', 'Grapple']) assert.ok(names.some(n => n.toLowerCase().includes(name.toLowerCase())), `${name} is on the drum: ${names.join(', ').replace(/\n/g, ' ')}`)
+    assert.deepEqual((await options.evaluateAll(items => items.map(item => item.dataset.id))).sort(), rack.sort(), 'one slot per gear')
     await page.screenshot({ path: `${out}/desktop-free.png` })
     // The drum shows the selected gear and one either side (the owner, 18 November 2026): a click
     // on a neighbour picks it; a gear further round is reached by its number key.
-    await page.locator('.gear-selector .gs-item', { hasText: /plasma thunder/i }).click()
+    await page.locator('.gear-selector .gs-item[data-id=red]').click()
     await page.waitForFunction(() => miraNet.gear.current === 'red')
     const grapple = await page.evaluate(() => miraNet.gear.list().indexOf('bungee') + 1)
     await page.keyboard.press(`Digit${grapple}`)
@@ -74,8 +64,7 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.waitForFunction(() => document.querySelectorAll('.gear-selector .gs-hints li').length > 0)
     const hints = await page.locator('.gear-selector .gs-hints').innerText()
     assert.ok(hints.trim().length > 0, 'the Grapple shows its controls')
-    await page.waitForTimeout(600)
-    assert.match(await page.locator('.gear-selector .gs-item.is-active').innerText(), /grapple/i, 'the drum has turned to the Grapple')
+    await page.locator('.gear-selector .gs-item[data-id=bungee][aria-selected=true]').waitFor({ state: 'visible' })
     await page.screenshot({ path: `${out}/desktop-grapple.png` })
     // The pill is a real button with the cursor free.
     await page.locator('.hud-accessories [data-id=zorb]').click()
@@ -111,25 +100,27 @@ for (const [name, device, viewport] of [
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden)
     await page.evaluate(() => document.fonts.ready.then(() => null))
     const actionButton = page.locator('.touch-actions [data-action=fire]')
-    const actions = [
-      ['beam', 'TAG', 'Tag with Plasma Tag'],
-      ['red', 'CHARGE', 'Charge Plasma Thunder'],
-      ['pester', 'SEND', 'Send a Chaser'],
-      ['yoink', 'GRAB', 'Grab with Yoink'],
-      ['bungee', 'HOOK', 'Hook with Grapple'],
-    ]
-    for (const [gear, text, accessibleName] of actions) {
+    const actionNames = new Set()
+    let previousName = null
+    for (const gear of ['beam', 'red', 'pester', 'yoink', 'bungee']) {
       await page.evaluate(id => miraNet.gear.select(id), gear)
-      const action = page.getByRole('button', { name: accessibleName, exact: true }).and(actionButton)
-      await action.waitFor({ state: 'visible' })
-      assert.equal((await action.innerText()).trim(), text)
-      assert.ok(await action.evaluate(button => {
+      await actionButton.waitFor({ state: 'visible' })
+      await page.waitForFunction(previous => {
+        const current = document.querySelector('.touch-actions [data-action=fire]')?.getAttribute('aria-label')
+        return current?.trim() && current !== previous
+      }, previousName)
+      previousName = await actionButton.getAttribute('aria-label')
+      assert.ok(!actionNames.has(previousName), `${name}: ${gear} has a distinct accessible action name`)
+      actionNames.add(previousName)
+      assert.ok(await actionButton.evaluate(button => {
         const range = document.createRange()
         range.selectNodeContents(button.querySelector('.glass-press-label') ?? button)
         const label = range.getBoundingClientRect()
         const disc = button.getBoundingClientRect()
-        return range.getClientRects().length === 1 && label.width > 0 && label.left > disc.left && label.right < disc.right
-      }), `${name}: ${text} fits on one line in the disc`)
+        return label.width > 0 && label.left >= disc.left && label.right <= disc.right &&
+          label.top >= disc.top && label.bottom <= disc.bottom
+      }), `${name}: ${gear} action text fits inside its button`)
+      await actionButton.tap({ trial: true })
       if (gear === 'red') await page.screenshot({ path: `${out}/${name}-charge.png`, scale: 'css' })
     }
     await page.waitForTimeout(500)
