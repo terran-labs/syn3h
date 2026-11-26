@@ -2104,7 +2104,8 @@ export class Galaxy {
     // own time (pitchReturn times SWING.coast), so a diagonal flick's turn and tilt settle together.
     // Never while a finger is down, round a chosen world, behind a sheet or under reduced motion.
     if (!this.reduced.matches && !held && this.pointers.size === 0 && this.chosen < 0 && !this.flight && this.opening === null && this.backdrop === 1) {
-      if (this.swingPitch.aim >= PITCH_LOW && this.swingPitch.aim <= PITCH_HIGH) this.swingPitch = pitchHome(this.swingPitch, dt, REST.pitch, pitchReturn.value * SWING.coast)
+      // Past a tilt limit too (a drag stretches it there): the limit's own spring and this pull the same way, toward rest.
+      this.swingPitch = pitchHome(this.swingPitch, dt, REST.pitch, pitchReturn.value * SWING.coast)
     }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
