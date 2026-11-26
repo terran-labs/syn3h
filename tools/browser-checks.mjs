@@ -3,11 +3,11 @@
  * Every browser check in tests/ui, one at a time, each against its own dev server and room
  * server on free ports, and one pass or fail line per file.
  *
- *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs            every file
+ *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs            release core
+ *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs --all      full discovery
  *   /Users/vtn/dev/Syn3h/tools/heavy.sh node tools/browser-checks.mjs galaxy jet-hint   some files
  *
- * Why: only about 13 of these run before a release, and about 20 failed on main for days unseen
- * (23 November 2026). This runs the whole folder when the machine allows.
+ * The default order is shared with the release tiers in ops/browser-core.json.
  *
  * What each file gets, from what its header asks for:
  *  - MIRA_URL (and the older SYN3H_URL) set to its server; a file that takes its address as the
@@ -45,9 +45,16 @@ mkdirSync(logs, { recursive: true })
 /** A browser check: an .mjs in tests/ui that drives Playwright. Helpers (stateWait, thumbGrid, lib/) are not. */
 /** A file can opt out with `// browser-checks: skip (reason)` in its header: a review tool, not a check. */
 const skipped = []
-const files = readdirSync(folder).filter(f => f.endsWith('.mjs') && /from 'playwright(-core)?'/.test(readFileSync(join(folder, f), 'utf8')))
+const discovered = readdirSync(folder).filter(f => f.endsWith('.mjs') && /from 'playwright(-core)?'/.test(readFileSync(join(folder, f), 'utf8')))
   .filter(f => { const why = readFileSync(join(folder, f), 'utf8').slice(0, 2000).match(/browser-checks: skip \(([^)]*)\)/); if (why) skipped.push(`${f.replace(/\.mjs$/, '')}: ${why[1]}`); return !why })
-  .map(f => f.replace(/\.mjs$/, '')).filter(f => !wanted.length || wanted.includes(f)).sort()
+  .map(f => f.replace(/\.mjs$/, '')).sort()
+
+if (args.includes('--all') && wanted.length) throw new Error('Choose --all or named checks')
+const files = wanted.length ? [...new Set(wanted)] : args.includes('--all') ? discovered
+  : JSON.parse(readFileSync(join(root, 'ops/browser-core.json'), 'utf8'))
+for (const name of files) {
+  if (!discovered.includes(name)) throw new Error(`Unknown or excluded browser check: ${name}`)
+}
 
 const freePort = () => new Promise((done, fail) => { const s = createServer(); s.on('error', fail); s.listen(0, '127.0.0.1', () => { const { port } = s.address(); s.close(() => done(port)) }) })
 const releaseVersion = () => {
