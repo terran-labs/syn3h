@@ -70,12 +70,23 @@ for (const [engine, touch] of [[chromium, false], [webkit, true]]) {
     await page.evaluate(() => window.mira.shell.showLobbyAbout()); await page.waitForTimeout(600)
     assert.deepEqual(await ringed(sheets[0][2]), { focused: true, ring: false }, `${tag}: opened before any input, Welcome's X has no ring`)
     await page.evaluate(() => window.mira.shell['aboutSheet'].close()); await closed()
+    // Opened: wait for the X to hold focus with the expected ring (up to 2 s), then hold it a
+    // moment longer, instead of a fixed delay: an opener that takes longer passes, and the ring
+    // is read once it has settled (the X may take focus first and its ring a frame later).
+    const settled = async (close, ring) => {
+      await page.waitForFunction(([sel, ring]) => {
+        const x = document.querySelector(sel), s = x && getComputedStyle(x)
+        const shown = !!x && x.matches(':focus-visible') && s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 && s.outlineColor !== 'rgba(0, 0, 0, 0)'
+        return document.activeElement === x && shown === ring
+      }, [close, ring], { timeout: 2000 }).catch(() => {})
+      await page.waitForTimeout(250)
+    }
     for (const [name, opener, close] of sheets) {
       const button = page.locator(opener).first()
-      await (touch ? button.tap() : button.click()); await page.waitForTimeout(600)
+      await (touch ? button.tap() : button.click()); await settled(close, false)
       assert.deepEqual(await ringed(close), { focused: true, ring: false }, `${tag}: ${name} opened by pointer, its X has no ring`)
       await page.keyboard.press('Escape'); await closed()
-      await button.evaluate(el => el.focus()); await page.keyboard.press('Enter'); await page.waitForTimeout(600)
+      await button.evaluate(el => el.focus()); await page.keyboard.press('Enter'); await settled(close, true)
       assert.deepEqual(await ringed(close), { focused: true, ring: true }, `${tag}: ${name} opened by keyboard, its X has the ring`)
       await page.keyboard.press('Escape'); await closed()
     }
