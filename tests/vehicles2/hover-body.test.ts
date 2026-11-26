@@ -92,11 +92,9 @@ describe('the generated hovercraft body', () => {
     const h = harness(), v = new Hovercraft(h.game, h.terrain, new T.Vector3(0, 3, 0))
     v.isLocal = false
     const s = study(v)
-    const glow = () => {
-      const values: number[] = []
-      s.levels[s.detail].object.traverse(o => { if (typeof o.userData.glow === 'number') values.push(o.userData.glow) })
-      return values
-    }
+    // The drive glow is the exhaust on the shared thruster shader (GameHover's plume): its rear
+    // and lift strengths, which the shader multiplies every light by.
+    const glow = () => { const [, rear, , lift] = s.plume.levels; return [rear, lift] }
     v.input.x = 1; v.input.y = 1; v.input.brakes = true
     v.update(.02, 1)
     expect(s.levels[0].thruster.rotation.y).toBeCloseTo(-.35)

@@ -23,15 +23,24 @@ export const jetPlumeHue = defineParam<number>({ id: 'jet.plumeHue', label: 'Thr
 
 /** Where a jet's thrust leaves it: rear nozzles (exhaust runs toward +Z) and belly ports (downward). */
 export interface PlumeFittings {
-  nozzles: readonly { x: number; y: number; z: number; r: number }[]
+  /** `ry`, when given, makes the nozzle an oval: r across, ry up and down. */
+  nozzles: readonly { x: number; y: number; z: number; r: number; ry?: number }[]
   ports: readonly { x: number; y: number; z: number; r: number }[]
+}
+/** How a vehicle's cones are shaped (the mesh may differ per vehicle; the program does not). */
+export interface PlumeShape {
+  /** Rear cone and port cone lengths, in nozzle radii. */
+  main: number; port: number
+  /** Port cones: 'cone' narrows to a point (the jet's lift jets); 'frustum' widens toward the ground (a maglev glow). */
+  ports: 'cone' | 'frustum'
 }
 
 /**
  * Designed cone length in metres per metre of nozzle radius, at throttle length 1. Full
  * throttle draws 1.3 of it (the owner: full throttle should look about as half did at twice this).
  */
-const MAIN_LENGTH = 8, PORT_LENGTH = 5.5
+const MAIN_LENGTH = 8
+const JET_SHAPE: PlumeShape = { main: MAIN_LENGTH, port: 5.5, ports: 'cone' }
 /** The soft outer sheath round each rear cone: its width against the core, and its length. */
 const SHEATH_WIDTH = 1.8, SHEATH_LENGTH = .8
 
@@ -57,9 +66,15 @@ export interface ThrusterLook {
   diamonds: number; pinch: number
   /** Strength of the soft outer sheath, and how fast the flame flickers (1 the jet's). */
   sheath: number; flicker: number
+  /**
+   * The belly ports' own bands: how many along a port cone; how fast they travel down it
+   * (rings per second, 0 standing still); how solid the cone is between them (1 a filled
+   * flame, 0 hollow rings of light); and how sharp each band is.
+   */
+  portRings: number; portSpeed: number; portSolid: number; portSharp: number
 }
 /** The jet's: violet, with shock diamonds. Hue, length, brightness and heat come from the registry. */
-const JET_LOOK = { diamonds: 4.5, pinch: .3, sheath: .45, flicker: 1 }
+const JET_LOOK = { diamonds: 4.5, pinch: .3, sheath: .45, flicker: 1, portRings: 4.5, portSpeed: 0, portSolid: 1, portSharp: 6 }
 /**
  * One material for every jet's plume: a shockwave cone. A bright core, purple with violet-white
  * shock diamonds that pinch it down its length, white hot at the nozzle, inside a soft violet
@@ -88,8 +103,13 @@ function plumeMaterial(): THREE.Material {
   // Per object: hue (turns), length, brightness, heat; diamonds, pinch, sheath, flicker rate.
   const look: N = uniform(new THREE.Vector4()).onObjectUpdate(({ object }) => object?.userData.thrusterLook as THREE.Vector4 | undefined)
   const look2: N = uniform(new THREE.Vector4()).onObjectUpdate(({ object }) => object?.userData.thrusterShape as THREE.Vector4 | undefined)
+  // Per object, for the belly ports: ring count, ring speed, solidity, sharpness.
+  const look3: N = uniform(new THREE.Vector4()).onObjectUpdate(({ object }) => object?.userData.thrusterPorts as THREE.Vector4 | undefined)
   const lengthParam: N = look.y, brightness: N = look.z, heat: N = look.w
-  const DIAMONDS: N = look2.x, PINCH: N = look2.y
+  const port: N = where.y
+  // Rear cones: the shock diamonds, standing, sharpness 6, a filled flame. Ports: their own bands.
+  const DIAMONDS: N = mix(look2.x, look3.x, port), PINCH: N = look2.y.mul(float(1).sub(port))
+  const travel: N = time.mul(look3.y).mul(port), sharp: N = mix(float(6), look3.w, port), solid: N = mix(float(1), look3.z, port)
   // Colours from the hue, in the shader so the hue is a uniform: HSL to RGB.
   const hsl = (dh: number, sat: number, light: number): N => {
     const rgb: N = clamp(abs(fract(look.x.add(dh / 360).add(vec3(0, 2 / 3, 1 / 3))).mul(6).sub(3)).sub(1), 0, 1)
@@ -102,7 +122,7 @@ function plumeMaterial(): THREE.Material {
   const length: N = mix(state.x, state.z, where.y).mul(lengthParam), strength: N = mix(state.y, state.w, where.y)
   const along: N = where.x
   // Shock diamonds: bright, pinched bands down the core, settling in a little after the root.
-  const band: N = cos(along.mul(DIAMONDS).mul(Math.PI * 2)).mul(.5).add(.5).pow(6).mul(smoothstep(.06, .2, along)).mul(inner).mul(DIAMONDS.min(1))
+  const band: N = cos(along.mul(DIAMONDS).sub(travel).mul(Math.PI * 2)).mul(.5).add(.5).pow(sharp).mul(mix(smoothstep(.06, .2, along), float(1), port)).mul(inner).mul(DIAMONDS.min(1))
   const stretch: N = attribute('stretch', 'vec3') as N
   // The cone is modelled one unit long; each vertex carries the vector that stretches it. It
   // bends with its nozzle: exhaust up for positive pitch, right for positive yaw, and the boom
@@ -121,9 +141,10 @@ function plumeMaterial(): THREE.Material {
   const power: N = strength.mul(brightness).mul(flicker)
   // Core: deep violet blended normally (opacity), then purple, the diamonds and a white-hot root added.
   const root: N = float(1).sub(smoothstep(0, heat.mul(.3).add(.03), along))
-  const coreAlpha: N = clamp(fade.mul(power).mul(facing.mul(.3).add(.6)), 0, .85).mul(inner)
+  // A hollow cone (solid below 1) keeps its deep colour in its bands, so hollow rings still read at noon.
+  const coreAlpha: N = clamp(fade.mul(power).mul(facing.mul(.3).add(.6)), 0, .85).mul(inner).mul(solid.add(band.mul(float(1).sub(solid))))
   const hot: N = mix(mix(vec3(core), vec3(shock), band), vec3(1), root)
-  const coreLight: N = fade.mul(power).mul(facing.mul(.6).add(.25).add(band.mul(1.6)).add(root.mul(.8)))
+  const coreLight: N = fade.mul(power).mul(facing.mul(.6).add(.25).mul(solid).add(band.mul(1.6)).add(root.mul(.8).mul(solid)))
   // Sheath: soft violet added light, fading toward its outline and its tail.
   const sheathLight: N = float(1).sub(along).pow(1.8).mul(facing.pow(2)).mul(power).mul(look2.z).mul(sheath)
   material.blending = THREE.CustomBlending
@@ -138,18 +159,21 @@ function plumeMaterial(): THREE.Material {
 /** Core radius along a rear cone, as a share of the nozzle's: wider at the root, then to a point. */
 const coreProfile = (s: number) => s < .1 ? 1 + 3 * s : 1.3 * Math.pow(1 - (s - .1) / .9, .9)
 
-function createPlumeGeometry(fittings: PlumeFittings): THREE.BufferGeometry {
+export function createPlumeGeometry(fittings: PlumeFittings, shape: PlumeShape = JET_SHAPE): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = []
-  const cone = (x: number, y: number, z: number, r: number, port: boolean, sheath: boolean) => {
-    const full = r * (port ? PORT_LENGTH : MAIN_LENGTH), L = sheath ? full * SHEATH_LENGTH : full
-    // Rear cores carry enough stations for the diamonds to pinch; ports and sheaths are smooth.
-    const stations: [number, number][] = port ? [[0, .62], [.1, .7], [.4, .48], [.75, .2], [1, .01]]
+  const cone = (x: number, y: number, z: number, r: number, port: boolean, sheath: boolean, ry = r) => {
+    const full = r * (port ? shape.port : shape.main), L = sheath ? full * SHEATH_LENGTH : full
+    // Rear cores carry enough stations for the diamonds to pinch, maglev ports for their rings;
+    // jet ports and sheaths are smooth.
+    const stations: [number, number][] = port ? (shape.ports === 'frustum'
+      ? Array.from({ length: 14 }, (_, i) => { const s = i / 13; return [s, .7 + .9 * s] as [number, number] })
+      : [[0, .62], [.1, .7], [.4, .48], [.75, .2], [1, .01]])
       // The sheath leaves the nozzle at its own width and spreads behind it, so it never glows on the hull.
       : sheath ? Array.from({ length: 8 }, (_, i) => { const s = i / 7, spread = 1 + (SHEATH_WIDTH - 1) * Math.min(1, s / .25); return [s, spread * Math.max(.02, coreProfile(s)) / coreProfile(0)] as [number, number] })
         : Array.from({ length: 28 }, (_, i) => { const s = i / 27; return [s, Math.max(.01, coreProfile(s))] as [number, number] })
     const around = 10
     const rings = stations.map(([s, f]) => Array.from({ length: around }, (_, i) => {
-      const a = i / around * Math.PI * 2, u = Math.cos(a) * r * f, v = Math.sin(a) * r * f
+      const a = i / around * Math.PI * 2, u = Math.cos(a) * r * f, v = Math.sin(a) * (port ? r : ry) * f
       return port ? new THREE.Vector3(x + u, y - s * L, z + v) : new THREE.Vector3(x + u, y + v, z + s * L)
     }))
     const g = loft(rings, false, false), count = g.attributes.position.count, width = around + 1
@@ -168,11 +192,11 @@ function createPlumeGeometry(fittings: PlumeFittings): THREE.BufferGeometry {
     g.setAttribute('nozzle', new THREE.BufferAttribute(nozzle, 1)); g.setAttribute('radial', new THREE.BufferAttribute(radial, 3)); g.setAttribute('sheath', new THREE.BufferAttribute(shell, 1))
     parts.push(g)
   }
-  for (const n of fittings.nozzles) { cone(n.x, n.y, n.z - .12, n.r, false, false); cone(n.x, n.y, n.z - .12, n.r, false, true) }
+  for (const n of fittings.nozzles) { cone(n.x, n.y, n.z - .12, n.r, false, false, n.ry); cone(n.x, n.y, n.z - .12, n.r, false, true, n.ry) }
   for (const p of fittings.ports) cone(p.x, p.y + .06, p.z, p.r, true, false)
   const geometry = mergeGeometries(parts); parts.forEach(g => g.dispose())
   // The cones stretch in the vertex shader, so cull against their longest reach.
-  geometry.computeBoundingSphere(); geometry.boundingSphere!.radius += 3 * Math.max(...fittings.nozzles.map(n => n.r * MAIN_LENGTH), 1)
+  geometry.computeBoundingSphere(); geometry.boundingSphere!.radius += 3 * Math.max(...fittings.nozzles.map(n => n.r * shape.main), 1)
   return geometry
 }
 
@@ -182,23 +206,30 @@ let mk2PlumeGeometry: THREE.BufferGeometry | undefined
  * The jet's thrust plume: a soft cone behind each rear nozzle and under each belly port, drawn
  * as one mesh in one draw at every detail level. Generated; no image, no particles.
  */
+/** Geometries shared between vehicles of one kind (registered by their owner): never disposed by a plume. */
+export const shareable = new WeakSet<THREE.BufferGeometry>()
+
 export class JetPlume {
   readonly mesh: THREE.Mesh
+  private readonly ownsGeometry: boolean
   private readonly state = new THREE.Vector4(.3, .3, .3, 0)
   private readonly colour = new THREE.Color()
   /** The nozzles' deflection the cones bend with: pitch, yaw, roll in radians (NextJet.setVector). */
   private readonly vector = new THREE.Vector3()
   private readonly look = new THREE.Vector4()
   private readonly shape = new THREE.Vector4()
+  private readonly ports = new THREE.Vector4()
 
-  constructor(fittings: PlumeFittings) {
-    const geometry = fittings === MK2_FITTINGS
+  /** `geometry`: a vehicle's own shared cones (createPlumeGeometry); by default built from the fittings. */
+  constructor(fittings: PlumeFittings, geometry?: THREE.BufferGeometry) {
+    geometry ??= fittings === MK2_FITTINGS
       ? (mk2PlumeGeometry ??= createPlumeGeometry(fittings))
       : createPlumeGeometry(fittings)
+    this.ownsGeometry = geometry !== mk2PlumeGeometry && !shareable.has(geometry)
     this.mesh = new THREE.Mesh(geometry, plumeMaterial())
     this.mesh.name = 'jet-plume'; this.mesh.castShadow = false; this.mesh.receiveShadow = false; this.mesh.renderOrder = 2
     this.mesh.userData.plume = this.state; this.mesh.userData.plumeColor = this.colour; this.mesh.userData.plumeVector = this.vector
-    this.mesh.userData.thrusterLook = this.look; this.mesh.userData.thrusterShape = this.shape
+    this.mesh.userData.thrusterLook = this.look; this.mesh.userData.thrusterShape = this.shape; this.mesh.userData.thrusterPorts = this.ports
     this.setLook()
   }
 
@@ -206,6 +237,12 @@ export class JetPlume {
   setLook(look: ThrusterLook = { hue: jetPlumeHue.value, length: jetPlumeLength.value, brightness: jetPlumeBrightness.value, heat: jetPlumeHeat.value, ...JET_LOOK }): void {
     this.look.set(((look.hue % 360) + 360) % 360 / 360, look.length, look.brightness, look.heat)
     this.shape.set(look.diamonds, look.pinch, look.sheath, look.flicker)
+    this.ports.set(look.portRings, look.portSpeed, look.portSolid, look.portSharp)
+  }
+
+  /** Lengths and strengths as drawn, for a vehicle that sets them itself: rear cones, then ports. */
+  setLevels(rearLength: number, rearStrength: number, portLength: number, portStrength: number): void {
+    this.state.set(rearLength, rearStrength, portLength, portStrength)
   }
 
   /** Bend the rear cones with their nozzles: radians, signed as NextJet.setVector. */
@@ -232,6 +269,6 @@ export class JetPlume {
 
   dispose(): void {
     this.mesh.removeFromParent()
-    if (this.mesh.geometry !== mk2PlumeGeometry) this.mesh.geometry.dispose()
+    if (this.ownsGeometry) this.mesh.geometry.dispose()
   }
 }

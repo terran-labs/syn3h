@@ -277,7 +277,8 @@ export class Hovercraft extends Vehicle {
   override update(dt:number,alpha:number):void {
     super.update(dt,alpha)
     const rest=this.zorbed
-    this.study.update(rest?0:this.input.x,rest?0:Math.max(0,this.input.y),!rest&&this.input.brakes,!rest,dt)
+    const at=this.object.position
+    this.study.update(rest?0:this.input.x,rest?0:Math.max(0,this.input.y),!rest&&this.input.brakes,!rest,dt,at.y-this.surface(at.x,at.z))
     // Interpolating two valid poses can cut through a sharp crest; keep the rendered hull clear too.
     if(hoverAssist.value){const c=this.hullClearance(this.object.position,this.object.quaternion);if(c<HULL_GUARD&&HULL_GUARD-c<=HULL_GUARD_REACH)this.object.position.y+=HULL_GUARD-c}
   }

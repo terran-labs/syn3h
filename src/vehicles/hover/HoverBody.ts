@@ -161,7 +161,9 @@ export class HoverBody {
       // Seat and low dashboard stay below the forward sightline. The kit owns the tub.
       for (const [size, at] of [[[.48, .06, .43], [0, .17, -.51]], [[.48, .42, .07], [0, .37, -.20]], [[.64, .07, .15], [0, .36, -1.07]]]) b.add('trim', new T.BoxGeometry(...size as [number, number, number]).translate(...at as [number, number, number]))
     }
-    for (const part of b.pieces) add(part.geometry, materials[part.mat], `round3-${part.mat}`)
+    // The nozzle and lift-port glows are retired: the craft's exhaust is drawn by the shared
+    // thruster program (GameHover's plume), so this material is never compiled.
+    for (const part of b.pieces) { if (part.mat === 'glow') { part.geometry.dispose(); continue } add(part.geometry, materials[part.mat], `round3-${part.mat}`) }
     for (const g of built.head) add(g, table.head, 'round3-headlamp')
     for (const g of built.tail) add(g, table.tail, 'round3-taillamp')
     if (level === 0 && b.gimbal) {
