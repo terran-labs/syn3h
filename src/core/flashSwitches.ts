@@ -88,6 +88,7 @@ export interface FlashSwitches {
 /** Low's values for the level-owned parameters ?lowrest=1 holds (quality.ts PRESET_TABLE, column 1). */
 export const LOW_REST: Readonly<Record<string, ParamValue>> = {
   'water.rippleSize': 64,
+  'water.detail': false,
   'gfx.fogBanks': 1,
   'cover.density': 0.3,
   'cover.reach': 0.45,

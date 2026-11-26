@@ -21,6 +21,36 @@ export const waterClarity = defineParam({
 export const waterChop = defineParam({
   ...P, id: 'water.chop', label: 'Surface chop', default: 1, min: 0, max: 3, step: 0.05,
 })
+/**
+ * The finest ripples (under about 1.5 m), on top of the chop: where they show at all is set by the
+ * gusts, the camera's distance and the pixel footprint. Lighting only.
+ */
+export const waterRipple = defineParam({
+  ...P, id: 'water.ripple', label: 'Fine ripples', default: 2, min: 0, max: 3, step: 0.05,
+})
+/**
+ * Sun glitter: how much of the fine detail stays a sharp facet that can flash the sun. The rest is
+ * folded into the surface's roughness (a soft sheen). 0 a satin sea, 1 (the default) every facet
+ * sharp: a low sun draws a column of glints from the horizon to the camera.
+ */
+export const waterGlitter = defineParam({
+  ...P, id: 'water.glitter', label: 'Sun glitter', default: 1, min: 0, max: 1, step: 0.05,
+})
+/**
+ * Calm and rough patches: large slow areas (about 150 m) where the wind's chop and ripples
+ * drop away or gather. 0 an even sea, 1 the default patchiness.
+ */
+export const waterGusts = defineParam({
+  ...P, id: 'water.gusts', label: 'Calm and rough patches', default: 1, min: 0, max: 1, step: 0.05,
+})
+/**
+ * The detail layer on the sea and still water: chop, fine ripples and the patches. Owned by
+ * the quality level (off at Minimal and Low, which keep the swell and its sheen). Switching it
+ * builds nothing: the shader branches on it.
+ */
+export const waterDetail = defineParam({
+  id: 'water.detail', label: 'Water surface detail', group: 'Water', scope: 'client', default: true,
+})
 /** How strongly the water mirrors the sky. 1 is a true mirror at grazing angles. */
 export const waterReflection = defineParam({
   ...P, id: 'water.reflection', label: 'Sky reflection', default: 1, min: 0, max: 2, step: 0.05,

@@ -110,6 +110,8 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'water.ripples': [false, true, true, true, true, true],
   'water.rippleSize': [64, 64, 96, 128, 128, 256],
   'water.spray': [false, true, true, true, true, true],
+  // The sea's chop and fine ripples (surface.ts): weak phones keep the swell and its sheen only.
+  'water.detail': [false, false, true, true, true, true],
   'water.caustics': [0, D, D, D, D, D],
   'terrain.detailNormal': [0, D, D, D, D, D],
   'terrain.surfaceResponse': [0, D, D, D, D, D],
