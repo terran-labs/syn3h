@@ -24,7 +24,8 @@
 /* Muted for me: the same speaker, dimmed; only the muter sees it. */
 .mira-shell .score-muted[data-state="me"] .muted-mark { opacity: .45; }
 .mira-shell .rail-player-body .score-row.is-rich:has(> .score-name[aria-expanded="true"]) { background: rgb(255 255 255 / .08); border-radius: 7px; }
-.mira-shell .rail-player-body .score-row.is-rich { margin: 0 -6px; padding-left: 6px; padding-right: 6px; }
+/* No lines between rows (the owner's Players card); theme-halo.css draws one on every score row. */
+.mira-shell.exploration-ui .rail-player-body .score-row.is-rich { margin: 0 -6px; padding-left: 6px; padding-right: 6px; border-bottom: 0; border-image: none; }
 
 /* ---- The panel ---- */
 .mira-shell .player-panel { --arrow-y: 24px; position: fixed; z-index: 59; box-sizing: border-box; display: flex; width: 300px; padding: 0; font: 400 13px/1.45 'Barlow', sans-serif; color: var(--s3-ink, #fff); text-shadow: none;
