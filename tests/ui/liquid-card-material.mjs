@@ -64,6 +64,49 @@ async function setMaterial(page, value, material) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
+async function lobbyMarkerOwnership(page) {
+  await page.waitForFunction(() => document.querySelector('.mira-shell[data-lobby-glass]'))
+  await page.evaluate(() => {
+    const shell = document.querySelector('.mira-shell')
+    const dialog = shell.querySelector('dialog.lobby-sheet[open]')
+    const test = document.createElement('div')
+    test.style.cssText = 'width: 180px; height: 60px; overflow: auto'
+    const make = (text, marker) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.textContent = text
+      if (marker) button.dataset.glassSurface = marker
+      test.append(button)
+      return button
+    }
+    const persistent = document.createElement('div')
+    persistent.dataset.glassSurface = 'scroll'
+    shell.append(persistent)
+    window.markerProof = {
+      test, persistent, owned: make('Owned'), removed: make('Removed'),
+      external: make('External', 'scroll'), replaced: make('Replaced'),
+    }
+    dialog.append(test)
+  })
+  await page.waitForFunction(() => ['owned', 'removed', 'replaced'].every(key => markerProof[key].dataset.glassSurface === 'scroll'))
+  await page.evaluate(() => {
+    markerProof.removed.remove()
+    markerProof.test.style.overflow = 'visible'
+  })
+  await page.waitForFunction(() => markerProof.removed.dataset.glassSurface === undefined &&
+    markerProof.owned.dataset.glassSurface !== 'scroll')
+  await page.evaluate(() => { markerProof.test.style.overflow = 'auto' })
+  await page.waitForFunction(() => markerProof.owned.dataset.glassSurface === 'scroll')
+  await page.evaluate(() => { markerProof.replaced.dataset.glassSurface = 'shader' })
+  await setMaterial(page, 2, 'flat')
+  await page.waitForFunction(() => !document.querySelector('.mira-shell[data-lobby-glass]'))
+  assert.deepEqual(await page.evaluate(() => ['owned', 'external', 'persistent', 'replaced'].map(key =>
+    markerProof[key].dataset.glassSurface ?? null)), [null, 'scroll', 'scroll', 'shader'],
+  'disabling lobby glass clears only its own current markers')
+  await setMaterial(page, 0, 'liquid')
+  await page.waitForFunction(() => markerProof.owned.dataset.glassSurface === 'scroll')
+}
+
 async function railStates(page) {
   const rail = '.mira-shell > .world-inspector:not(.lobby-settings)'
   const pause = rail + ' .rail-pause'
@@ -124,9 +167,19 @@ try {
         await page.locator('#lobby-settings .lobby-settings-close').click()
         await page.locator('.lobby-about').click()
         await cleanInk(page, '.lobby-sheet[open]', '.lobby-sheet[open] .welcome-ring-arrow')
+        if (!touch && material === 'liquid') await lobbyMarkerOwnership(page)
         await page.keyboard.press('Escape')
         await page.evaluate(() => { mira.params.set('bots.count', 0); mira.shell.play(false, true) })
         await page.waitForFunction(() => mira.shell.playing && !mira.shell.transitioning)
+        if (!touch && material === 'liquid') {
+          assert.deepEqual(await page.evaluate(() => {
+            const markers = ['owned', 'external', 'persistent'].map(key => markerProof[key].dataset.glassSurface ?? null)
+            markerProof.test.remove()
+            markerProof.persistent.remove()
+            delete window.markerProof
+            return markers
+          }), [null, 'scroll', 'scroll'], 'entering a world releases lobby-owned faces and preserves gameplay markers')
+        }
         if (touch) {
           await page.evaluate(() => mira.shell.returnToDriving())
           await cleanInk(page, '.mira-shell', '.touch-actions .glass-round:not([hidden])')
@@ -134,11 +187,58 @@ try {
         }
         await page.evaluate(() => mira.shell.showPanels())
         await railStates(page)
+        if (!touch && material === 'liquid') {
+          await page.waitForFunction(() => document.querySelector(
+            '.mira-shell > .world-inspector:not(.lobby-settings) .wi-cards > .wi-card[data-glass-surface="scroll"]'))
+          const faces = await page.evaluate(() => {
+            const root = document.documentElement
+            const shell = document.querySelector('.mira-shell')
+            const card = shell.querySelector('.world-inspector:not(.lobby-settings) .wi-cards > [data-glass-surface="scroll"]')
+            const external = document.createElement('aside')
+            external.dataset.glassSurface = 'scroll'
+            shell.append(external)
+            const read = element => {
+              const css = getComputedStyle(element)
+              return [css.backgroundColor, css.backdropFilter, css.borderTopColor, css.boxShadow]
+            }
+            const drive = root.getAttribute('data-drive-glass')
+            const frost = shell.getAttribute('data-ui-frost')
+            const gfx = root.getAttribute('data-gfx')
+            try {
+              return [['on', 'on', '3'], ['shed', 'on', '3'], ['on', 'off', '3'], ['on', 'on', '0']].map(([mode, budget, tier]) => {
+                root.dataset.driveGlass = mode
+                shell.dataset.uiFrost = budget
+                root.dataset.gfx = tier
+                return { mode, budget, tier, card: read(card), external: read(external) }
+              })
+            } finally {
+              external.remove()
+              if (drive === null) root.removeAttribute('data-drive-glass')
+              else root.setAttribute('data-drive-glass', drive)
+              if (frost === null) shell.removeAttribute('data-ui-frost')
+              else shell.setAttribute('data-ui-frost', frost)
+              if (gfx === null) root.removeAttribute('data-gfx')
+              else root.setAttribute('data-gfx', gfx)
+            }
+          })
+          for (const { mode, budget, tier, card, external } of faces) {
+            assert.deepEqual(external, card, 'scroll faces share their fill, filter, edge and shadow outside the Inspector')
+            assert.equal(card[1] === 'none', mode === 'shed' || budget === 'off' || tier === '0', 'fallback scroll faces use no backdrop filter')
+          }
+        }
         await page.evaluate(() => mira.shell.requestPause())
         const pauseBar = '.mira-shell > .bottom-stack > .pause-actions'
         const pauseExit = pauseBar + ' > .pause-exit'
         const layers = await cleanInk(page, pauseBar, pauseExit)
         assert.ok(layers.svg && layers.path && layers.span && (touch || layers.kbd), 'pause covers SVG, path, labels and desktop shortcut')
+        if (material === 'flat') {
+          const localFace = await page.locator(pauseBar).evaluate(bar => {
+            const shot = getComputedStyle(bar.querySelector('.pause-shot'))
+            const exit = getComputedStyle(bar.querySelector('.pause-exit'))
+            return shot.backgroundColor !== exit.backgroundColor || shot.backgroundImage !== exit.backgroundImage
+          })
+          assert.equal(localFace, !touch, 'the keyboard shortcut gets its own Flat button face')
+        }
         if (!touch) {
           await page.keyboard.press('Tab')
           await page.locator(pauseExit).focus()

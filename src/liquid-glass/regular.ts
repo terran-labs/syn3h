@@ -11,10 +11,15 @@ const wideOffsets = Array.from({ length: 32 }, (_, i) => {
   return [radius * Math.cos(angle), radius * Math.sin(angle)]
 })
 
-// White labels on small lenses need 3:1. Card text needs 4.5:1. Leave
-// quantization headroom, and a little more for controls inside large panels.
+export const iconFaceLimit = .296
+export const cardFaceLimit = .12
+export const textFaceLimit = .135
+export const keycapFaceLimit = .075
+
+// Icon-only lenses use the existing 3:1 target. Small text and the translucent
+// keycap need separate ceilings to clear 4.5:1 with their actual painted ink.
 // Scale in linear light so bright saturated backdrops retain their hue.
-export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: RegularUniforms, at: N): N {
+export function whiteInkFace(rgb: N, distance: N, limit: N, tuning: RegularUniforms, at: N): N {
   const linear: N = sRGBTransferEOTF(rgb)
   let adapted: N = linear
   if (tuning.exposure) {
@@ -25,7 +30,6 @@ export function whiteInkFace(rgb: N, distance: N, smallControl: N, tuning: Regul
     adapted = sRGBTransferEOTF(clamp(rgb.add(delta.mul(slope)), 0, 1))
   }
   const luminance = dot(adapted, vec3(.2126, .7152, .0722))
-  const limit = mix(.18, .296, smallControl)
   const safe: N = sRGBTransferOETF(linear.mul(limit.div(max(limit, luminance))))
   return mix(rgb, safe, clamp(distance.negate().sub(1), 0, 1).mul(float(luminance.greaterThan(limit))).mul(tuning.inkResponse ?? 1))
 }

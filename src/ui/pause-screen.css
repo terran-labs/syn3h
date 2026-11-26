@@ -63,6 +63,14 @@ html .mira-shell .pause-actions button {
 .mira-shell .pause-actions:has(.pause-shot-hint:not([hidden])) .pause-shot-keys,
 .mira-shell.has-touch .pause-actions .pause-shot-keys { display: none; }
 
+/* The small keyboard shortcut needs extra contrast on the Screenshot face.
+   Touch and compact layouts hide the shortcut. */
+@media (min-width: 521px) {
+  html[data-glass-material="flat"] .mira-shell:not(.has-touch) .pause-actions .pause-shot:has(kbd) {
+    background-image: linear-gradient(rgb(8 8 10 / .24), rgb(8 8 10 / .24));
+  }
+}
+
 /* "Leave this world?" asked from the pause screen stands above the veil and its buttons. */
 .mira-shell.is-paused .exit-confirm { z-index: 62; }
 
