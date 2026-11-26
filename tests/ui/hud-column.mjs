@@ -12,6 +12,9 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
+// 8. One name column: every visible gear name starts at the same x, the selected one's larger
+//    type included, and the charge bar (the meter) starts at the selected name's left edge, in
+//    both cursor modes and on phones (the owner, 25 November 2026).
 // 7. The charge bar (Plasma Thunder's charge here) paints nothing when idle, keeping its place,
 //    and part filled paints only its filled length (the owner, 25 November 2026).
 // 6. Every node sits on its line: each circle's centre x is its line's centre x (half a pixel),
@@ -84,6 +87,21 @@ const onLines = (m, at, ends = true) => {
     assert.ok(Math.abs(group.line.bottom - group.nodes.at(-1).y) <= .5, `${at}: the ${name} line ends at its last circle ${JSON.stringify(group)}`)
   }
 }
+/** Left edges of the drum's visible names and of the selected row's meter (status and bar). */
+const names = (page) => page.evaluate(() => {
+  const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
+  const rows = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item')].filter((b) => b.checkVisibility({ opacityProperty: true, visibilityProperty: true }))
+    .map((b) => ({ selected: b.classList.contains('is-active'), box: b.querySelector('.gs-text').getBoundingClientRect() }))
+    .filter((r) => r.box.top + r.box.height / 2 > drum.top && r.box.top + r.box.height / 2 < drum.bottom)
+  const meter = document.querySelector('.gear-selector .gs-meter:not(.is-leaving)')
+  const bar = meter && [...meter.children].find((e) => !e.hidden && e.getBoundingClientRect().width > 0)
+  return { lefts: rows.map((r) => +r.box.left.toFixed(2)), selected: rows.find((r) => r.selected)?.box.left, meter: bar ? bar.getBoundingClientRect().left : null }
+})
+const oneColumn = (m, at) => {
+  assert.ok(m.lefts.length >= 2, `${at}: names shown ${JSON.stringify(m)}`)
+  assert.ok(Math.max(...m.lefts) - Math.min(...m.lefts) <= 1, `${at}: the gear names share one left edge ${JSON.stringify(m)}`)
+  if (m.meter !== null) assert.ok(Math.abs(m.meter - m.selected) <= 1, `${at}: the meter starts under the selected name ${JSON.stringify(m)}`)
+}
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
 try {
@@ -112,6 +130,8 @@ try {
       const shown = await page.evaluate(() => ['.hud-accessories', '.hud-chat', '.gear-selector .gs-detail', '.gear-selector .gs-drum'].map((s) => document.querySelector(s).checkVisibility({ opacityProperty: true, visibilityProperty: true })))
       assert.deepEqual(shown, mode === 'free' ? [true, true, true, true] : [false, false, false, true], `${at}: rows, detail and drum shown ${JSON.stringify(shown)}`)
       onLines(await lines(page), at)
+      await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
+      oneColumn(await names(page), at)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }
@@ -132,6 +152,7 @@ try {
         await page.waitForTimeout(50)
         await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
         onLines(await lines(page), `${w}x${h} gear ${g + 1}`)
+        oneColumn(await names(page), `${w}x${h} gear ${g + 1}`)
       }
       const keyX = () => page.evaluate(() => [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) kbd')].map((k) => k.getBoundingClientRect().left))
       const still = await keyX()
@@ -159,6 +180,7 @@ try {
       for (const charge of [1 / 3, 1]) {
         const part = await bar(charge)
         assert.ok(part.opacity === 1 && Math.abs(part.fill - charge * part.width) <= 1, `a bar ${charge.toFixed(2)} charged paints that share of its length ${JSON.stringify(part)}`)
+        oneColumn(await names(page), `charge ${charge.toFixed(2)}`)
       }
       await bar(-1)
       await page.keyboard.press('1')
@@ -209,6 +231,7 @@ try {
     // 6. The drum's lit node on its line (touch hides the other circles, and its line fades out
     // past the rows as the drum scrolls, so only the centre is checked).
     onLines(await lines(page), `${viewport.width}x${viewport.height}`, false)
+    oneColumn(await names(page), `${viewport.width}x${viewport.height}`)
     await context.close()
   }
   assert.deepEqual(errors, [], 'no page errors')
