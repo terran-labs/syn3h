@@ -7,11 +7,13 @@ import { createServer } from 'vite'
 import { buildFeed } from '../../tools/release-feed.mjs'
 
 const out = resolve(process.argv[2] ?? 'tests/ui/artifacts/lobby-community-links')
+const creatorOnly = process.argv.includes('--creator-only')
 const destinations = [
   ['Mira on GitHub', 'https://github.com/terran-labs/syn3h'],
   ['Join the Mira community on Discord', 'https://discord.gg/dxTFZRM'],
   ['Terran Labs', 'https://terranlabs.com'],
 ]
+const destinationHosts = new Set(destinations.map(([, url]) => new URL(url).hostname))
 const profiles = [[320, 568], [390, 844], [844, 390], [1280, 800], [1440, 900]]
 const versionSelector = '[data-lobby-version]'
 const updatesSelector = '.lobby-sheet-updates[open]'
@@ -71,7 +73,11 @@ async function foreground(page) {
 
 async function observeActivation(page) {
   await page.evaluate(() => {
-    const log = window.dockCheck = { versionClicks: [], githubClicks: 0, updatesOpens: [], creatorEvents: 0, taps: [] }
+    const log = window.dockCheck = { versionClicks: [], githubClicks: 0, updatesOpens: [], creatorEvents: 0, taps: [], touches: [] }
+    window.addEventListener('touchstart', event => {
+      if (!event.isTrusted) return
+      for (const touch of event.changedTouches) log.touches.push({ x: touch.clientX, y: touch.clientY })
+    }, true)
     // The window sees the real input before the creator binder can stop
     // propagation on taps that land over the open modal.
     window.addEventListener('click', event => {
@@ -79,7 +85,14 @@ async function observeActivation(page) {
       const control = event.target.closest('a, button')
       if (control?.hasAttribute('data-lobby-version')) log.versionClicks.push({ at: performance.now(), detail: event.detail })
       if (control?.getAttribute('aria-label') === 'Mira on GitHub') log.githubClicks++
-      if (event.detail > 0) log.taps.push({ at: performance.now(), x: event.clientX, y: event.clientY })
+      if (event.detail > 0) log.taps.push({
+        at: performance.now(), x: event.clientX, y: event.clientY,
+        target: control?.getAttribute('aria-label') ?? event.target.localName,
+        tag: event.target.localName, className: event.target.getAttribute('class'),
+        anchor: event.target.closest('a[href]')?.getAttribute('href') ?? null,
+        inUpdates: Boolean(event.target.closest('.lobby-sheet-updates[open]')),
+        detail: event.detail, creatorEvents: log.creatorEvents,
+      })
     }, true)
     const updates = document.querySelector('.lobby-sheet-updates')
     new MutationObserver(() => {
@@ -132,15 +145,19 @@ async function session(browser, width, height, run) {
   const context = await browser.newContext({
     viewport: { width, height }, hasTouch: touch, isMobile: touch, reducedMotion: 'reduce',
   })
+  const address = server.resolvedUrls.local[0]
+  const origin = new URL(address).origin
   const requested = []
-  await context.route(url => destinations.some(([, destination]) => new URL(destination).hostname === url.hostname), route => {
-    requested.push(route.request().url())
+  await context.route(url => /^https?:$/.test(url.protocol) && url.origin !== origin, route => {
+    const request = route.request()
+    if (!destinationHosts.has(new URL(request.url()).hostname) && !request.isNavigationRequest()) return route.continue()
+    requested.push(request.url())
     return route.fulfill({ body: 'Intercepted community destination' })
   })
   const page = await context.newPage()
   page.setDefaultTimeout(15000)
   try {
-    await waitForLobby(page, server.resolvedUrls.local[0])
+    await waitForLobby(page, address)
     await observeActivation(page)
     await foreground(page)
     await run(page, touch, requested)
@@ -196,7 +213,9 @@ async function checkLayout(page, touch, requested, result) {
   assert.equal(versionBox.left, studioBox.left)
   assert.equal(githubBox.top, versionBox.top)
   assert.equal(discordBox.top, studioBox.top)
-  assert.ok(githubBox.right < versionBox.left && discordBox.right < studioBox.left && githubBox.bottom < discordBox.top)
+  result.githubToVersionGap = versionBox.left - githubBox.right
+  assert.ok(result.githubToVersionGap > 0, 'GitHub is entirely outside the first-tap version rectangle')
+  assert.ok(discordBox.right < studioBox.left && githubBox.bottom < discordBox.top)
   assert.equal(result.textStarts[0], result.textStarts[1])
   assert.deepEqual(requested, [], 'external destinations receive no request before activation')
   await page.screenshot({ path: resolve(out, result.id + '.png') })
@@ -283,39 +302,60 @@ async function checkCreator(page, touch, requested) {
   assert.equal(log.creatorEvents, 0)
   report.creator.github = { clicks: log.githubClicks, versionClicks: 0, updatesOpens: 0, creatorEvents: 0 }
   const offset = log.taps.length
+  const touchOffset = log.touches.length
 
   report.creator.stage = 'five version taps'
-  const point = await center(version)
-  await openUpdates(page, () => pointerAt(page, touch, point))
-  assert.equal((await activation(page)).versionClicks.length, 1)
-  for (let i = 0; i < 3; i++) await pointerAt(page, touch, point)
-  log = await activation(page)
-  assert.equal(log.taps.length - offset, 4)
-  assert.equal(log.creatorEvents, 0)
-  assert.equal(await page.locator(updatesSelector).count(), 1)
-  await pointerAt(page, touch, point)
-  await page.waitForFunction(() => window.dockCheck.creatorEvents === 1)
-  await page.locator(updatesSelector).waitFor({ state: 'hidden' })
+  // Reproduce the original anchor collision at the same phone coordinates.
+  const point = [103, 772]
+  assert.ok(await version.evaluate((element, point) => element.contains(document.elementFromPoint(...point)), point),
+    'the original first-tap point still hits the version button')
+  const firstTapRect = await version.evaluate(element => element.getBoundingClientRect().toJSON())
+  let popups = 0
+  page.on('popup', () => popups++)
+  const navigationRequests = []
+  page.context().on('request', request => {
+    if (request.isNavigationRequest()) navigationRequests.push(request.url())
+  })
+  const requestsBefore = requested.length
+  // Keep the window between real taps free of locator waits and page reads.
+  for (let i = 0; i < 5; i++) await pointerAt(page, touch, point)
   log = await activation(page)
   const taps = log.taps.slice(offset)
+  const touches = log.touches.slice(touchOffset)
+  report.creator.version = { point, firstTapRect, touches, taps, versionClicks: log.versionClicks, updatesOpens: log.updatesOpens,
+    elapsedMs: taps.length === 5 ? taps[4].at - taps[0].at : null, creatorEvents: log.creatorEvents, navigationRequests }
+  assert.deepEqual(touches, Array.from({ length: 5 }, () => ({ x: point[0], y: point[1] })),
+    'all five trusted touch starts land at the original coordinate')
   assert.equal(taps.length, 5)
-  assert.ok(taps.every(tap => tap.x === point[0] && tap.y === point[1]), 'all five trusted taps use the same coordinate')
+  // Chromium may move the follow-up click toward the link hit by the touch.
+  const { left, right, top, bottom } = firstTapRect
+  assert.ok(taps.every(({ x, y }) => x >= left && x <= right && y >= top && y <= bottom),
+    'all five resulting clicks land inside the first-tap version rectangle')
+  assert.ok(taps.every(tap => tap.creatorEvents === 0), 'the portal stays hidden until the fifth click')
+  assert.equal(log.versionClicks.length, 1)
   assert.equal(log.updatesOpens.length, 1)
-  assert.equal(requested.length, 5, 'version taps open no external destination')
-  report.creator.version = { point, taps, elapsedMs: taps.at(-1).at - taps[0].at,
-    firstTapMs: log.updatesOpens[0] - log.versionClicks[0].at, creatorEvents: log.creatorEvents }
+  assert.ok(report.creator.version.elapsedMs < 3000, 'the five trusted taps fit the gesture window')
+  report.creator.version.firstTapMs = log.updatesOpens[0] - log.versionClicks[0].at
+  await page.waitForFunction(() => window.dockCheck.creatorEvents === 1)
+  await page.locator(updatesSelector).waitFor({ state: 'hidden' })
+  report.creator.version.creatorEvents = (await activation(page)).creatorEvents
   await pointer(page.locator(gearSelector), touch)
   const card = page.locator('.lobby-settings [data-section="creator"]')
   await card.waitFor()
   report.creator.settingsTitle = (await card.innerText()).trim()
   assert.match(report.creator.settingsTitle, /Dimensional portal/i)
+  report.creator.version.externalNavigations = requested.slice(requestsBefore)
+  report.creator.version.popups = popups
+  assert.deepEqual(navigationRequests, [], 'captured taps send no document request')
+  assert.deepEqual(report.creator.version.externalNavigations, [], 'captured taps attempt no external navigation')
+  assert.equal(popups, 0, 'captured taps open no popup')
 }
 
 let browser
 try {
   await server.listen()
   browser = await chromium.launch({ channel: 'chrome', args: ['--use-angle=metal', '--ignore-gpu-blocklist'] })
-  for (const [width, height] of profiles) {
+  for (const [width, height] of creatorOnly ? [] : profiles) {
     const result = { id: width + 'x' + height, width, height, stage: 'settling lobby' }
     report.layouts.push(result)
     try {
