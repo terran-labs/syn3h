@@ -104,6 +104,12 @@ export class PlayerPanel {
   private pinned = false
   private hoverTimer = 0
   private leaveTimer = 0
+  /**
+   * Hover opens only after the pointer has really moved since the panel last closed: closing
+   * uncovers rows under a still cursor, and the browser's synthetic hover on them must not
+   * open another player's tooltip.
+   */
+  private hoverArmed = true
   private players: () => readonly SessionPlayer[] | undefined = () => undefined
   private readonly body = document.createElement('div')
   private readonly arrow = document.createElement('span')
@@ -134,6 +140,7 @@ export class PlayerPanel {
       this.close(false)
     }, { capture: true })
     window.addEventListener('resize', () => { if (!el.hidden) this.place() })
+    document.addEventListener('pointermove', event => { if (event.movementX || event.movementY) this.hoverArmed = true }, { passive: true })
   }
 
   get openId(): number | null { return this.id }
@@ -169,7 +176,9 @@ export class PlayerPanel {
   /** The mouse came onto a row (Scoreboard): open its tooltip after a rest, or at once when one is showing. */
   hoverRow(id: number, anchor: HTMLButtonElement): void {
     clearTimeout(this.leaveTimer); clearTimeout(this.hoverTimer)
-    if (this.pinned || this.dialog.open || this.dragging) return
+    if (this.pinned || this.dialog.open || this.dragging || !this.hoverArmed) return
+    // Only where the device really hovers; touch screens open by tap.
+    if (typeof matchMedia === 'function' && !matchMedia('(hover: hover)').matches) return
     if (this.id === id && !this.element.hidden) return
     if (!this.element.hidden) { this.show(id, anchor, false); return }
     this.hoverTimer = window.setTimeout(() => {
@@ -217,6 +226,7 @@ export class PlayerPanel {
     this.sidebar()?.classList.remove('is-under-sheet')
     const anchor = this.anchor
     this.id = null; this.player = null; this.anchor = null; this.pinned = false; this.dragging = false
+    this.hoverArmed = false
     this.actions.changed()
     if (restore && anchor?.isConnected) anchor.focus()
   }
