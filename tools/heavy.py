@@ -120,7 +120,7 @@ def status():
         except (FileNotFoundError, ValueError, IndexError):
             continue
         if alive(pid):
-            waiters.append(f'  waiting{" (priority)" if path.name.startswith("waiting-p-") else ""}: pid {pid}, {age(start) if start else "?"}: {command[:160]}')
+            waiters.append(f'  waiting{" (release)" if path.name.startswith("waiting-r-") else " (priority)" if path.name.startswith("waiting-p-") else ""}: pid {pid}, {age(start) if start else "?"}: {command[:160]}')
         else:
             path.unlink(missing_ok=True)  # a waiter that died without tidying up
     print('\n'.join(waiters) if waiters else '  nobody waiting')
@@ -158,6 +158,16 @@ def hold_phase():
     return parts[1] if len(parts) > 1 and parts[1] in ('gate', 'running') else ''
 
 
+def hold_phase_for_others():
+    """The hold phase as an ordinary job sees it, whatever this job's own environment says."""
+    saved = os.environ.pop('MIRA_HEAVY_RELEASE', None)
+    try:
+        return hold_phase()
+    finally:
+        if saved is not None:
+            os.environ['MIRA_HEAVY_RELEASE'] = saved
+
+
 def env_slots(name, default):
     return int(os.environ.get(name, default))
 
@@ -184,22 +194,38 @@ if sys.argv[1:] == ['status']:
 # a priority waiter waits, ordinary waiters take no free slot; among equals the oldest goes
 # first, so a free slot goes in turn rather than to whoever polls first.
 PRIORITY = os.environ.get('MIRA_HEAVY_PRIORITY') == '1'
-waiting = root / f'waiting-{"p-" if PRIORITY else ""}{os.getpid()}'
+# A release's own job (MIRA_HEAVY_RELEASE, or the PID the hold names) is never out-ranked: it
+# takes any free slot at once. 26 November: release 130 ranked behind older waiters that the
+# hold confined to one busy slot, so free slots stayed free and nothing moved for 17 minutes.
+RELEASE = bool(os.environ.get('MIRA_HEAVY_RELEASE'))
+waiting = root / f'waiting-{"r-" if RELEASE else "p-" if PRIORITY else ""}{os.getpid()}'
 # The rank uses exactly the start time written, so two waiters always agree who is ahead.
 waiting_since = float(f'{time.time():.3f}')
 waiting.write_text(f'{os.getpid()} {waiting_since:.3f} ' + ' '.join(sys.argv[1:]) + '\n')
-MY_RANK = (0 if PRIORITY else 1, waiting_since, os.getpid())
+def rank_of(name):
+    return 0 if name.startswith('waiting-r-') else 1 if name.startswith('waiting-p-') else 2
 
 
-def ahead_of_me():
-    """Live waiters that go before this one: priority first, then the oldest."""
+MY_RANK = (rank_of(waiting.name), waiting_since, os.getpid())
+
+
+def ahead_of_me(free, shared):
+    """Live waiters that go before this one and may take one of the slots free for me: a
+    release's job first, then priority, then the oldest. Under a release hold the others may
+    use only the `shared` slots, so a waiter confined there does not hold up one that is not."""
     count = 0
     for path in root.glob('waiting-*'):
         try:
             pid, start, _ = record(path)
         except (FileNotFoundError, ValueError, IndexError):
             continue
-        if pid != os.getpid() and alive(pid) and (0 if path.name.startswith('waiting-p-') else 1, start or 0, pid) < MY_RANK:
+        if pid == os.getpid() or not alive(pid):
+            continue
+        rank = rank_of(path.name)
+        if (rank, start or 0, pid) >= MY_RANK:
+            continue
+        allowed = free if rank == 0 or shared is None else free & shared
+        if allowed:
             count += 1
     return count
 
@@ -223,10 +249,15 @@ while True:
             time.sleep(2)
             continue
         usable = range(max(1, slots - shared + 1), slots + 1)
-    # Wait my turn: only as many waiters as there are free slots may take one.
-    if ahead_of_me() >= sum(slot_free(i) for i in usable):
-        time.sleep(1)
-        continue
+    # Wait my turn: only as many waiters as there are free slots may take one. A release's own
+    # job never waits its turn.
+    if not RELEASE:
+        free = {i for i in usable if slot_free(i)}
+        other = hold_phase_for_others()
+        shared = None if other is None else set(range(max(1, slots - HELD_SLOTS[other] + 1), slots + 1)) if HELD_SLOTS[other] > 0 else set()
+        if ahead_of_me(free, shared) >= len(free):
+            time.sleep(1)
+            continue
     for i in usable:
         lock = open(root / f'slot-{i}.lock', 'a+')
         try:
