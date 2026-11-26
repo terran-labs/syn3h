@@ -94,17 +94,20 @@ async function qualityFallback(page, material) {
       await page.evaluate(tint => mira.params.set('hud.surfaceCoverage', tint), tint)
       await page.waitForFunction(({ readPainted, tint }) => readPainted() === tint, { readPainted, tint })
     }
-    const flatDefault = await page.evaluate(async () => (await import('/src/ui/glassMaterial.ts')).defaultTint(2))
-    await setTint(flatDefault)
-    const defaultFill = await fillAt(3, flatDefault)
-    for (const tint of material === 'liquid' ? [28, 78] : [28]) {
+    const { flatDefault, floor } = await page.evaluate(async () => {
+      const { defaultTint, liquidFallbackTintFloor } = await import('/src/ui/glassMaterial.ts')
+      return { flatDefault: defaultTint(2), floor: liquidFallbackTintFloor() }
+    })
+    await setTint(floor)
+    const floorFill = await fillAt(3, floor)
+    for (const tint of material === 'liquid' ? [28, 78] : [28, flatDefault]) {
       await setTint(tint)
       const original = await fillAt(3, tint)
       const minimal = await fillAt(0, tint)
       const low = await fillAt(1, tint)
       assert.equal(minimal, low, 'both ineligible tiers use the same effective fill')
       if (material === 'liquid' && tint === 28) {
-        assert.equal(minimal, defaultFill, 'a low Liquid tint paints the default Flat CSS face')
+        assert.equal(minimal, floorFill, 'a low Liquid tint paints the fallback floor')
       } else {
         assert.equal(minimal, original, 'a higher tint or native Flat keeps its exact CSS fill')
       }
