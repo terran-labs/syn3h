@@ -1961,7 +1961,7 @@ export class Shell implements System {
     window.addEventListener('resize', () => { safeTopPx = -1 }, { signal: this.abort.signal })
     const brand = this.element.querySelector<HTMLElement>('.lobby-brand')!
     const nav = this.element.querySelector<HTMLElement>('.galaxy-links')!
-    const controls = [this.lobbySettings.dock, this.lobbySettings.version, this.updateNotice.banner, nav]
+    const controls = [this.lobbySettings.dock, this.lobbySettings.versionDock, this.updateNotice.banner, nav]
     let settings: HTMLElement | null = null, measureFrame = 0
     let space: CaptionSpace | undefined
     const measure = () => {
