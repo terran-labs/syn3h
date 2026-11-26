@@ -465,9 +465,9 @@ export class Game {
     const updateStart = performance.now()
     for (const s of this.systems) s.update?.(frameDt, alpha)
     const renderStart = performance.now()
-    // Behind the opaque galaxy lobby nobody can see the world: draw it twice a second, enough
-    // to keep it warm for the descent, instead of every frame under a full-screen shader.
-    // The first frames always draw: loading ends, and shaders compile, on a real frame.
+    // Startup needs real world draws. Once ready, the opaque galaxy can run the
+    // simulation without linking newly arrived vehicles in an invisible world draw.
+    // Descent and explicit captures submit their own draws.
     longFrames.end('System updates', updateStart)
     const view = this.view()
     this.lossRecorder?.frame()
@@ -481,7 +481,7 @@ export class Game {
     if (held) this.presentHeldFrames++
     // ?frameCap=30 (flashSwitches.ts): in play, at most one drawn frame every 30 ms.
     const capped = flashSwitches.frameCap30 && view === 'playing' && now - this.lastDraw < 30
-    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading)
     if (draw) {
       // Before drawing: a size that changed without a usable resize event is applied here, and a
       // render scale the governor chose last frame (QualityController.deferPixelRatio).
