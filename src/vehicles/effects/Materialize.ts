@@ -44,7 +44,7 @@
 import * as T from 'three/webgpu'
 import {float,mix,mx_fractal_noise_float,smoothstep,vec3} from 'three/tsl'
 import {params} from '../../../shared/params'
-import type {Game,System} from '../../core/Game'
+import type {CoveredWarm,Game,System} from '../../core/Game'
 import {RAPIER} from '../../core/physics'
 import type {Terrain} from '../../world/Terrain'
 import {JET_TAIL_LIGHTS_MESH_NAME} from '../jetgen/JetTailLights'
@@ -217,6 +217,16 @@ export class Materialize implements System {
         this.game.scene.add(look.object)
       }
     }
+  }
+
+  /**
+   * A manual quality climb (Game.prepareManualQuality): every arrival and departure look at the new
+   * level, as a governor drop draws them. A switch to the jet or hovercraft after an in-play climb
+   * otherwise built its arrival ghosts (the tail lights' and the fans' among them) in play.
+   */
+  warmClimbLooks(warm: CoveredWarm): Promise<void> {
+    this.drawReliefEffects(arrivalLevel(), () => warm.draw())
+    return Promise.resolve()
   }
 
   /** A governor drop may shed a bot immediately, while its departure still draws. */
