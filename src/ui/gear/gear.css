@@ -132,6 +132,8 @@
 .gear-selector[data-mode=locked] :is(.gs-desc, .gs-index, .gs-hints, .gs-keyhint) { display: none; }
 .gear-selector[data-mode=locked]::before { opacity: .7; }
 .gear-selector[data-mode=free] .gs-keyhint { opacity: .8; }
+/* The range's caps in full ink: the hint's soft colour and fade are for its words. */
+.gear-selector .gs-keyhint kbd.keycap { color: var(--s3-ink); }
 
 /* Touch: bigger targets; the action buttons replace key hints. */
 .gear-selector[data-touch] { --gs-pitch: 52px; --gs-width: 180px; --gear-detail-width: 190px; }
