@@ -124,7 +124,7 @@ async function contrastEveryStyle(page, out, size) {
   // Style, then the budget state: full; shed (the glass lead's hook: the post chain released, so
   // Liquid falls to its CSS face, html[data-drive-glass="shed"]); low (the real lowest quality
   // level, gfx.quality 0, end to end). Frost at full budget for coverage.
-  const cases = [['liquid', 0, 'full'], ['liquid', 0, 'shed'], ['liquid', 0, 'low'], ['frost', 1, 'full'], ['flat', 2, 'full'], ['flat', 2, 'low']]
+  const cases = [['flat', 2, 'full'], ['flat', 2, 'low'], ['liquid', 0, 'full'], ['liquid', 0, 'shed'], ['liquid', 0, 'low'], ['frost', 1, 'full']] // Flat is the default style
   for (const [name, style, state] of cases) {
     await page.evaluate(style => mira.params.set('hud.glass', style), style)
     if (state === 'shed') {
