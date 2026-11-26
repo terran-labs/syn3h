@@ -54,6 +54,16 @@ No rebuild between beta and production: the bytes the owner approved are the byt
   set on production and on staging before the beta that needs it. New bindings and vars are in
   the frozen copy's config and travel with it; a new resource such as an Analytics Engine dataset
   is created by Cloudflare on first write.
+- **Beta hosts are checked as they serve.** The beta Worker rewrites https://mira.cc/ in HTML and
+  plain text to its own origin and marks HTML noindex, on beta.* and every workers.dev address
+  (production's own workers.dev name included). The checkers (tools/lib/served.mjs) compare what a
+  host serves against the frozen bytes with that same rewrite on beta hosts, and require noindex;
+  production hosts stay byte for byte.
+- **Resume, never redeploy.** If a beta's staging deploy happened but its checks or record did not,
+  `tools/release.sh <n> "note" --beta --resume <frozen-id> --fingerprint <hash>` (the id and hash
+  printed by the failed run) runs only the missing steps against that same copy. It refuses unless
+  staging serves exactly that id and the copy still fingerprints to that hash. No second deploy,
+  no second room reset, the same version for the same bytes.
 - **No direct production release.** A plain `tools/release.sh <n> "note"` (or `--immediate`)
   builds and ships straight to production; it is refused unless `MIRA_DIRECT_RELEASE=<reason>`
   is set, and that is set only on the Foreman's explicit word. The reason is recorded beside the

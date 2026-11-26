@@ -28,6 +28,7 @@ import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSyn
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { expectedServed } from './lib/served.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const VERSION = /^v?(\d+\.\d+\.\d+)$/
@@ -393,9 +394,10 @@ export async function check(base, copy, { concurrency = CONCURRENCY, archive = a
 
   // Pages: both spellings, the version header, and a browser's repeat visit with the ETag.
   await mapPool(versions, concurrency, async (v) => {
-    const page = sha(pageOf(v))
     for (const address of [`/?v=${v}`, `/?v=v${v}`]) {
       const got = await request(origin + address)
+      // A beta host serves each page with its own origin for mira.cc's (tools/lib/served.mjs).
+      const page = sha(expectedServed(pageOf(v), base, got.headers.get('content-type')))
       if (got.status !== 200 || sha(got.body) !== page) problems.push(`${address} does not serve the frozen ${v} page (HTTP ${got.status})`)
       if (got.headers.get('x-syn3h-version') !== v) problems.push(`${address} is not marked x-syn3h-version: ${v}`)
       // A repeat visit revalidates with the ETag. A 404 here once broke frozen pages.
@@ -411,7 +413,7 @@ export async function check(base, copy, { concurrency = CONCURRENCY, archive = a
   const files = walk(root).filter((file) => file !== 'index.html' && !file.endsWith('.map') && file !== '.assetsignore' && file !== 'releases.json' && !file.startsWith('v/'))
   await mapPool(files, concurrency, async (file) => {
     const got = await request(`${origin}/${file}`, { headers: { Referer: `${origin}/?v=${current}` } })
-    const want = readFileSync(join(root, file))
+    const want = expectedServed(readFileSync(join(root, file)), base, got.headers.get('content-type'))
     if (got.status === 200 && sha(got.body) === sha(want)) return
     problems.push(`/${file} asked by the ${current} page is not that release's file (HTTP ${got.status}, ${got.body.length} bytes, want ${want.length})`)
   })

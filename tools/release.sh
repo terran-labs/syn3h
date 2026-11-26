@@ -78,6 +78,14 @@ case "$MODE" in ''|--dry-run|--immediate|--staging|--beta|--promote) ;; *) echo 
 DRY=""; [ "$MODE" = "--dry-run" ] && DRY=1
 STAGE_ONLY=""; [ "$MODE" = "--staging" ] && STAGE_ONLY=1
 BETA=""; [ "$MODE" = "--beta" ] && BETA=1
+# --beta --resume <frozen-id> --fingerprint <hash>: a beta whose staging deploy happened but whose
+# checks or record did not (the deploy is not repeated: no second room reset, the same bytes).
+RESUME=""; RESUME_ID=""; RESUME_FP=""
+if [ -n "$BETA" ] && [ "${4:-}" = "--resume" ]; then
+  RESUME=1; RESUME_ID="${5:-}"; [ "${6:-}" = "--fingerprint" ] && RESUME_FP="${7:-}"
+  case "$RESUME_ID" in ''|*/*|.*) echo "release.sh: --resume needs a frozen id from ../Syn3h-stable (a directory name)" >&2; exit 2 ;; esac
+  [ -n "$RESUME_FP" ] || { echo "release.sh: --resume needs --fingerprint <hash>: the one printed when that copy was deployed" >&2; exit 2; }
+fi
 PROMOTE=""; PROMOTE_ID=""; APPROVED=""; APPROVAL=""
 if [ "$MODE" = "--promote" ]; then
   PROMOTE=1; PROMOTE_ID="${4:-}"
@@ -119,7 +127,15 @@ need_secrets() {
 
 # --- Preconditions --------------------------------------------------------------------------
 [ -z "$(git status --porcelain)" ] || fail "the working tree is not clean"
-if [ -n "$PROMOTE" ]; then
+if [ -n "$RESUME" ]; then
+  # Resume: the frozen copy already on staging; its commit and version, never HEAD's or today's.
+  DEST="$(cd ../Syn3h-stable/"$RESUME_ID" 2>/dev/null && pwd)" || fail "no frozen copy ../Syn3h-stable/$RESUME_ID"
+  _bj() { node -e 'const b=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(b[process.argv[2]]??""))' "$DEST/dist/build.json" "$1"; }
+  [ "$(_bj id)" = "$RESUME_ID" ] || fail "$DEST/dist/build.json names $(_bj id), not $RESUME_ID"
+  COMMIT_FULL="$(_bj commit)"; COMMIT="$(git rev-parse --short "$COMMIT_FULL" 2>/dev/null)" || fail "commit $COMMIT_FULL of $RESUME_ID is not in this repository"
+  MILESTONE="$(git tag --points-at "$COMMIT_FULL" | grep '^m-' | head -1)"; [ -n "$MILESTONE" ] || MILESTONE="untagged"
+  ! awk -F '\t' -v id="$RESUME_ID" '$5 == id { found = 1 } END { exit !found }' release-notes/betas.tsv 2>/dev/null || fail "$RESUME_ID is already recorded as a beta: nothing to resume"
+elif [ -n "$PROMOTE" ]; then
   # Promote: the build, its commit and its version all come from the frozen copy the beta
   # shipped, never from HEAD or today's date.
   DEST="$(cd ../Syn3h-stable/"$PROMOTE_ID" 2>/dev/null && pwd)" || fail "no frozen copy ../Syn3h-stable/$PROMOTE_ID"
@@ -141,7 +157,9 @@ fi
 # The version this release ships as, first: it is named by the Pacific date, so a train
 # prepared before midnight ships with the next day's number. Resolved before building, so the
 # UI and frozen metadata agree; the dry run, staging and the release all check it here.
-if [ -n "$PROMOTE" ]; then
+if [ -n "$RESUME" ]; then
+  CALVER="$(_bj version)"; [ -n "$CALVER" ] || fail "$RESUME_ID records no version"
+elif [ -n "$PROMOTE" ]; then
   # The version was fixed when the beta was built and is promoted unchanged, on any later day.
   CALVER="$(_bj version)"; [ -n "$CALVER" ] || fail "$PROMOTE_ID records no version"
   [ "$APPROVED" = "$CALVER" ] || fail "the approval names $APPROVED, but $PROMOTE_ID is $CALVER: nothing promoted"
@@ -207,7 +225,10 @@ if [ -n "$PROMOTE" ]; then
 fi
 
 # --- Freeze ---------------------------------------------------------------------------------
-if [ -n "$PROMOTE" ]; then
+if [ -n "$RESUME" ]; then
+  ID="$RESUME_ID"
+  echo "Resuming the beta $CALVER ($MILESTONE $COMMIT) frozen as $ID: no build, no deploy"
+elif [ -n "$PROMOTE" ]; then
   # No build: the beta's frozen copy, its versions list and its .assetsignore as they were shipped.
   ID="$PROMOTE_ID"
   ln -sfn "$ID" ../Syn3h-stable/current
@@ -228,6 +249,10 @@ echo "Frozen copy: $DEST"
 if [ -n "$BETA" ] || [ -n "$PROMOTE" ]; then
   FINGERPRINT="$(node tools/frozen-fingerprint.mjs hash "$DEST")" || fail "could not fingerprint $DEST"
   echo "Fingerprint: $FINGERPRINT"
+fi
+if [ -n "$RESUME" ]; then
+  [ "$RESUME_FP" = "$FINGERPRINT" ] || fail "$RESUME_ID fingerprints as $FINGERPRINT, not the $RESUME_FP it was deployed with: nothing resumed"
+  echo "Fingerprint matches the copy deployed to staging."
 fi
 if [ -n "$PROMOTE" ]; then
   _tested="$(awk -F '\t' -v id="$PROMOTE_ID" '$5 == id { f = $6 } END { print f }' release-notes/betas.tsv)"
@@ -332,7 +357,12 @@ else
   # A failure here stops the release with production unchanged: nothing to roll back.
   # Promote skips this: the same bytes were deployed and checked here when they shipped as a beta.
   if [ -z "$PROMOTE" ]; then
-  STAGING_DEST="$DEST.staging"
+  if [ -n "$RESUME" ]; then
+  # Nothing is copied or deployed: the checks read the frozen copy itself. (STAGING_DEST stays
+  # unset: on_exit removes it, and it must never name a frozen copy.)
+  STAGING_CHECK="$DEST"
+  else
+  STAGING_DEST="$DEST.staging"; STAGING_CHECK="$STAGING_DEST"
   rm -rf "$STAGING_DEST"; cp -Rc "$DEST" "$STAGING_DEST" 2>/dev/null || cp -R "$DEST" "$STAGING_DEST"
   if [ -z "$BETA" ]; then
     # --staging only: mark the page so a stray visitor cannot take staging for the real game.
@@ -342,17 +372,24 @@ else
     sed -i '' 's#<title>#<title>[staging] #' "$STAGING_DEST/dist/index.html"
   fi
   echo "Deploying to staging${BETA:+ (beta, unedited)}..."
+  fi
   if [ -n "$STUB" ]; then
-    echo "STUB: (cd $STAGING_DEST && wrangler deploy --config wrangler.staging.toml --message \"$MILESTONE $COMMIT: $NOTE\")"
+    [ -n "$RESUME" ] || echo "STUB: (cd $STAGING_DEST && wrangler deploy --config wrangler.staging.toml --message \"$MILESTONE $COMMIT: $NOTE\")"
   else
+    if [ -n "$RESUME" ]; then
+      STAGING_URL="https://syn3h-staging.af-4e7.workers.dev/" # rename-keep: the staging Worker's address
+      _served="$(curl -sf --max-time 15 "${STAGING_URL}build.json" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).id||"")}catch{}})')"
+      [ "$_served" = "$ID" ] || fail "staging serves ${_served:-nothing readable}, not $ID: nothing to resume (deploy a new beta)"
+    else
     (cd "$STAGING_DEST" && with_cf_token node "$WRANGLER" deploy --config wrangler.staging.toml --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-staging-deploy.log" 2>&1 \
       || { cat "$LOG-staging-deploy.log"; fail "staging deploy failed (production untouched)"; }
     STAGING_URL="$(grep -oE 'https://[a-z0-9.-]+\.workers\.dev' "$LOG-staging-deploy.log" | head -1)/"
     [ "$STAGING_URL" != "/" ] || fail "no staging address in the deploy output (production untouched)"
+    fi
     echo "Staging address: $STAGING_URL"
-    settle "$STAGING_URL" "$STAGING_DEST" "$LOG-staging-assets.log" --feed || { tail -20 "$LOG-staging-assets.log"; fail "staging did not settle on the frozen build (production untouched)"; }
+    settle "$STAGING_URL" "$STAGING_CHECK" "$LOG-staging-assets.log" --feed || { tail -20 "$LOG-staging-assets.log"; fail "staging did not settle on the frozen build (production untouched)"; }
     tail -1 "$LOG-staging-assets.log"
-    node tools/frozen-versions.mjs check "$STAGING_URL" "$STAGING_DEST" >"$LOG-staging-frozen.log" 2>&1 \
+    node tools/frozen-versions.mjs check "$STAGING_URL" "$STAGING_CHECK" >"$LOG-staging-frozen.log" 2>&1 \
       || { cat "$LOG-staging-frozen.log"; fail "frozen version links are broken on staging (production untouched)"; }
     tail -2 "$LOG-staging-frozen.log"
     SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-staging.XXXXXX)" || fail "could not reserve staging evidence directory"
@@ -369,7 +406,7 @@ else
     # this exact build too, with its certificate, its socket and the short public check.
     BETA_URL="https://beta.mira.cc/"
     if [ -z "$STUB" ]; then
-      settle "$BETA_URL" "$STAGING_DEST" "$LOG-beta-assets.log" --feed || { tail -20 "$LOG-beta-assets.log"; fail "beta.mira.cc did not settle on the frozen build (production untouched)"; }
+      settle "$BETA_URL" "$STAGING_CHECK" "$LOG-beta-assets.log" --feed || { tail -20 "$LOG-beta-assets.log"; fail "beta.mira.cc did not settle on the frozen build (production untouched)"; }
       tail -1 "$LOG-beta-assets.log"
       MIRA_SHORT_CHECK=1 MIRA_DOMAIN_WORKER=syn3h-staging tools/domain.sh check beta.mira.cc --zone mira.cc >"$LOG-beta.log" 2>&1 \
         || { cat "$LOG-beta.log"; fail "beta.mira.cc acceptance failed (production untouched)"; }
