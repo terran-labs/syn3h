@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { Scene, error as rendererError } from 'three/webgpu'
 import { guardDevice } from '../../src/core/deviceLoss'
-import { Game, type CoveredWarm, type System } from '../../src/core/Game'
+import { Game, MANUAL_PREPARE_HARD_MS, MANUAL_PREPARE_SOFT_MS, type CoveredWarm, type System } from '../../src/core/Game'
 import { startupReportLines } from '../../src/core/diagnostics'
 import { Shell } from '../../src/ui/Shell'
 
@@ -98,7 +98,7 @@ it.each(['dispose', 'deadline'])('releases a cold manual change on %s and preven
   const stalled = new Promise<void>(resolve => { resume = resolve })
   const draw = vi.fn()
   const game = Object.assign(Object.create(Game.prototype), {
-    quality: { settleCoveredPostBudget: vi.fn() },
+    quality: { governor: { level: 3 }, settleCoveredPostBudget: vi.fn() },
     warmVisibleQuality: async (signal: AbortSignal) => { await stalled; signal.throwIfAborted(); draw() },
   })
   const apply = vi.fn()
@@ -115,4 +115,52 @@ it.each(['dispose', 'deadline'])('releases a cold manual change on %s and preven
   resume()
   await vi.advanceTimersByTimeAsync(1)
   expect(draw).not.toHaveBeenCalled()
+})
+
+/** A Game with only what prepareManualQuality touches, its warm held until released. */
+function slowManualChange() {
+  vi.useFakeTimers()
+  vi.stubGlobal('requestAnimationFrame', (frame: () => void) => setTimeout(frame, 1))
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+  let release!: () => void
+  const held = new Promise<void>(resolve => { release = resolve })
+  // A draw stands for building the level's pipelines: none may happen once the change has returned.
+  const draws: number[] = []
+  let returned = false
+  const late = () => draws.filter(at => at === 1).length
+  const setLevel = vi.fn()
+  const game = Object.assign(Object.create(Game.prototype), {
+    quality: { governor: { level: 3 }, settleCoveredPostBudget: vi.fn(), takePixelRatio: vi.fn(), setLevel },
+    manualQualityFallbacks: 0,
+    warmVisibleQuality: async (signal: AbortSignal) => { await held; signal.throwIfAborted(); draws.push(returned ? 1 : 0) },
+  })
+  const apply = vi.fn()
+  const change = (game.prepareManualQuality(apply, new AbortController().signal) as Promise<void>).then(() => { returned = true })
+  return { game, apply, setLevel, change, release, draws, late }
+}
+
+it('keeps the veil past the soft deadline until a slow preparation finishes, building nothing after', async () => {
+  const { game, apply, setLevel, change, release, draws, late } = slowManualChange()
+  await vi.advanceTimersByTimeAsync(MANUAL_PREPARE_SOFT_MS + 5000)
+  expect(game.applyingQuality).toBe(true)
+  release()
+  await vi.advanceTimersByTimeAsync(10)
+  await change
+  expect(apply).toHaveBeenCalledOnce()
+  expect(draws).toEqual([0])
+  expect(setLevel).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(late()).toBe(0)
+})
+
+it('returns to the previous level at the hard bound, building nothing after', async () => {
+  const { game, setLevel, change, release, late } = slowManualChange()
+  await vi.advanceTimersByTimeAsync(MANUAL_PREPARE_HARD_MS + 10)
+  await change
+  expect(game.applyingQuality).toBe(false)
+  expect(setLevel).toHaveBeenCalledWith(3)
+  expect(game.manualQualityFallbacks).toBe(1)
+  release()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(late()).toBe(0)
 })

@@ -67,11 +67,23 @@ export interface System {
   drawReliefFleet?(minimal: boolean, draw: () => void): void
   /** After a climb outside play: draw every distance look of the parked bot models, unseen, around `draw`. */
   drawClimbFleet?(draw: () => void): void
+  /**
+   * A manual quality change behind its veil: draw every model this system keeps off screen at the
+   * new level (every look of every bot kind, BotRenderWarm.warm; the parked player vehicles,
+   * swap.ts), making one for any kind with none kept.
+   */
+  warmClimbLooks?(warm: CoveredWarm): Promise<void>
   drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
 
 const MAX_STEPS_PER_FRAME = 5
+/**
+ * A manual quality change behind its veil (Game.prepareManualQuality): past the soft point the veil
+ * says it is still preparing and keeps waiting; at the hard bound the new level is given up.
+ * WebGL 2 at Cinematic on a loaded machine has been measured needing more than 15 s.
+ */
+export const MANUAL_PREPARE_SOFT_MS = 15_000, MANUAL_PREPARE_HARD_MS = 45_000
 
 // ES modules are all fetched before any of them runs, and this one runs once three, Rapier
 // and their dependencies have run. On the unbundled dev server the gap from navigation
@@ -795,6 +807,8 @@ export class Game {
    */
   holdDraws = false
   private applyingQuality = false
+  /** Manual quality changes given up at MANUAL_PREPARE_HARD_MS (evidence and tests). */
+  manualQualityFallbacks = 0
 
   private manualVehicleLevels = new WeakMap<object, number>()
 
@@ -829,6 +843,8 @@ export class Game {
     signal.addEventListener('abort', cancel, { once: true })
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     let applied = false
+    // The level this change replaces, for falling back to if the new one cannot be prepared.
+    const previous = this.quality.governor.level
     this.applyingQuality = true
     try {
       const prepare = async () => {
@@ -844,10 +860,27 @@ export class Game {
         stop.signal.throwIfAborted()
         await this.warmVisibleQuality(stop.signal, progress, prepareGlass)
       }
-      const result = await withDeadline(Promise.race([prepare(), cancelled]), 15_000)
+      // MANUAL_PREPARE_SOFT_MS is a point to tell the player it is taking a while, not a cut-off:
+      // stopping the warm there lowered the veil with looks unbuilt, to compile in view. The veil
+      // stays until the preparation (and the pipelines its batch already requested) has finished,
+      // up to MANUAL_PREPARE_HARD_MS; past that the level is not kept, and the previous one returns.
+      const work = Promise.race([prepare(), cancelled])
+      let result = await withDeadline(work, MANUAL_PREPARE_SOFT_MS)
+      if (!result.ok && result.reason === 'timeout' && !signal.aborted) {
+        console.warn('Manual graphics preparation passed', MANUAL_PREPARE_SOFT_MS, 'ms; still preparing')
+        progress('Preparing graphics')
+        result = await withDeadline(work, MANUAL_PREPARE_HARD_MS - MANUAL_PREPARE_SOFT_MS)
+      }
       if (!result.ok && !signal.aborted) {
-        console.warn('Manual graphics preparation', result.reason)
-        if (!applied) apply()
+        console.warn('Manual graphics preparation', result.reason, applied ? '- returning to the previous level' : '')
+        if (applied && result.reason === 'timeout') {
+          stop.abort()
+          progress('Could not prepare this level: staying at the previous one')
+          this.manualQualityFallbacks++
+          // The shell queues this behind its veil (Shell.ts manualChange), where the previous level,
+          // live a moment ago, prepares at once.
+          this.quality.setLevel(previous)
+        } else if (!applied) apply()
       }
     } finally {
       stop.abort()
@@ -899,6 +932,24 @@ export class Game {
             draw: () => { if (batch) batch.run(true, submit); else submit() } }, target)
         }
       }
+      if (batch) await batch.ready()
+    }
+    // Every look of every bot kind and every parked player vehicle at the new level. This draws
+    // only what is on screen now: a look no bot shows at this moment (another detail level, another
+    // paint), or a vehicle the player has not switched to yet, would otherwise build its pipelines
+    // for the new level's passes (ambient occlusion, indirect light, a larger shadow tier, another
+    // shading tier) when it first appears, in play.
+    // Through the covered batch where the backend has one: each look's pipelines are requested
+    // and compile in parallel (WebGPU, or WebGL with parallel shader compile), every pose in one
+    // frame, then one wait for them all. One look a frame where it has not.
+    for (const system of this.systems) {
+      if (!system.warmClimbLooks) continue
+      progress('Preparing vehicles')
+      await system.warmClimbLooks({
+        draw: () => { if (batch) batch.run(true, submit); else submit() },
+        yieldFrame: async () => { if (!batch) await frame(); signal.throwIfAborted() },
+      })
+      signal.throwIfAborted()
       if (batch) await batch.ready()
     }
     progress('Drawing the new level')
