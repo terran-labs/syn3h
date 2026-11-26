@@ -28,6 +28,9 @@ test('the Changes list drops hidden-sign-in subjects, tools and checks, and keep
     'Ask what gear-wired sees while driving once the captured-cursor fade ends',
     'Lobby pictures in one command: tools/lobby-captures.mjs',
     'Water tools: window.mira, not the old window.syn3h name',
+    'Updates feed: players see only game changes, never a banned or hidden word',
+    'Share card built, not tracked: the build renders it into dist/brand/share-<hash>.png',
+    'Ship the physics engine\'s WebAssembly as its own file',
   ]) assert.equal(forPlayers(title), false, title)
   for (const title of [
     'Skip vehicles across water, and make the wake behind them easy to see',

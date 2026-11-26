@@ -156,6 +156,8 @@ const NOT_FOR_PLAYERS = [
   /^(Runbook|STATE|Shorter summary|Water tools|Stop the old|Remove a stray|Type the|Shade the reference|Prototype|Pin graphics|Require the|Verify|Settle the|Keep the Apache|Record|Measure|Ask what|Wait for|Assert|Check|Document|Correct|Digest|Notes|Names|Hand fixes|Dev server|Release feed|Heavy|Mark today|Identify|Compare|Calibrate|Fit|Exercise|Leave World|Let the|Make the|Attribute|Include|Finish the|Add the|Add tools|Address switch)\b/i,
   /\b(tests?|checks?|checker|probe|harness|fixtures?|diagnostics?|trace|reports?|evidence|smoke|suite|typecheck|asserts?|measured|calibrat\w*|benchmark|ledger|notes|digest|README|documents?|rename\w*|Worker|R2|frozen|release\w*|betas?|deploy\w*|hosted|heavy|analytics|switch(es)?|pilot|trial|replay|sweep|rolls? back|rollback|keep-list|kept|CI|tested|auditing|measurements?|reference|alias(es)?|runbook|bytecode|prototype|summary line|attribution)\b/i,
   /\bwindow\.\w+/, // a page global, named for tools
+  /^Updates feed\b/i, // the feed's own plumbing (one such subject also says a hidden word exists)
+  /\b(built|dist|plugins?|tracked|bundle\w*|chunks?|hash(ed)?|vite|wasm|webassembly|shim)\b|<hash>/i, // how the build works
 ]
 /** Whether a commit subject belongs in the players' Changes list. */
 export function forPlayers(title) {
