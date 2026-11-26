@@ -14,8 +14,8 @@
  * and bright, lava ones glowing orange that cool to dark as they slide.
  */
 import * as T from 'three/webgpu'
-import { abs, float, floor, fract, fwidth, max, mix, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { heightAtLens, lensNearSea, lensNearSeaNow } from './drawnSurface'
+import { abs, float, floor, fract, fwidth, max, mix, select, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { heightAtLens, lensNearSea, lensNearSeaNow, waterlineProbe } from './drawnSurface'
 
 /** How far in front of the lens the sheet sits, in near-plane distances. */
 const SHEET = 1.5
@@ -109,7 +109,8 @@ export class Waterline {
     const dropColour = mix(vec3(0.85, 0.95, 1), molten, this.lava)
     const alpha = max(max(lineAlpha, bodyAlpha), wet)
     const colour = mix(mix(under, lineColour, lineAlpha.div(max(alpha, 1e-3))), dropColour, wet.div(max(alpha, 1e-3)))
-    material.outputNode = vec4(colour, alpha)
+    // The waterline check (drawnSurface.ts waterlineProbe): mode 1 paints the medium per pixel.
+    material.outputNode = select(waterlineProbe.equal(1), vec4(select(heightHere.lessThan(0), float(1), float(0)), 0, 0, 1), select(waterlineProbe.equal(2), vec4(0), vec4(colour, alpha)))
     this.mesh = new T.Mesh(new T.PlaneGeometry(1, 1), material)
     this.mesh.name = 'waterline'
     this.mesh.frustumCulled = false

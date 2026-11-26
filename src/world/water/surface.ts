@@ -19,7 +19,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  abs, attribute, cameraPosition, select, cameraViewMatrix, color, cos, dFdx, dFdy, faceDirection, float, max, mix, modelWorldMatrix,
+  abs, attribute, cameraNear, cameraPosition, select, cameraViewMatrix, color, cos, dFdx, dFdy, faceDirection, float, max, mix, modelWorldMatrix,
   Fn, If, mx_noise_float, normalize, positionGeometry, positionView, positionLocal, positionWorld, sin, smoothstep, texture, time, uniform, uv, vec2, vec3, vec4, renderGroup,
 } from 'three/tsl'
 // The fragment's colour as the scene fog reads it (hazeCurve).
@@ -34,7 +34,7 @@ import { bentGrazing, curveInverseRadius } from '../curve'
 import { NO_BED, type WaterBed } from './bed'
 import { cameraInWaterNode, liquidDaylightNode } from './daylight'
 import { airFogOf } from './underwater'
-import { mediumHere } from './drawnSurface'
+import { mediumHere, waterlineProbe } from './drawnSurface'
 import { refractThrough } from './refraction'
 export { buildBedTexture, type WaterBed } from './bed'
 import { fogLayersOf } from '../weather/fog'
@@ -555,7 +555,10 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const below = mix(mirror.add(shallowColour.mul(edgeGlow.mul(0.8))), skyBelow, window).mul(liquidDaylightNode)
   const fromAbove = faceDirection.mul(0.5).add(0.5)
   material.colorNode = mix(vec3(0), above, fromAbove)
-  material.emissiveNode = below.mul(float(1).sub(fromAbove))
+  // The waterline check (drawnSurface.ts waterlineProbe): mode 2 marks the sea's fragments at
+  // the near plane, the drawn edge of the water on the lens, in green.
+  const atCut = positionView.z.negate().lessThan(cameraNear.mul(1.03))
+  material.emissiveNode = select(waterlineProbe.equal(2).and(atCut), vec3(0, 60, 0), below.mul(float(1).sub(fromAbove)))
   // Inside the window the bright sky is the surface's own colour: mostly opaque so it reads
   // as a window of light rather than the fogged sky dome behind it.
   // The underside only exists for a camera in the water; from above it would be the far sea

@@ -58,6 +58,16 @@ export interface DrawnSeaFrame {
   near: boolean
 }
 
+/**
+ * The waterline check (tools/waterline-agreement.mjs): 0 normal; 1 the waterline sheet paints
+ * pixels whose near-plane point is under the drawn sea solid red (the computed line is its edge);
+ * 2 the sheet is hidden and the sea paints its fragments at the near plane green (where the near
+ * plane cuts the mesh: the drawn edge). Set from the page through window.__miraWaterlineProbe.
+ */
+let probeMode = 0
+export const waterlineProbe = uniform(0).setGroup(renderGroup).onRenderUpdate(() => probeMode)
+if (typeof window !== 'undefined') Object.assign(window, { __miraWaterlineProbe: (m: number) => { probeMode = m } })
+
 /** Per frame, after the sea material's update: the same numbers it drew with. */
 export function updateDrawnSea(f: DrawnSeaFrame): void {
   level.value = f.level
