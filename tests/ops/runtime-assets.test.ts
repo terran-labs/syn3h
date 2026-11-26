@@ -52,6 +52,10 @@ describe('allowlist', () => {
 })
 
 describe('violations', () => {
+  it('fails any request for the older Updates history, which only Show more may fetch', () => {
+    expect(violations([{ kind: 'data', path: '/releases-older.json' }])).toHaveLength(1)
+    expect(violations([{ kind: 'data', path: '/releases.json' }])).toEqual([])
+  })
   it('fails audio, images, video, any model, unlisted fonts, and inlined bitmaps', () => {
     const records = [
       { kind: 'audio', path: '/audio/SpaceStation.mp3' },

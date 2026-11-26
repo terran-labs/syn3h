@@ -10,21 +10,23 @@ for (const mode of ['desktop', 'phone']) {
  try {
   const page = await browser.newPage(mode === 'phone' ? devices['iPhone 14'] : { viewport: { width: 1440, height: 1000 } })
   const errors = []; page.on('pageerror', error => errors.push(error.message))
-  await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=frost-${phase}-${mode}-${Date.now()}`)
+  await page.goto(`${process.env.MIRA_URL}?tap=0&intro=0&autoplay=1&room=frost-${phase}-${mode}-${Date.now()}`)
   await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden' })
+  await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
   const rail = page.locator('.world-inspector')
   if (mode === 'phone' && !await rail.isVisible()) await page.locator('.inspector-toggle').tap()
   else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
   await rail.waitFor({ state: 'visible' })
   await page.evaluate(async () => { (await import('/src/ui/quality/ladder.ts')).setQualityChoice('full'); mira.game.quality.setAuto(false); mira.game.quality.setLevel(3) })
+  await page.waitForFunction(() => Number(document.documentElement.dataset.gfx) > 0 && document.querySelector('.mira-shell').dataset.uiFrost === 'on')
+  assert.equal(await page.evaluate(() => document.documentElement.dataset.glassMaterial), 'flat')
   // The foot is no longer a glass surface: it holds one button, which carries its own backing.
   const surfaces = '.wi-cards > [data-section]'
-  const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
+  const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', open: el.classList.contains('is-open'), background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
   const checkSurfaces = (rows, off = false) => {
    assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat'])
-   // At Minimal no card pays for a backdrop blur; above it how much blur is the owner's to tune.
-   for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); { const alpha = Number(/,\s*([\d.]+)\)$/.exec(r.background)?.[1] ?? 1); assert.ok(off ? alpha >= .9 : alpha >= .6, `${r.card}: the card body is dense enough to read over a bright world (${r.background})`) } }
+   for (const row of rows) assert.equal(row.blur, off || !row.open ? 'none' : 'blur(4px)', row.card)
   }
   const results = []
   for (const [planet, hour] of [['ice', 12], ['volcanic', 0], ['desert', 12]]) {
@@ -70,10 +72,33 @@ for (const mode of ['desktop', 'phone']) {
    results.push({ planet, hour, bounds, frost })
   }
   if (!baseline) {
+   const gameTint = (await readSurfaces()).find(row => row.card === 'you').background
+   const filters = await page.evaluate(() => {
+    const root = document.documentElement, shell = document.querySelector('.mira-shell')
+    const card = shell.querySelector('.wi-card.is-open')
+    const filter = el => getComputedStyle(el).backdropFilter || getComputedStyle(el).webkitBackdropFilter
+    const toggle = (node, name, value) => {
+     const saved = node.getAttribute(name)
+     node.setAttribute(name, value)
+     const off = filter(card)
+     if (saved === null) node.removeAttribute(name)
+     else node.setAttribute(name, saved)
+     return off
+    }
+    return {
+     card: filter(card),
+     controls: [...shell.querySelectorAll('.touch-controls .liquid-glass, .hud-navigation .liquid-glass, .rail-command button, .rail-command input, .wi-card button')].map(filter),
+     shed: toggle(shell, 'data-ui-frost', 'off'),
+     driveShed: toggle(root, 'data-drive-glass', 'shed'),
+    }
+   })
+   assert.equal(filters.card, 'blur(4px)')
+   assert.ok(filters.controls.every(value => value === 'none'), `${mode}: Flat controls have no filter`)
+   assert.deepEqual([filters.shed, filters.driveShed], ['none', 'none'])
    await page.evaluate(() => mira.game.quality.setLevel(0))
-   await page.waitForFunction(() => document.querySelector('.mira-shell').dataset.uiFrost === 'off')
+   await page.waitForFunction(() => document.documentElement.dataset.gfx === '0' && document.querySelector('.mira-shell').dataset.uiFrost === 'off')
    const minimal = await rail.locator('[data-section=you]').evaluate(el => { const s = getComputedStyle(el); return { background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } })
-   assert.equal(minimal.blur, 'none'); assert.match(minimal.background, /0\.94\)/)
+   assert.equal(minimal.blur, 'none'); assert.equal(minimal.background, gameTint)
    const cards = await readSurfaces(); console.log(JSON.stringify({ mode, minimalCards: cards })); checkSurfaces(cards, true)
    await page.screenshot({ path: `${out}/${mode}-minimal.png` })
    results.push({ minimal })

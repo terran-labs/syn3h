@@ -1,10 +1,9 @@
-import { params, surfaceCoverage } from '../../shared/params'
+import { GLASS_FLAT, GLASS_LIQUID, glassStyle, params, surfaceCoverage } from '../../shared/params'
 import { flashSwitches } from '../core/flashSwitches'
 import { setFieldSwitch } from '../core/fieldSwitches'
 import { qualityLevel } from '../core/quality'
-import { glassStyle } from './inspector/params'
-
-export const glassLabels = ['Liquid', 'Frost', 'Flat'] as const
+export const glassStyles = [{ value: GLASS_LIQUID, label: 'Liquid' }, { value: GLASS_FLAT, label: 'Flat' }] as const
+export const glassStyleChoice = (value: number) => glassStyles[value === GLASS_LIQUID ? 0 : 1]
 /**
  * The parameter registry's groups that tune the Liquid style: the Glass group (frost width, tint
  * strength, face brightness, rim highlight, outer hairline, backdrop saturation, press growth,
@@ -16,16 +15,12 @@ export const glassLabels = ['Liquid', 'Frost', 'Flat'] as const
 export const LIQUID_TUNING_GROUPS: readonly string[] = ['Glass', 'Clear lens']
 export const liquidQualityHint = 'Liquid glass needs Medium quality or higher'
 export const liquidEligible = () => qualityLevel.value >= 2
-export const liquidSelected = () => glassStyle.value === 0 && liquidEligible()
+export const liquidSelected = () => glassStyle.value === GLASS_LIQUID && liquidEligible()
 
 // An explicit Liquid selection currently wins over the system preference.
 export const respectReducedTransparency = false
-// Defaults come from the bright-patch audit, Frost and Flat raised to the worst case measured on
-// 22 November 2026 (every rail label, icon and notice at 4.5:1 or better over Alpine noon, ice
-// noon and Mire day at 1440 and 744, Chromium and WebKit): Frost 70, Flat 65. Liquid stays at the
-// owner's 25. Player-selected values can cover the entire range.
-const defaults = [25, 70, 65] as const
-export const defaultTint = (style = glassStyle.value) => defaults[Math.round(style)] ?? defaults[1]
+// Flat's default comes from the bright-patch contrast audit. Liquid keeps the owner's 25%.
+export const defaultTint = (style = glassStyle.value) => style === GLASS_LIQUID ? 25 : surfaceCoverage.def.default
 let paintedTint = defaultTint() as number
 export const currentTint = () => paintedTint
 const tintListeners = new Set<() => void>()
@@ -56,7 +51,7 @@ let visitStyle: number | null = null
  * player then picks themselves is theirs and is saved as usual.
  */
 export function setGlassForVisit(flat: boolean): void {
-  const target = flat ? glassLabels.indexOf('Flat') : visitStyle
+  const target = flat ? GLASS_FLAT : visitStyle
   if (flat && visitStyle === null) visitStyle = glassStyle.value
   if (!flat) visitStyle = null
   if (target === null || target === glassStyle.value) return
@@ -64,24 +59,26 @@ export function setGlassForVisit(flat: boolean): void {
   try { params.set(glassStyle.def.id, target) } finally { visitOnly-- }
 }
 export function restoreGlassMaterial(shortcut: boolean, flat = false) {
-  let saved: string | null = null, savedTint: number | undefined
+  let savedStyle: number | undefined, savedTint: number | undefined
   try {
     const coverage = localStorage.getItem('mira.surfaceCoverage')
     if (coverage !== null && /^\d{1,3}$/.test(coverage)) savedTint = Number(coverage)
-    saved = localStorage.getItem(key)
-    if (saved === null) {
+    const saved = localStorage.getItem(key)
+    if (saved === 'Liquid') savedStyle = GLASS_LIQUID
+    else if (saved === 'Flat' || saved === 'Frost') savedStyle = GLASS_FLAT
+    else if (saved === null) {
       const legacy = localStorage.getItem('mira.glassMaterial.v1')
-      if (legacy !== null && /^[0-3]$/.test(legacy)) {
-        saved = ['Liquid', 'Frost', 'Frost', 'Flat'][Number(legacy)]
-        localStorage.setItem(key, saved)
-      }
+      if (legacy !== null && /^[0-3]$/.test(legacy)) savedStyle = legacy === '0' ? GLASS_LIQUID : GLASS_FLAT
+    }
+    if (savedStyle !== undefined && saved !== glassStyleChoice(savedStyle).label) {
+      localStorage.setItem(key, glassStyleChoice(savedStyle).label)
     }
   } catch { /* Storage can be disabled. */ }
-  const index = glassLabels.findIndex(name => name === saved)
-  if (shortcut) params.set(glassStyle.def.id, 0)
-  else if (index >= 0) params.set(glassStyle.def.id, index)
-  if (flat) { visitStyle = glassStyle.value; params.set(glassStyle.def.id, glassLabels.indexOf('Flat')) }
-  params.set(surfaceCoverage.def.id, savedTint !== undefined && (!shortcut || index === 0) ? savedTint : defaultTint())
+  params.set(glassStyle.def.id, shortcut ? GLASS_LIQUID : savedStyle ?? glassStyle.def.default)
+  visitStyle = flat ? glassStyle.value : null
+  if (flat) params.set(glassStyle.def.id, GLASS_FLAT)
+  params.set(surfaceCoverage.def.id, savedTint !== undefined && (!shortcut || savedStyle === GLASS_LIQUID) ? savedTint : defaultTint())
+  let previousStyle = glassStyleChoice(glassStyle.value).value
   paintedTint = surfaceCoverage.value
   let frame = 0
   function paintTint() {
@@ -113,18 +110,20 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
     frame = requestAnimationFrame(tick)
   }
   function paintStyle() {
-    const stop = glassStyle.value === 0 && !liquidEligible() ? glassStyle.def.default : glassStyle.value
-    document.documentElement.dataset.glassMaterial = glassLabels[Math.round(stop)].toLowerCase()
+    document.documentElement.dataset.glassMaterial = liquidSelected() ? 'liquid' : 'flat'
   }
   paintTint(); paintStyle()
   const unsubscribe = params.onChange(id => {
-    if (id === glassStyle.def.id && visitOnly) { /* A field switch's Flat (setGlassForVisit): not the player's choice, not saved. */ }
-    else if (id === glassStyle.def.id) {
-      // The player chose a style: the visit's Flat (?ui=flat) gives way to it.
-      visitStyle = null
-      if (flashSwitches.uiFlat && flashSwitches.post !== 'off') setFieldSwitch('uiFlat', false)
-      params.set(surfaceCoverage.def.id, defaultTint())
-      try { localStorage.setItem(key, glassLabels[glassStyle.value]) } catch { /* Session only. */ }
+    if (id === glassStyle.def.id) {
+      const style = glassStyleChoice(glassStyle.value), changed = style.value !== previousStyle
+      previousStyle = style.value
+      if (!visitOnly) {
+        // A player's choice ends the visit override. Frost and Flat share one effective style.
+        visitStyle = null
+        if (flashSwitches.uiFlat && flashSwitches.post !== 'off') setFieldSwitch('uiFlat', false)
+        if (changed) params.set(surfaceCoverage.def.id, defaultTint(style.value))
+        try { localStorage.setItem(key, style.label) } catch { /* Session only. */ }
+      }
     } else if (id === surfaceCoverage.def.id) {
       easeTint()
       try { localStorage.setItem('mira.surfaceCoverage', String(surfaceCoverage.value)) } catch { /* Session only. */ }

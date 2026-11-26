@@ -42,3 +42,23 @@ test('a failed early request becomes a value, not an unhandled rejection', async
   new Function('window', 'fetch', tag.children)(window, () => Promise.reject(new TypeError('offline')))
   assert.ok(await window.__miraPhysicsWasm.response instanceof TypeError)
 })
+test('counts the engine as it arrives, before the loader reads it, and lets the loader end the request', async () => {
+  // Bugs caught: the veil's count standing still until the game's script starts reading (Slow 4G,
+  // 25 November 2026); a stalled early request left running, and counting, beside a retry.
+  const tag = physicsEarlyFetchTag(['assets/rapier_wasm3d_bg-a.wasm'], '/'), window = {}
+  let push, signal
+  const body = new ReadableStream({ start(c) { push = c } })
+  new Function('window', 'fetch', tag.children)(window, (_url, init) => { signal = init.signal; return Promise.resolve(new Response(body, { headers: { 'content-type': 'application/wasm' } })) })
+  const response = await window.__miraPhysicsWasm.response
+  push.enqueue(new Uint8Array(1000)); push.enqueue(new Uint8Array(500))
+  await new Promise(r => setTimeout(r, 0))
+  assert.equal(window.__miraPhysicsBytes, 1500, 'counted with nobody reading the response')
+  assert.equal(response.headers.get('content-type'), 'application/wasm')
+  assert.ok(response.body instanceof ReadableStream && !response.bodyUsed, 'the loader gets an unread stream')
+  // The loader still receives every byte.
+  push.close()
+  assert.equal((await response.arrayBuffer()).byteLength, 1500)
+  assert.equal(signal.aborted, false)
+  window.__miraPhysicsWasm.abort()
+  assert.equal(signal.aborted, true)
+})

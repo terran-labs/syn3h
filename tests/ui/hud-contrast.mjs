@@ -1,7 +1,8 @@
 // Crops of the HUD text over the hardest backgrounds, for before and after comparisons: the
 // world and heading line (top centre), the gear list (left), the speed and height readouts,
 // and the lobby's version beside the gear. Scenes: Badlands at noon (pale sky), Ice moon at
-// noon, Volcanic (lava) and Badlands at night; the interface in Full and Driving modes.
+// noon, Volcanic (lava) and Badlands at night; the interface in Full and Driving modes (on
+// desktops the world line and readouts only in Driving: they show only with the cursor captured).
 // Sizes: desktop 1440x900 and 3840x2160 (Chrome), phone portrait and landscape (WebKit).
 //   MIRA_URL=http://127.0.0.1:5173/ HUD_OUT=tests/ui/artifacts/hud-contrast/after node tests/ui/hud-contrast.mjs
 // One browser at a time. HUD_VIEWS limits the sizes (comma separated).
@@ -61,7 +62,12 @@ for (const name of (process.env.HUD_VIEWS ?? 'desktop,4k,phone,landscape').split
         for (const [mode, value] of [['full', 0], ['driving', 1]]) {
           await page.evaluate(v => window.mira.params.set('hud.mode', v), value)
           await page.waitForTimeout(900)
-          for (const [spot, selector] of Object.entries(SPOTS)) await crop(page, selector, `${out}/${name}-${scene.name}-${mode}-${spot}.png`)
+          // On a pointer device the instruments (the world line and the readouts) show only in the
+          // driving view, the captured state (the owner, 25 November 2026): not cropped in Full.
+          for (const [spot, selector] of Object.entries(SPOTS)) {
+            if (mode === 'full' && view.engine === chromium && spot !== 'gear') continue
+            await crop(page, selector, `${out}/${name}-${scene.name}-${mode}-${spot}.png`)
+          }
         }
         await page.evaluate(() => window.mira.params.set('hud.mode', 0))
       }

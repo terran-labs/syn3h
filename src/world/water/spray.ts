@@ -1,6 +1,6 @@
 import * as T from 'three/webgpu'
 import { attribute, cameraPosition, cross, dot, float, mix, mx_fractal_noise_float, normalize, positionWorld, renderGroup, select, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
-import { defineParam, params } from '../../../shared/params'
+import { defineParam, params, worldGravity } from '../../../shared/params'
 import { paletteFor } from '../terrain/palettes'
 import { graphicsLevel } from '../../core/quality'
 import { applyCurve } from '../curve'
@@ -315,7 +315,7 @@ export class Spray {
   vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape, touchdown = false) {
     if (!waterSpray.value) return
     if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
-    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value; this.sim!.foamWidth = waterWakeFoamWidth.value; this.sim!.foamLife = waterWakeFoamLife.value
+    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value; this.sim!.gravity = worldGravity.value; this.sim!.foamWidth = waterWakeFoamWidth.value; this.sim!.foamLife = waterWakeFoamLife.value
     const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1), shape, touchdown)
     if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)

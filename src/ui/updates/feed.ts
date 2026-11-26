@@ -10,7 +10,7 @@
  * Both files are fetched from the site root without a Referer: the Worker serves a pinned
  * (?v=) page's assets by its Referer, and these must describe the live site, not the pin.
  */
-import { parseFeed, type Release } from './days'
+import { olderUrl, parseFeed, type Release } from './days'
 import { bareVersion, isNewer, latestVersion } from './version'
 
 declare const __MIRA_BUILD__: string | undefined
@@ -34,14 +34,37 @@ export function pinnedVersion(search = entrySearch): string | null {
 
 const rootFetch = (url: string) => fetch(url, { cache: 'no-cache', referrerPolicy: 'no-referrer', credentials: 'omit' })
 
-let feed: Promise<Release[]> | undefined
+/** The feed: its releases, and where the older history is when there is more (days.ts olderUrl). */
+export interface Feed { releases: Release[]; older: string | null }
+
+let feed: Promise<Feed> | undefined
 /** The feed, fetched once per session. A failure is not cached, so Retry fetches again. */
-export function loadFeed(): Promise<Release[]> {
+export function loadFeedInfo(): Promise<Feed> {
   feed ??= rootFetch(FEED_URL)
     .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() })
-    .then(body => parseFeed(body, location.hostname))
+    .then(body => ({ releases: parseFeed(body, location.hostname), older: olderUrl(body) }))
   feed.catch(() => { feed = undefined })
   return feed
+}
+
+/** The feed's releases, newest first. */
+export const loadFeed = (): Promise<Release[]> => loadFeedInfo().then(f => f.releases)
+
+const older = new Map<string, Promise<Release[]>>()
+/**
+ * The older history named by the feed. Called only when the player presses Show more, never
+ * before: the first load carries the recent releases alone. A failure is not cached.
+ */
+export function loadOlder(url: string): Promise<Release[]> {
+  let request = older.get(url)
+  if (!request) {
+    request = rootFetch(url)
+      .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() })
+      .then(body => parseFeed(body, location.hostname))
+    request.catch(() => older.delete(url))
+    older.set(url, request)
+  }
+  return request
 }
 
 /** The newest version the live site serves, or null when it cannot be read. */

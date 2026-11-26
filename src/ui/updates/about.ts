@@ -4,9 +4,9 @@
  * gives each its own sheet (LobbySheet.ts).
  * Updates fetches the release feed the first time it is opened.
  */
-import { ACCORDION_ARROW, LEADS_ON } from '../accordionArrow'
-import { planUpdates, RELEASES_URL, type DayEntry, type ReleaseEntry } from './days'
-import { loadFeed, pinnedVersion, runningVersion, type Release } from './feed'
+import { ACCORDION_ARROW } from '../accordionArrow'
+import { DayPager, planUpdates, RELEASES_URL, type DayEntry, type ReleaseEntry } from './days'
+import { loadFeedInfo, loadOlder, pinnedVersion, runningVersion, type Release } from './feed'
 import { renderMarkdown } from './markdown'
 import { isNewer } from './version'
 import './updates.css'
@@ -19,11 +19,11 @@ let uid = 0
  */
 export function aboutHtml(): string {
   return `<div class="about-pane" data-about-pane="about"></div>
-    <div class="about-pane" data-about-pane="updates" hidden><h2 class="about-updates-title">Updates</h2>${githubReleasesHtml()}<div class="about-updates" aria-live="polite"></div></div>`
+    <div class="about-pane" data-about-pane="updates" hidden><h2 class="about-updates-title">Updates</h2>${githubReleasesHtml()}<div class="updates-notice"></div><div class="about-updates" aria-live="polite"></div></div>`
 }
 
 /** The lobby's Updates sheet body: the release list, filled by fillUpdates when it opens. */
-export const updatesSheetHtml = (): string => `${githubReleasesHtml()}<div class="about-updates" aria-live="polite"></div>`
+export const updatesSheetHtml = (): string => `${githubReleasesHtml()}<div class="updates-notice"></div><div class="about-updates" aria-live="polite"></div>`
 
 export type AboutTab = 'about' | 'updates'
 
@@ -49,9 +49,19 @@ const GITHUB_ICON = '<svg class="github-mark" viewBox="0 0 98 96" aria-hidden="t
 export const githubReleasesHtml = (): string =>
   `<a class="updates-github" href="${RELEASES_URL}" target="_blank" rel="noopener noreferrer" aria-label="All Mira releases on GitHub">${GITHUB_ICON}<span class="updates-github-text">All releases</span></a>`
 
-const link = (href: string, label: string, className?: string) => {
+/**
+ * A link to GitHub drawn as GitHub's mark alone, never the word (the owner, 26 November 2026:
+ * "always use a GitHub icon instead of the text GitHub"); `label` is its accessible name.
+ */
+const githubLink = (href: string, label: string, className: string) => {
   const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noopener noreferrer'
-  a.textContent = label; if (className) a.className = className; return a
+  a.className = `github-link ${className}`; a.setAttribute('aria-label', label); a.dataset.tip = label
+  a.innerHTML = GITHUB_ICON; return a
+}
+
+/** A button in the house glass (glass.css .liquid-glass), as the lobby's own buttons are. */
+const houseButton = (label: string, className: string) => {
+  const b = text('button', label, `${className} liquid-glass`) as HTMLButtonElement; b.type = 'button'; return b
 }
 
 /**
@@ -94,7 +104,12 @@ function releaseRow(r: ReleaseEntry): HTMLLIElement {
     if (r.changes.length) {
       notes.append(text('h4', 'Changes'))
       const list = document.createElement('ul'); list.className = 'update-changes'
-      for (const c of r.changes) { const li = document.createElement('li'); li.append(c.href ? link(c.href, c.title) : c.title); list.append(li) }
+      // Each change is plain text with one GitHub mark at the right edge, in a column.
+      for (const c of r.changes) {
+        const li = document.createElement('li'); li.append(text('span', c.title, 'update-change-title'))
+        if (c.href) li.append(githubLink(c.href, 'View this change on GitHub', 'update-change-link'))
+        list.append(li)
+      }
       notes.append(list)
     }
     if (r.betas.length) {
@@ -103,13 +118,12 @@ function releaseRow(r: ReleaseEntry): HTMLLIElement {
       for (const b of r.betas) list.append(releaseRow(b))
       notes.append(list)
     }
-    const full = link(r.href, `v${r.release.version} on GitHub`, 'update-full')
-    full.insertAdjacentHTML('afterbegin', LEADS_ON)
-    full.setAttribute('aria-label', `${r.beta ? 'Beta notes' : 'Release notes'} for v${r.release.version}, on GitHub`)
-    notes.append(full)
     inner.append(notes)
   })
-  item.append(button, fold)
+  // The release's own GitHub mark stands on its header row, after the time and in the changes'
+  // column: a sibling of the toggle, since a link cannot sit inside a button.
+  const full = githubLink(r.href, `${r.beta ? 'Beta notes' : 'Release notes'} for v${r.release.version}, on GitHub`, 'update-full')
+  item.append(button, full, fold)
   return item
 }
 
@@ -124,7 +138,11 @@ function dayEntry(day: DayEntry): HTMLLIElement {
   if (day.playing) line.append(text('span', 'You are playing this', 'update-badge is-running'))
   else if (day.isNew) line.append(text('span', 'New', 'update-badge is-new'))
   // The count and the arrow wrap together, so the arrow is never left on a line of its own.
-  const meta = text('span', day.count, 'update-day-count')
+  // "3 releases · 2 betas": on phones the betas part steps aside so the count keeps the date's line
+  // (the betas still show in each release).
+  const [releases, ...rest] = day.count.split(' · ')
+  const meta = text('span', releases, 'update-day-count')
+  if (rest.length) meta.append(text('span', ` · ${rest.join(' · ')}`, 'update-day-betas'))
   meta.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
   line.append(meta)
   button.append(line)
@@ -144,11 +162,10 @@ export async function fillUpdates(host: HTMLElement): Promise<void> {
   if (host.dataset.state === 'ready' || host.dataset.state === 'loading') return
   host.dataset.state = 'loading'
   host.replaceChildren(text('p', 'Loading recent updates…', 'updates-status'))
-  let releases: Release[]
-  try { releases = await loadFeed() } catch {
+  let releases: Release[], older: string | null
+  try { ({ releases, older } = await loadFeedInfo()) } catch {
     host.dataset.state = 'failed'
-    const retry = text('button', 'Try again', 'updates-retry') as HTMLButtonElement
-    retry.type = 'button'
+    const retry = houseButton('Try again', 'updates-retry')
     retry.addEventListener('click', () => { void fillUpdates(host) }, { once: true })
     host.replaceChildren(text('p', 'Updates could not be loaded just now. Check your connection and try again.', 'updates-status'), retry)
     return
@@ -156,23 +173,76 @@ export async function fillUpdates(host: HTMLElement): Promise<void> {
   host.dataset.state = 'ready'
   const running = runningVersion(), pinned = pinnedVersion()
   const nodes: Node[] = []
+  // The pinned or newer-version note is an action: it stands in the still header above the list
+  // (.updates-notice), so it never half-scrolls under the title.
+  const notice = host.previousElementSibling?.classList.contains('updates-notice') ? host.previousElementSibling as HTMLElement : null
+  const notes: Node[] = notice ? [] : nodes
   // Root-relative on purpose: on beta.mira.cc "the latest" is the newest beta, never production.
   if (pinned) {
     const note = text('p', `You are playing pinned version v${pinned}, kept exactly as it was released. `, 'updates-pinned')
     const latest = document.createElement('a'); latest.href = '/'; latest.textContent = 'Play the latest version'
-    note.append(latest); nodes.push(note)
+    note.append(latest); notes.push(note)
   } else if (running && releases.some(r => isNewer(r.version, running))) {
     const note = text('p', 'A newer version is out. ', 'updates-pinned')
-    const reload = text('button', 'Reload to update', 'updates-reload') as HTMLButtonElement
-    reload.type = 'button'; reload.addEventListener('click', () => location.reload())
-    note.append(reload); nodes.push(note)
+    const reload = houseButton('Reload to update', 'updates-reload')
+    reload.addEventListener('click', () => location.reload())
+    note.append(reload); notes.push(note)
   }
   const plan = planUpdates(releases, running)
   if (plan.empty) nodes.push(text('p', plan.empty, 'updates-status'))
-  else {
-    const list = document.createElement('ol'); list.className = 'updates-days'
-    for (const day of plan.days) list.append(dayEntry(day))
-    nodes.push(list)
-  }
+  else nodes.push(dayList(releases, older, running))
+  if (notice) notice.replaceChildren(...notes)
   host.replaceChildren(...nodes)
+}
+
+/**
+ * The days, newest first, then Show more as the last entry while older days remain: each press
+ * reveals DAY_STEP more, fetching the older history file (feed.ts loadOlder) the first time it is
+ * needed and never before, down to the first release. Days already shown stay as they are.
+ */
+function dayList(recent: Release[], olderFile: string | null, running: string | null): HTMLOListElement {
+  const list = document.createElement('ol'); list.className = 'updates-days'
+  const pager = new DayPager(recent, olderFile, running)
+  for (const day of pager.days()) list.append(dayEntry(day))
+  const more = document.createElement('li'); more.className = 'updates-more'
+  const button = houseButton('Show more', 'updates-more-button')
+  const end = () => {
+    more.replaceChildren(text('p', pager.first ? `Back to v${pager.first.version}.` : '', 'updates-end'))
+    more.classList.add('is-end')
+  }
+  button.addEventListener('click', async () => {
+    if (button.disabled) return
+    if (pager.needsOlder) {
+      button.disabled = true; button.textContent = 'Loading…'
+      try { pager.addOlder(await loadOlder(pager.older!)) } catch {
+        button.disabled = false; button.textContent = 'Older releases could not be loaded. Try again'
+        return
+      }
+      button.disabled = false; button.textContent = 'Show more'
+    }
+    const next = pager.next(), added = next.map(dayEntry)
+    for (const item of added) more.before(item)
+    // Nothing left: the button gives way to a line, and focus moves to the first day it revealed.
+    if (pager.done) { added[0]?.querySelector<HTMLButtonElement>('.update-day-toggle')?.focus({ preventScroll: true }); end() }
+  })
+  more.append(button)
+  if (pager.done) end()
+  list.append(more)
+  railFollows(list)
+  return list
+}
+
+/**
+ * The rail runs at full strength beside every day shown and fades only below the last of them,
+ * over Show more (the owner, 26 November 2026). Its solid length is measured, since days open,
+ * close and arrive: --rail-solid is the last day's foot, from the top of the list.
+ */
+function railFollows(list: HTMLOListElement): void {
+  const measure = () => {
+    const days = list.querySelectorAll<HTMLElement>(':scope > .update-day'), last = days[days.length - 1]
+    if (last) list.style.setProperty('--rail-solid', `${Math.round(last.offsetTop + last.offsetHeight)}px`)
+  }
+  if (typeof ResizeObserver === 'function') new ResizeObserver(measure).observe(list)
+  new MutationObserver(measure).observe(list, { childList: true })
+  requestAnimationFrame(measure)
 }

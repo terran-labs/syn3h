@@ -21,7 +21,7 @@
  * is open and returns to Settings. Closed, it is detached from the page, so the in-game rail stays
  * the only `.world-inspector` element there.
  */
-import { glassLabels, LIQUID_TUNING_GROUPS } from './glassMaterial'
+import { glassStyleChoice, LIQUID_TUNING_GROUPS } from './glassMaterial'
 import { CREATOR_KEY_EVENT, creatorKey } from '../core/creatorKey'
 import { creatorKeyRowVisible } from './creatorReveal'
 import { PORTAL_TITLE, creatorKeyRow } from './creatorKeyRow'
@@ -37,6 +37,7 @@ import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
 import { CARD_CLOSE } from './cardClose'
 import { channel, type Channel } from '../core/channel'
+import { communityNav } from './communityLinks'
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -157,8 +158,8 @@ export class LobbySettings {
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
     this.version.textContent = label; this.version.title = `Version ${label}: what is new`; this.version.setAttribute('aria-label', `Version ${label}, open Updates`); this.version.setAttribute('aria-haspopup', 'dialog')
     this.dock.append(this.gear, this.about)
-    // The version sits apart, in the lower left (versionDock): plain shadowed text, no card.
-    this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(this.version)
+    // The version and community links share the lower-left dock.
+    this.versionDock.className = 'lobby-version-dock'; this.versionDock.append(communityNav(this.version))
 
     this.host.className = 'lobby-settings-host'
     // One section open at a time, and the card scrolls inside: on a short screen Graphics alone
@@ -210,7 +211,7 @@ export class LobbySettings {
     // style is applied"). The fold's rows are every parameter in LIQUID_TUNING_GROUPS.
     const material = params.get('hud.glass')!
     const body = document.createElement('div')
-    this.inspector.addCard('glass', 'Glass', body, () => glassLabels[Number(material.value)], {
+    this.inspector.addCard('glass', 'Glass', body, () => glassStyleChoice(Number(material.value)).label, {
       fill: () => {
         const fold = document.createElement('details'); fold.className = 'lobby-liquid'
         const summary = document.createElement('summary'); summary.innerHTML = `<span>Liquid glass</span>${ACCORDION_ARROW}`

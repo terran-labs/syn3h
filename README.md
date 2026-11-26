@@ -236,6 +236,10 @@ npm run dev
 Open the address it prints. The room server starts alongside it, so a second tab is a
 second player.
 
+### Interface glass
+
+New visits use Flat at 65% tint. Choose Liquid at Medium graphics or higher for its default 25% tint. Flat lightly blurs expanded panels in play while the graphics budget allows it. Saved Frost choices open as Flat and keep their saved tint.
+
 ## Diagnostics
 
 Mira can be taken apart from its address bar. Each switch below is a query parameter that

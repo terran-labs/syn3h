@@ -44,8 +44,13 @@ try {
       return canvas?.getBoundingClientRect().height > 0
     })
     await page.waitForTimeout(1000) // Let the ordinary boot veil finish its fade.
-    const top = await page.evaluate(() => document.elementFromPoint(195, 380)?.className)
-    assert.equal(top, removeHold ? 'galaxy-canvas' : 'boot-veil')
+    // The lobby is its canvas and the planet names over it: since the names rework a name can
+    // orbit through this point, and it is as much the exposed lobby as the canvas behind it.
+    const top = await page.evaluate(() => {
+      const e = document.elementFromPoint(195, 380)
+      return e?.closest('.boot-veil') ? 'boot-veil' : e?.closest('.galaxy-canvas, .galaxy-ui') ? 'lobby' : String(e?.className ?? '')
+    })
+    assert.equal(top, removeHold ? 'lobby' : 'boot-veil')
     console.log(removeHold ? 'Disabling the hold exposes the destination lobby' : 'The move veil covers the ready destination lobby')
     await page.close()
   }

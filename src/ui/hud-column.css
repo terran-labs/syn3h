@@ -34,14 +34,18 @@
   --col-w: 210px;
   /* One row height for the gear drum and the rows below it: compact (it was 36 px for the gear
      and 30 px for the rows). */
-  --col-row: 28px;
+  --col-row: 24px;
   /* Between the drum and the rows below it; Chat follows the accessories at the row's own pitch. */
   --col-gap: 8px;
   /* The content line and the spine, from the column's left edge. */
   --col-inset: 24px;
   /* Top edges, stacked down from the shared top edge: the drum (three rows), then the
      accessories, then Chat. */
-  --col-gear-top: var(--edge-top);
+  /* The column's top inset matches its left (the owner, 25 November 2026: "farther down from
+     the top than they are from the left"): the first row's letters sit as far below the top
+     edge as the first node's ring sits right of the left edge (--edge-left less its 3 px
+     radius), allowing for the half row above the letters' tops. Never under the top safe area. */
+  --col-gear-top: max(env(safe-area-inset-top), calc(var(--edge-left) - var(--col-row) / 2 + 1px));
   --col-acc-top: calc(var(--col-gear-top) + 3 * var(--col-row) + var(--col-gap));
   --col-chat-top: calc(var(--col-acc-top) + var(--acc-rows, 1) * var(--col-row));
   /* One type scale. */
@@ -79,12 +83,17 @@
    selected gear, which is marked by a lit node on the spine beside its larger, brighter name;
    key caps in the column's one stroke. */
 :root .mira-shell.exploration-ui .gear-selector::before { display: none; }
-/* The spine runs from the first node's centre to the last's (the drum is a ring, so a gear sits
+/* The spine runs past the first and last node, fading out (below). (The drum is a ring, so a gear sits
    above and below the selected one whichever it is), one even line like the rows' below. */
 :root .mira-shell.exploration-ui .gear-selector .gs-spine { left: var(--col-spine); }
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-spine {
-  top: calc(var(--gs-pitch) / 2); height: calc(100% - var(--gs-pitch)); background: var(--s3-line-quiet);
+  /* Past the first and last node by a row, fading to nothing at both ends, so it reads as a
+     longer list turning through the three shown (the owner: "an actual carousel"). */
+  top: calc(var(--gs-pitch) / -2); height: calc(100% + var(--gs-pitch));
+  background: linear-gradient(transparent, var(--s3-line-quiet) var(--gs-pitch), var(--s3-line-quiet) calc(100% - var(--gs-pitch)), transparent);
 }
+/* The charge ring (gear.css .gs-ring), centred on the lit node. */
+:root .mira-shell.exploration-ui .gear-selector .gs-window .gs-ring { left: calc(var(--col-spine) + .5px - 8px); top: calc(50% - 8px); }
 :root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item,
 :root .mira-shell.exploration-ui .gear-selector .gs-detail { text-shadow: var(--col-text-under); }
 :root .mira-shell.exploration-ui .gear-selector .gs-window { left: 0; width: var(--gs-width); border: 0; box-shadow: none; background: none; }
@@ -100,7 +109,20 @@
 /* The gear's name in the column's type; its number is its key cap. */
 :root .mira-shell.exploration-ui .gear-selector .gs-text { letter-spacing: var(--col-track); }
 :root .mira-shell.exploration-ui .gear-selector .gs-keyhint,
-:root .mira-shell.exploration-ui .gear-selector .gs-status { font: var(--col-type); letter-spacing: var(--col-track); }
+:root .mira-shell.exploration-ui .gear-selector :is(.gs-status, .gs-release) { font: var(--col-type); letter-spacing: var(--col-track); }
+:root .mira-shell.exploration-ui .gear-selector[data-touch] .gs-release { font-size: 10px; letter-spacing: .08em; }
+/* With the cursor free the detail beside the drum already lists the way to let go (its hints):
+   shown there, not twice. The meter's hint is for the captured cursor, and for touch. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=free] .gs-release { display: none; }
+/* On a desktop the status is said beside the name (.gs-held), not under it. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-meter .gs-status { display: none; }
+:root .mira-shell.exploration-ui .gear-selector .gs-held { font: var(--col-type); letter-spacing: var(--col-track); }
+/* Captured, what the gear holds follows the selected name, a word's gap after it
+   (GearSelector.placeHeld); the move runs with the names' slide. Too long, it keeps its key. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail { translate: 0 0; transition: translate .18s cubic-bezier(.16,1,.3,1); }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] .gs-detail { translate: var(--gs-held-shift, 0px) 0; }
+.gear-selector .gs-release.is-short .gs-release-alt { display: none; }
+@media (prefers-reduced-motion: reduce) { :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail { transition: none; } }
 :root .mira-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-dim); }
 /* For the owner to compare on the preview, off by default (set on .mira-shell):
    data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
@@ -115,7 +137,29 @@
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum { left: 0; width: var(--col-w); }
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-drum button.gs-item { padding-left: var(--col-inset); }
 /* The meter (status and bar) starts under the name, which starts at the column's inset. */
-:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector { --gs-meter-left: var(--col-inset); }
+/* One name column (the owner, 25 November 2026: "The P in Plasma Tag and the P in Plasma
+   Thunder should align vertically"): each number sits right-aligned in a fixed column
+   (--gs-num) and every name starts --gs-name-x into its row, whatever its size. Rows scale about
+   the name's left edge, so the selected row's larger type grows rightward and its number
+   leftward, and the name never moves. Captured, the numbers leave and the names start at the
+   row's inset. The charge bar and status start under the name's first letter. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector {
+  --gs-num: 9px; --gs-num-gap: 10px; --gs-name-x: calc(var(--gs-num) + var(--gs-num-gap));
+  --gs-meter-left: var(--col-inset);
+}
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] { --gs-name-x: 0px; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label {
+  gap: var(--gs-num-gap); transform-origin: var(--gs-name-x) 50%;
+  transition: transform .22s cubic-bezier(.2,.8,.2,1), transform-origin .18s cubic-bezier(.16,1,.3,1);
+}
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label .gs-index { width: var(--gs-num); text-align: right; flex: none; }
+/* The meter follows the name across the change of form by transform, with the names' slide. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-meter { translate: var(--gs-name-x) 0; transition: translate .18s cubic-bezier(.16,1,.3,1); }
+/* As in gear.css: a row crossing the back of the ring jumps, and reduced motion never slides. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-item.gs-snap .gs-label { transition: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector :is(.gs-label, .gs-meter) { transition: none; }
+}
 :root .mira-shell.exploration-ui.has-touch .gear-selector { --gs-drum-left: 8px; --gear-left: calc(var(--edge-left) - var(--col-spine)); }
 /* Its detail (what the gear does, what to press) sits beside the selected gear: its first line
    level with the selected name (the owner, 18 November 2026). It never runs into the speed
@@ -170,7 +214,7 @@
    A plain bright glyph with no outline (the owner: "eliminate the pill button shape"), so the
    only outlined thing in the column is the minimap's ring; the key reads brighter and bolder
    than the dim name or action beside it. Touch has no keys and shows none (gear.css). */
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .hud-chat) kbd {
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .hud-chat) kbd:not(.keycap) {
   display: inline-block; flex: none; min-width: 0; padding: 0; box-sizing: border-box; text-align: left; white-space: nowrap;
   font: var(--col-cap-type); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--s3-accent-2); text-shadow: var(--col-text-under);
   border: 0; border-radius: 0; background: none; box-shadow: none; opacity: 1;
@@ -202,8 +246,8 @@
    selected gear (what it does, what to press) fade out, and back in when the cursor is free.
    They keep their layout while faded, so nothing moves. A sunk buggy's Zorb cue (Shell.cueZorb)
    keeps its rows: the cue is how that player learns the way out. Touch never captures. */
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat, .gear-selector .gs-detail) { transition: opacity .2s ease, visibility 0s; }
-:root .mira-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories:not(:has(.is-cued)), .hud-chat, .gear-selector .gs-detail) {
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat, .gear-selector .gs-detail > :not(.gs-held)) { transition: opacity .2s ease, visibility 0s; }
+:root .mira-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories:not(:has(.is-cued)), .hud-chat, .gear-selector .gs-detail > :not(.gs-held)) {
   opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s;
 }
 /* The detail keeps its lines laid out under the fade (gear.css drops them while captured). */

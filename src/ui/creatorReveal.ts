@@ -60,17 +60,19 @@ function pointOf(event: Event): { x: number; y: number } | null {
 export function bindVersionLabel(o: VersionLabelOptions): void {
   const now = o.now ?? (() => performance.now())
   let since = -Infinity, count = 0
+  /** The label's rectangle at the first tap: where taps 2 to 5 must land, whatever covers it then. */
+  let area = { left: 0, top: 0, right: -1, bottom: -1 }
   const counting = () => count > 0 && now() - since < REVEAL_WINDOW_MS
   const stop = () => { count = 0 }
   o.label.addEventListener('click', (event) => {
     // Keyboard: Updates, never the gesture.
     if ((event as MouseEvent).detail === 0) { stop(); o.openUpdates(); return }
     if (counting()) return // a tap the document already counted (the label was reachable)
-    since = now(); count = 1
+    since = now(); count = 1; area = o.rect()
     o.openUpdates()
   }, { signal: o.signal })
   const inside = (event: Event) => {
-    const p = pointOf(event), r = o.rect()
+    const p = pointOf(event), r = area
     return !!p && p.x >= r.left && p.x <= r.right && p.y >= r.top && p.y <= r.bottom
   }
   for (const type of TAP_EVENTS) {
@@ -79,11 +81,13 @@ export function bindVersionLabel(o: VersionLabelOptions): void {
       // A keyboard click (detail 0) is never a tap, wherever it is: WebKit gives one the
       // label's own coordinates, which would otherwise count it and swallow Enter.
       if (type === 'click' && (event as MouseEvent).detail === 0) { stop(); return }
-      // A link (the GitHub icon beside the label) is never part of the gesture.
-      const target = event.target as { closest?: (s: string) => unknown } | null
-      if (typeof target?.closest === 'function' && target.closest('a[href]')) { if (type === 'click') stop(); return }
+      // Outside the label's rectangle: not part of the gesture, and the tap does what it always
+      // does (a dock link such as the GitHub icon, a link in the sheet, the backdrop). It ends
+      // the count.
       if (!inside(event)) { if (type === 'click' || type === 'pointerdown') stop(); return }
-      // Nothing under the tap reacts (the sheet's backdrop closes on pointerdown). No
+      // Inside it the tap counts whatever lies under it now: the sheet's backdrop, its text, or
+      // a release-note link that has scrolled under the label (traced 26 Nov 2026: tap 5 on such
+      // an anchor cleared the count). Nothing under it reacts and no link opens. No
       // preventDefault on touch events: that would cancel the click the count is made from.
       event.stopPropagation()
       if (type === 'pointerdown' || type === 'mousedown' || type === 'click') event.preventDefault()

@@ -256,7 +256,7 @@ export class FrameBudgetMonitor {
     return true
   }
 }
-export interface LoadProgress { phase: 'device' | 'physics' | 'renderer' | 'world' | 'ready'; progress: number; elapsedMs: number }
+export interface LoadProgress { phase: 'device' | 'physics' | 'renderer' | 'world' | 'terrain' | 'ready'; progress: number; elapsedMs: number }
 export let loadingProgress: LoadProgress = { phase: 'device', progress: 0, elapsedMs: 0 }
 export function reportLoading(phase: LoadProgress['phase'], progress: number) {
   loadingProgress = { phase, progress: Math.max(loadingProgress.progress, progress), elapsedMs: performance.now() }

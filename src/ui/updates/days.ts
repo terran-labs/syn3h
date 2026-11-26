@@ -227,3 +227,59 @@ export function planUpdates(releases: readonly Release[], running: string | null
   })
   return { days, empty: null }
 }
+
+/**
+ * Older history (the owner, 26 November 2026: "I should have the ability to" scroll back to the
+ * first release). /releases.json carries the newest releases only; when there are more it names
+ * a second file, `older`, with the rest. Nothing fetches that file until the player presses Show
+ * more (about.ts), so the first load stays small. Only a root-relative .json path is accepted.
+ */
+export function olderUrl(body: unknown): string | null {
+  const value = typeof body === 'object' && body !== null ? (body as { older?: unknown }).older : undefined
+  return typeof value === 'string' && /^\/[a-z0-9][a-z0-9._/-]*\.json$/i.test(value) && !value.includes('..') ? value : null
+}
+
+/** How many more days each press of Show more reveals. */
+export const DAY_STEP = 7
+
+/**
+ * The days that may be shown: all of them when the history is complete, else all but the oldest,
+ * which may be cut in two by the end of the file and would show a day with releases missing.
+ */
+export function completeDays(days: readonly DayEntry[], more: boolean): DayEntry[] {
+  return more && days.length > 1 ? days.slice(0, -1) : [...days]
+}
+
+/**
+ * Show more, as a model: which days are shown, whether the older file must be fetched before the
+ * next step, and when the history is exhausted. about.ts renders it; the tests drive it to the
+ * first release.
+ */
+export class DayPager {
+  private releases: Release[]
+  /** The older history file still to fetch, or null once fetched (or when there is none). */
+  older: string | null
+  shown: number
+  constructor(recent: readonly Release[], older: string | null, private readonly running: string | null) {
+    this.releases = [...recent]; this.older = older
+    this.shown = this.days().length
+  }
+  /** Every day that may be shown now, newest first (complete days only while more history waits). */
+  days(): DayEntry[] { return completeDays(planUpdates(this.releases, this.running).days, this.older !== null) }
+  /** The next press needs the older file first. */
+  get needsOlder(): boolean { return this.shown >= this.days().length && this.older !== null }
+  /** The older releases arrived: merge them; the file is not fetched again. */
+  addOlder(past: readonly Release[]): void {
+    this.releases = parseFeed({ releases: [...this.releases, ...past] }); this.older = null
+  }
+  /** The next DAY_STEP days, closed, and marks them shown. */
+  next(): DayEntry[] {
+    const step = this.days().slice(this.shown, this.shown + DAY_STEP).map(day => ({ ...day, expanded: false }))
+    this.shown += step.length
+    return step
+  }
+  /** Nothing older to show or fetch. */
+  get done(): boolean { return this.shown >= this.days().length && this.older === null }
+  /** The oldest release known. */
+  get first(): Release | undefined { return this.releases.at(-1) }
+}

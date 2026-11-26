@@ -85,16 +85,46 @@ describe('hidden sign-in reveal', () => {
     expect(seen).toEqual({ opened: 1, closed: 0 })
   })
 
-  // Bug: a tap elsewhere, or on the GitHub link beside the label, counts toward the gesture.
-  it('stops counting at a tap elsewhere, and never counts a link', async () => {
+  // Bug: a tap elsewhere counts toward the gesture.
+  it('stops counting at a tap elsewhere', async () => {
     const a = await lobby()
     a.tap(0, 'label'); a.tap(200, 'root'); a.tap(200, 'root', 600, 300)
     a.tap(200, 'root'); a.tap(200, 'root')
     expect(a.m.creatorKeyRowVisible()).toBe(false)
-    const b = await lobby()
-    b.tap(0, 'label')
-    for (let i = 0; i < 4; i++) b.tap(200, 'root', 50, 710, true)
-    expect(b.m.creatorKeyRowVisible()).toBe(false)
+  })
+
+  // Bug (traced 26 Nov 2026, five taps within 265 ms): tap 5 landed on a release-note link in
+  // the open sheet, under the label; links were rejected before the label's rectangle was
+  // checked, so the count was cleared and nothing was revealed.
+  it('counts a tap on a link in the sheet inside the label, and the link does not open', async () => {
+    const { m, seen, tap } = await lobby()
+    tap(0, 'label')
+    for (let i = 0; i < 3; i++) tap(60, 'root')
+    const onLink = tap(60, 'root', 50, 710, true)
+    expect(onLink.defaultPrevented).toBe(true)
+    expect(m.creatorKeyRowVisible()).toBe(true)
+    expect(seen).toEqual({ opened: 1, closed: 1 })
+  })
+
+  // Bug: a link in the sheet outside the label is swallowed, or leaves the count running.
+  it('lets a link outside the label open, and stops counting', async () => {
+    const { m, tap } = await lobby()
+    tap(0, 'label'); tap(200, 'root')
+    expect(tap(200, 'root', 300, 400, true).defaultPrevented).toBe(false)
+    tap(200, 'root'); tap(200, 'root'); tap(200, 'root')
+    expect(m.creatorKeyRowVisible()).toBe(false)
+  })
+
+  // Bug: the GitHub icon in the dock beside the label counts toward the gesture.
+  it('never counts taps on the GitHub dock icon beside the label', async () => {
+    const { m, seen, tap } = await lobby()
+    const GITHUB = [RECT.right + 20, 710] as const
+    for (let i = 0; i < 5; i++) expect(tap(100, 'root', GITHUB[0], GITHUB[1], true).defaultPrevented).toBe(false)
+    expect(m.creatorKeyRowVisible()).toBe(false)
+    tap(100, 'label')
+    for (let i = 0; i < 4; i++) tap(100, 'root', GITHUB[0], GITHUB[1], true)
+    expect(m.creatorKeyRowVisible()).toBe(false)
+    expect(seen.closed).toBe(0)
   })
 
   // Bug: WebKit gives a keyboard click the label's coordinates; counted at the document, it was

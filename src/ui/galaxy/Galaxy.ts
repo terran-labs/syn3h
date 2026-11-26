@@ -15,15 +15,17 @@ import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { metalUniforms } from '../brand/wordmarkMetal'
-import { liftPlacement, placementOf, placeWordmark, poseView, raisePlacement, surfacePoint, type Placement, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
+import { liftPlacement, placementOf, placeWordmark, poseView, raisePlacement, surfacePoint, logoPlaneFade, type Placement, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { recordStartupLobbyFrame, startupTiming } from '../../core/diagnostics'
 /** Why the lobby showed the flat wordmark instead of the name in the scene, once, for the diagnostics. */
 function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmarkFallback) { startupTiming.wordmarkFallback = reason; console.info(`Mira: flat lobby wordmark: ${reason}`) } }
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
+import { insideDisc, type LabelPlace, type ScreenDisc } from './labels'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
-import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
+import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime, pitchReturn } from './cameraRest'
+import { orbitGapTaper, orbitInnerRadius, orbitMinGap } from './orbitSpacing'
 import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_MARK_FROM, RETURN_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
@@ -149,8 +151,8 @@ export type OrbitBody = PlanetBody & { id?: string }
 /**
  * Each lane's tilt and shape, the same every time: inclinations of 1.5 to 4 degrees with the
  * line where the orbit crosses the system's plane turned a golden angle on per lane, and
- * eccentricities of 0.02 to 0.05. Small, so the system still reads as one disc from the
- * resting view, the labels and the camera behave, and nothing hides below the plane.
+ * reference eccentricities of 0.02 to 0.05. The layout spends less of the radial budget on
+ * eccentricity for the inner lanes so their spacing can change within the original frame.
  */
 export function orbitShape(lane: number): { inclination: number; node: number; eccentricity: number; perihelion: number } {
   const frac = (v: number) => v - Math.floor(v)
@@ -168,6 +170,49 @@ function turnAbout(v: Vec, k: Vec, a: number): Vec {
 }
 /** How far a moon circles from its planet's centre: both radii and a gap that reads at a glance. */
 const moonDistance = (planet: number, moon: number) => planet + moon + Math.max(0.16, planet * 0.4)
+type OrbitLane = ReturnType<typeof orbitShape> & { span: number }
+
+/** Keep the original outer orbit so fitDistance and Ice's silhouette use exactly the old reach. */
+function spaceOrbits(lanes: readonly OrbitLane[], eccentricities: readonly number[]): number[] {
+  let far = 0, lastSpan = 0
+  const baseline = lanes.map(({ span, eccentricity }, i) => {
+    const orbit = (i === 0 ? INNER : far + lastSpan + span + CLEAR) / (1 - eccentricity)
+    far = orbit * (1 + eccentricity); lastSpan = span
+    return orbit
+  })
+  const outer = lanes.length - 1
+  if (outer <= 0) return baseline
+
+  const taper = orbitGapTaper.value
+  const gapWeight = (lane: number) => 1 - taper * (lane - 1) / Math.max(1, outer - 1)
+  const outerOrbit = baseline[outer]
+  const outerNear = outerOrbit * (1 - lanes[outer].eccentricity)
+
+  // The outer perihelion is an affine function of the inner radius and a single gap scale.
+  // Carry both coefficients through the same apoapsis recurrence used to place the lanes.
+  let shells = 0, innerScale = 1, gapScale = 0
+  for (let i = 1; i <= outer; i++) {
+    const e = eccentricities[i - 1]
+    const ratio = (1 + e) / (1 - e)
+    shells = shells * ratio + lanes[i - 1].span + lanes[i].span
+    innerScale *= ratio
+    gapScale = gapScale * ratio + gapWeight(i)
+  }
+  const budget = outerNear - shells
+  // At the registry limits this scale stays below the legacy gap. Each effective ellipse
+  // is also no more eccentric than its reference, so the original inner radius always fits.
+  const minGapScale = orbitMinGap.value / gapWeight(outer)
+  let near = Math.min(orbitInnerRadius.value, (budget - minGapScale * gapScale) / innerScale)
+  const gap = (budget - near * innerScale) / gapScale
+  return lanes.map(({ span }, i) => {
+    if (i === outer) return outerOrbit
+    const e = eccentricities[i]
+    const orbit = near / (1 - e)
+    near = orbit * (1 + e) + span + lanes[i + 1].span + gap * gapWeight(i + 1)
+    return orbit
+  })
+}
+
 /**
  * Where the worlds are at a time. Every planet has an orbit of its own round the sun, ordered
  * by heat, the hottest world nearest the sun and the frozen ones farthest out. A moon (a body
@@ -200,12 +245,17 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
     const radius = worldRadius(bodies[i].size)
     return Math.max(radius, ...(moons.get(i) ?? []).map((m, k) => moonDistance(radius, worldRadius(bodies[m].size)) + k * 0.6 + worldRadius(bodies[m].size)))
   }
-  let far = 0, lastSpan = 0
+  const lanes = order.map((index, lane) => ({ ...orbitShape(lane), span: span(index) }))
+  const outer = lanes.length - 1
+  // Restore the full outer ellipse and a little of the next one. The inner circles leave
+  // more room for the gap around the sun without pushing the outer body out of frame.
+  const eccentricities = lanes.map(({ eccentricity }, i) => (
+    i === outer ? eccentricity : i === outer - 1 ? eccentricity * 0.15 : 0
+  ))
+  const orbits = spaceOrbits(lanes, eccentricities)
   order.forEach((index, lane) => {
-    const radius = worldRadius(bodies[index].size), reach = span(index), shape = orbitShape(lane), e = shape.eccentricity
-    // The innermost lane's nearest point is INNER; each next one starts beyond the last one's farthest.
-    const orbit = lane === 0 ? INNER / (1 - e) : (far + lastSpan + reach + CLEAR) / (1 - e)
-    far = orbit * (1 + e); lastSpan = reach
+    const radius = worldRadius(bodies[index].size), shape = lanes[lane], e = eccentricities[lane]
+    const orbit = orbits[lane], reach = orbit * (1 + e) + shape.span
     // The orbit's plane: the flat plane turned about the line of nodes by the inclination.
     const node: Vec = [Math.cos(shape.node), 0, Math.sin(shape.node)]
     const mean = 0.9 + lane * 2.399963 + time * RATE * Math.pow(INNER / orbit, 1.5)
@@ -214,13 +264,13 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
     const flat: Vec = [Math.cos(mean) * r, 0, Math.sin(mean) * r]
     const position = turnAbout(flat, node, shape.inclination)
     const nearest = turnAbout([Math.cos(shape.perihelion), 0, Math.sin(shape.perihelion)], node, shape.inclination)
-    places[index] = { position, radius, orbit, reach: far + reach, path: { normal: turnAbout([0, 1, 0], node, shape.inclination), nearest, eccentricity: e } }
+    places[index] = { position, radius, orbit, reach, path: { normal: turnAbout([0, 1, 0], node, shape.inclination), nearest, eccentricity: e } }
     for (const [k, moon] of (moons.get(index) ?? []).entries()) {
       const mr = worldRadius(bodies[moon].size), d = moonDistance(radius, mr) + k * 0.6
       // A moon's month: quick enough to watch it go round, slow enough to stay calm.
       const turn = 0.6 + k * 1.9 + time * RATE * 4.5, tilt = (8 + k * 5) * Math.PI / 180
       const offset = turnAbout([Math.cos(turn) * d, 0, Math.sin(turn) * d], [Math.cos(shape.node + 1), 0, Math.sin(shape.node + 1)], tilt)
-      places[moon] = { position: [position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]], radius: mr, orbit, reach: far + reach, parent: index }
+      places[moon] = { position: [position[0] + offset[0], position[1] + offset[1], position[2] + offset[2]], radius: mr, orbit, reach, parent: index }
     }
   })
   return places
@@ -256,6 +306,15 @@ export function pickWorld(screen: readonly { id: string; x: number; y: number; r
   const shown = screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius }))
   const on = shown.filter(e => e.d < 0).sort((a, b) => a.s.depth - b.s.depth)[0]
   return (on ?? shown.filter(e => e.d < margin).sort((a, b) => a.d - b.d)[0])?.s.id
+}
+/** Captions beat globe padding. A nearer disc owns its pixels if it crosses the button’s padding. */
+export function pickLobbyTarget(screen: readonly LabelPlace[], sun: ScreenDisc, x: number, y: number, margin: number, caption?: string): string | undefined {
+  const label = caption === undefined ? undefined : screen.find(place => place.id === caption)
+  const sunDepth = insideDisc(sun, x, y) ? sun.depth ?? Infinity : Infinity
+  const cutoff = Math.min(label?.depth ?? Infinity, sunDepth)
+  if (cutoff === Infinity) return pickWorld(screen, x, y, margin)
+  return pickWorld(screen.filter(place => place.depth < cutoff), x, y, 0) ??
+    (label && label.depth <= sunDepth ? label.id : undefined)
 }
 /**
  * The feel of the view under a finger. The finger moves an aim; what is shown follows the aim
@@ -359,6 +418,23 @@ export function restStep(pitch: number, idle: number, dt: number, rest: { after:
   if (idle < rest.after || pitch === rest.pitch) return pitch
   const next = rest.pitch + (pitch - rest.pitch) * Math.exp(-Math.max(0, dt) / rest.ease)
   return Math.abs(next - rest.pitch) < (rest.snap ?? 2e-4) ? rest.pitch : next
+}
+/**
+ * The tilt's aim drawn back to `rest` with time constant `tau` seconds (exact at any frame rate),
+ * its coast fading at the same rate, landing exactly so the lobby can idle. The view follows the
+ * aim on its usual spring (swingStep).
+ */
+export function pitchHome(axis: SwingAxis, dt: number, rest: number, tau: number): SwingAxis {
+  if (axis.aim === rest && axis.aimSpeed === 0) return axis
+  const fade = Math.exp(-Math.max(0, dt) / tau)
+  let aim = rest + (axis.aim - rest) * fade, aimSpeed = axis.aimSpeed * fade
+  if (Math.abs(aim - rest) < SWING.rest) { aim = rest; if (Math.abs(aimSpeed) < SWING.still) aimSpeed = 0 }
+  return { ...axis, aim, aimSpeed }
+}
+/** How much of the name shows, 1 to 0, as its lower edge goes `depth` px below the plane's line, over `band` px. */
+export function planeShown(depth: number, band: number): number {
+  const t = Math.min(1, Math.max(0, 0.5 - depth / Math.max(1e-6, band)))
+  return t * t * (3 - 2 * t)
 }
 /** Nothing left moving on this axis. */
 export const swingResting = (axis: SwingAxis) => axis.aimSpeed === 0 && axis.viewSpeed === 0 && axis.view === axis.aim
@@ -987,7 +1063,7 @@ export class Galaxy {
   private shownScale = 0
   private arriving = 0
   private arrived = false
-  private drag: { id: number; x: number; y: number; moved: boolean } | null = null
+  private drag: { id: number; x: number; y: number; moved: boolean; caption?: string; target?: string } | null = null
   private readonly pointers = new Map<number, { x: number; y: number }>()
   private pinch = 0
   private readonly abort = new AbortController()
@@ -1273,7 +1349,7 @@ export class Galaxy {
     // in flight still picks that world (up), not whatever settled under the finger.
     for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, event => {
       if (!this.opening || this.opening.start === null) return
-      if (event instanceof PointerEvent) this.skipped = { pointer: event.pointerId, screen: this.screen }
+      if (event instanceof PointerEvent) this.skipped = { pointer: event.pointerId, screen: this.screen, sun: this.sunScreen }
       this.opening = null; this.chrome(null); this.wake = 2
     }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
@@ -1290,16 +1366,25 @@ export class Galaxy {
       if (startupTiming.wordmarkFallback === 'the lobby WebGL2 context was lost') startupTiming.wordmarkFallback = undefined
       if (selected) this.choose(selected)
     }, options)
-    canvas.addEventListener('pointerdown', event => this.down(event), options)
+    const label = (target: EventTarget | null) => (target as Element | null)?.closest?.<HTMLElement>('.galaxy-label')?.dataset.world
+    this.host.addEventListener('pointerdown', event => {
+      const caption = label(event.target)
+      if (event.button === 0 && (event.target === canvas || (caption && this.live))) this.down(event, caption)
+    }, options)
     canvas.addEventListener('pointermove', event => { this.move(event); this.point(event) }, options)
-    canvas.addEventListener('pointerleave', () => this.pointAt(undefined), options)
-    // The planet glow follows the same pointing (point, below: one hit test for the glow and
-    // the label), plus the pointer over a label and a label's keyboard focus.
-    const label = (event: Event) => (event.target as Element | null)?.closest?.<HTMLElement>('.galaxy-label')?.dataset.world ?? null
-    this.host.addEventListener('pointerover', event => { const id = label(event); if (id) this.wantGlow('hoverId', id) }, options)
-    this.host.addEventListener('pointerout', event => { if (label(event) && !label({ target: (event as PointerEvent).relatedTarget } as Event)) this.wantGlow('hoverId', null) }, options)
-    this.host.addEventListener('focusin', event => this.wantGlow('focusId', label(event)), options)
-    this.host.addEventListener('focusout', () => this.wantGlow('focusId', null), options)
+    this.host.addEventListener('pointermove', event => {
+      const caption = label(event.target)
+      if (caption && event.pointerType === 'mouse') this.point(event, caption)
+    }, options)
+    this.host.addEventListener('pointerout', event => {
+      if (this.drag || event.pointerType !== 'mouse') return
+      const from = label(event.target), to = label(event.relatedTarget)
+      if (event.target !== canvas && (!from || from === to)) return
+      if (event.relatedTarget === canvas || to) this.point(event, to)
+      else this.pointAt(undefined)
+    }, options)
+    this.host.addEventListener('focusin', event => this.focusCaption(label(event.target) ?? null), options)
+    this.host.addEventListener('focusout', () => this.focusCaption(null), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // The first view is the arrival view for this screen (arrivalPose).
@@ -1543,7 +1628,7 @@ export class Galaxy {
     if (still && this.opening && this.openingAt === null) { this.opening = null; this.chrome(null) }
     // The planet glow: none while the opening plays or behind a panel; the chosen world keeps its own.
     const lobby = this.opening === null && this.backdrop >= 1 && hoverGlowIntensity.value > 0
-    const glowChanging = this.glow.step(lobby ? glowTarget({ hovered: this.pointed ?? this.hoverId, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
+    const glowChanging = this.glow.step(lobby ? glowTarget({ hovered: this.pointed ?? null, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
     const glowMoving = glowChanging || (this.glow.strength > 0 && !this.reduced.matches && hoverGlowSpeed.value > 0 && !this.glow.chosen)
     // The lobby at rest (idlePulse.ts): after a while with no input, each world breathes its own
     // glow. Not behind a panel, while flying, in a hidden tab (no frames), held still or under
@@ -1697,7 +1782,7 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number; labelled?: boolean }[] = []
   /** Where the worlds were shown when a press skipped the opening: that press picks from these. */
-  private skipped: { pointer: number; screen: Galaxy['screen'] } | null = null
+  private skipped: { pointer: number; screen: Galaxy['screen']; sun: ScreenDisc } | null = null
   /** Where the sun's core is on screen, as of the last frame drawn. */
   sunScreen: { x: number; y: number; radius: number; depth?: number } = { x: -1e4, y: -1e4, radius: 0 }
   private sunPublished = { x: NaN, y: NaN }
@@ -1728,9 +1813,8 @@ export class Galaxy {
   lastInput = performance.now()
   /** For screenshots only: holds the orbits where they are and the view's slow drift. */
   clockHold = false
-  private hoverId: string | null = null
   private focusId: string | null = null
-  private wantGlow(kind: 'hoverId' | 'focusId', id: string | null): void { if (this[kind] !== id) { this[kind] = id; this.wake = 2 } }
+  private focusCaption(id: string | null): void { if (this.focusId !== id) { this.focusId = id; this.wake = 2 } }
   /** performance.now() when a world was chosen, while the name un-reveals; null in the lobby. */
   private leaving: number | null = null
   /** performance.now() when the lobby came back from a world, while the name kindles again. */
@@ -1824,6 +1908,9 @@ export class Galaxy {
     const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
     const markView = poseView(this.markRig.pose!, VIEW_TAN)
     const placement = this.aimLift(liftPlacement(placeWordmark(mode, markView, screen, system), lift), markView, lift)
+    // Where it would have gone seen from below the plane: it stays at the plane and fades instead.
+    const below = mode >= 4 ? this.aimLift(liftPlacement(placeWordmark(mode, markView, screen, system, true), lift), markView, lift) : null
+    const planeShown = below ? this.abovePlane(below, markView) : 1
     this.markFrame = { mode, screen, system }
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
@@ -1834,7 +1921,7 @@ export class Galaxy {
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
     const opacity = this.opening || (this.returnTo && !this.returnTo.framing) || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
-    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
+    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity: opacity * planeShown, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
   markShown = 0
@@ -1871,6 +1958,25 @@ export class Galaxy {
       step = next - d; d = next; y = top(raisePlacement(p, d))
     }
     return raisePlacement(p, Math.max(0, d) * lift)
+  }
+  /**
+   * 1 while the name's lower edge is above the orbits' plane on screen, 0 once it is below, over a
+   * band of logoPlaneFade px: each point of the lower edge against its own foot on the plane
+   * (y = 0 under it), projected the same way, so the test follows the scene as it is drawn.
+   */
+  private abovePlane(p: Placement, v: ReturnType<typeof poseView>): number {
+    const edge = this.projectLine(p, v, -0.5, 6)
+    let depth = -Infinity
+    for (let i = 0; i <= 6; i++) {
+      const w = surfacePoint(p, (i / 6 - 0.5) * ASPECT, -0.5), foot = this.projectPoint([w[0], 0, w[2]], v)
+      depth = Math.max(depth, edge[i]![1] - foot[1])
+    }
+    return planeShown(depth, logoPlaneFade.value)
+  }
+  private projectPoint(w: Vec, v: ReturnType<typeof poseView>): [number, number] {
+    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
+    const d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))
+    return [width * this.framing[0] + dot(d, v.right) / (z * v.tan) * short / 2, height * (1 - this.framing[1]) - dot(d, v.up) / (z * v.tan) * short / 2]
   }
   /** A line across the name (`along` from -0.5 bottom to 0.5 top) on screen, CSS px of the host. */
   private projectLine(p: Placement, v: ReturnType<typeof poseView>, along: number, steps: number): [number, number][] {
@@ -1994,6 +2100,13 @@ export class Galaxy {
         this.resting = !done
       } else this.restSpeed = { pitch: 0, zoom: 0 }
     } else this.restSpeed = { pitch: 0, zoom: 0 }
+    // Let go of the whole system and the tilt returns to the resting one at once, on the spin-down's
+    // own time (pitchReturn times SWING.coast), so a diagonal flick's turn and tilt settle together.
+    // Never while a finger is down, round a chosen world, behind a sheet or under reduced motion.
+    if (!this.reduced.matches && !held && this.pointers.size === 0 && this.chosen < 0 && !this.flight && this.opening === null && this.backdrop === 1) {
+      // Past a tilt limit too (a drag stretches it there): the limit's own spring and this pull the same way, toward rest.
+      this.swingPitch = pitchHome(this.swingPitch, dt, REST.pitch, pitchReturn.value * SWING.coast)
+    }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
       const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
@@ -2036,7 +2149,7 @@ export class Galaxy {
       }
       if (count && pressed(0)) {
         const index = this.focusIndex < 0 ? 0 : this.focusIndex, id = this.options.worlds[index].id
-        if (!this.options.onTap?.(id)) this.choose(id)
+        this.activate(id)
       }
     }
     this.padButtons = buttons
@@ -2044,18 +2157,27 @@ export class Galaxy {
   /** Which world a pointer is over (on its disc, or just off it as a tap would pick), told to the labels when it changes. */
   private pointed: string | undefined
   private pointAt(id: string | undefined): void { if (id !== this.pointed) { this.pointed = id; this.wake = 2; this.options.onPoint?.(id) } }
-  private point(event: PointerEvent): void {
+  private point(event: PointerEvent, caption?: string): void {
     // A mouse hovers; a finger only points while it is down. A drag is not pointing.
     if (event.pointerType !== 'mouse' && event.type !== 'pointerdown' && !this.pointers.has(event.pointerId)) return
     if (this.drag?.moved) { this.pointAt(undefined); return }
-    const box = this.canvas.getBoundingClientRect()
-    this.pointAt(pickWorld(this.screen, event.clientX - box.left, event.clientY - box.top, event.pointerType === 'mouse' ? 6 : 16))
+    if (this.drag?.caption) { this.pointAt(this.drag.target); return }
+    this.pointAt(this.pointerTarget(event, event.pointerType === 'mouse' ? 6 : 16, caption))
   }
-  private down(event: PointerEvent): void { this.handled = performance.now(); this.point(event);
+  private pointerTarget(event: PointerEvent, margin: number, caption?: string): string | undefined {
+    const box = this.canvas.getBoundingClientRect()
+    const skipped = this.skipped?.pointer === event.pointerId ? this.skipped : null
+    return pickLobbyTarget(skipped?.screen ?? this.screen, skipped?.sun ?? this.sunScreen, event.clientX - box.left, event.clientY - box.top, margin, caption)
+  }
+  refreshCaptions(): void { this.wake = 2 }
+  activate(id: string): void { if (!this.options.onTap?.(id)) this.choose(id) }
+  private down(event: PointerEvent, caption?: string): void {
+    this.handled = performance.now()
+    this.point(event, caption)
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) {
       // A finger stops a coast where it is, and picks up a stretched tilt where it shows.
-      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.adopt()
+      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false, caption, target: caption ? this.pointerTarget(event, 0, caption) : undefined }; this.adopt()
       const pitch = this.swingPitch; pitch.aim = pitch.view; pitch.aimSpeed = 0; this.swingYaw.aim = this.swingYaw.view; this.swingYaw.aimSpeed = 0
       const edge = pitch.aim > PITCH_HIGH ? PITCH_HIGH : pitch.aim < PITCH_LOW ? PITCH_LOW : pitch.aim
       this.pull = { pitch: edge + rubberPull(pitch.aim - edge), yaw: 0 }
@@ -2098,13 +2220,18 @@ export class Galaxy {
       const inside = pitch.aim <= PITCH_HIGH && pitch.aim >= PITCH_LOW
       pitch.aimSpeed = inside ? Math.max(-4, Math.min(4, pitchSpeed * 0.7)) : 0
     }
-    const skipped = this.skipped?.pointer === event.pointerId ? this.skipped.screen : null
+    if (drag.moved || !tap || Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 7) {
+      this.skipped = null
+      return
+    }
+    const found = drag.caption ? drag.target : this.pointerTarget(event, 22)
     this.skipped = null
-    if (drag.moved || !tap) return
-    // A tap: the nearest world under the finger, with a generous margin on small screens.
-    const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
-    const found = pickWorld(skipped ?? this.screen, x, y)
-    if (found) { if (!this.options.onTap?.(found)) this.choose(found) } else if (this.chosen >= 0 && !this.flight) this.home()
+    if (drag.caption) {
+      const hit = document.elementFromPoint(event.clientX, event.clientY)
+      if (hit !== this.canvas && !hit?.closest('.galaxy-label')) return
+    }
+    if (found) this.activate(found)
+    else if (!drag.caption && this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
 }
