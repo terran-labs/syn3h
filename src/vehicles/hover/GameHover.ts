@@ -21,12 +21,14 @@ export const hoverRingSpeed = defineParam<number>({ id: 'hover.ringSpeed', label
  * port's width and fading out before the ground; 2 one ring set under the whole hull. Each is
  * a mesh and a set of parameters on the same thruster program.
  */
-export const hoverLiftLayout = defineParam<number>({ id: 'hover.liftLayout', label: 'Lift glow layout (0 columns, 1 ripples, 2 one under the hull)', group: 'Hovercraft', scope: 'world', default: 1, min: 0, max: 2, step: 1 })
+export const hoverLiftLayout = defineParam<number>({ id: 'hover.liftLayout', label: 'Lift glow layout (0 columns, 1 ripples, 2 one under the hull, 3 a field pushed down)', group: 'Hovercraft', scope: 'world', default: 2, min: 0, max: 3, step: 1 })
 const LAYOUTS = [
   { shape: { main: 4, port: 7, ports: 'frustum' as const, portWidth: [.7, 1.6] as const }, rings: 3.5, solid: .12, sharp: 10, reach: 1, hull: false },
   { shape: { main: 4, port: 7, ports: 'frustum' as const, portWidth: [1.1, 3] as const }, rings: 3, solid: 0, sharp: 30, reach: .85, hull: false },
   { shape: { main: 4, port: 2.2, ports: 'frustum' as const, portWidth: [.85, 1.9] as const }, rings: 3.5, solid: 0, sharp: 30, reach: .85, hull: true },
-]
+  // A field pushed down: the rings travel down, the top one brightest, each lower one fainter and wider.
+  { shape: { main: 4, port: 2.2, ports: 'frustum' as const, portWidth: [.85, 2.7] as const }, rings: 3.5, solid: 0, sharp: 30, reach: .85, hull: true, fade: 3 },
+] as { shape: { main: number; port: number; ports: 'frustum'; portWidth: readonly [number, number] }; rings: number; solid: number; sharp: number; reach: number; hull: boolean; fade?: number }[]
 /** Lift-port radius on the Lowwing, metres; the hull-wide set's radius. */
 const PORT_R = .15, HULL_R = .95
 const plumeGeometry = new Map<string, THREE.BufferGeometry>()
@@ -109,7 +111,7 @@ export class GameHover {
     const layout = this.layout(), l = LAYOUTS[layout]
     if (layout !== this.shownLayout) this.plume.mesh.geometry = this.geometry(layout)
     const strength = hoverGlowStrength.value * running
-    this.plume.setLook({ hue: hoverGlowHue.value, length: 1, brightness: 1, heat: .08, diamonds: 0, pinch: 0, sheath: .6, flicker: .15, portRings: l.rings, portSpeed: hoverRingSpeed.value, portSolid: l.solid, portSharp: l.sharp })
+    this.plume.setLook({ hue: hoverGlowHue.value, length: 1, brightness: 1, heat: .08, diamonds: 0, pinch: 0, sheath: .6, flicker: .15, portRings: l.rings, portSpeed: hoverRingSpeed.value, portSolid: l.solid, portSharp: l.sharp, portFade: l.fade })
     // The rings run down toward the ground (all the way, or fading out short of it), and
     // brighten as it comes within a metre or two.
     const near = Math.max(0, Math.min(1, 1 - (ground - 1) / 3))

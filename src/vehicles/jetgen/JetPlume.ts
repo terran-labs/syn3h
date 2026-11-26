@@ -74,6 +74,8 @@ export interface ThrusterLook {
    * flame, 0 hollow rings of light); and how sharp each band is.
    */
   portRings: number; portSpeed: number; portSolid: number; portSharp: number
+  /** How fast a port cone fades along its length (the jet's 1.2; higher keeps only the top bright). */
+  portFade?: number
 }
 /** The jet's: violet, with shock diamonds. Hue, length, brightness and heat come from the registry. */
 const JET_LOOK = { diamonds: 4.5, pinch: .3, sheath: .45, flicker: 1, portRings: 4.5, portSpeed: 0, portSolid: 1, portSharp: 6 }
@@ -107,6 +109,8 @@ function plumeMaterial(): THREE.Material {
   const look2: N = uniform(new THREE.Vector4()).onObjectUpdate(({ object }) => object?.userData.thrusterShape as THREE.Vector4 | undefined)
   // Per object, for the belly ports: ring count, ring speed, solidity, sharpness.
   const look3: N = uniform(new THREE.Vector4()).onObjectUpdate(({ object }) => object?.userData.thrusterPorts as THREE.Vector4 | undefined)
+  // Per object, for the belly ports: how fast they fade along their length.
+  const look4: N = uniform(new THREE.Vector4()).onObjectUpdate(({ object }) => object?.userData.thrusterPortFade as THREE.Vector4 | undefined)
   const lengthParam: N = look.y, brightness: N = look.z, heat: N = look.w
   const port: N = where.y
   // Rear cones: the shock diamonds, standing, sharpness 6, a filled flame. Ports: their own bands.
@@ -133,7 +137,7 @@ function plumeMaterial(): THREE.Material {
   // Half the nozzles' own angle: the gas leaves along the deflected nozzle and straightens behind it.
   const bend: N = vec3(tan(vector.y), tan(vector.x.add(vector.z.mul(side))), 0).mul(reach).mul(rear).mul(BEND)
   material.positionNode = positionLocal.add(stretch.mul(length.sub(1))).sub(radial.mul(band.mul(PINCH))).add(bend)
-  const fade: N = float(1).sub(along).pow(1.2)
+  const fade: N = float(1).sub(along).pow(mix(float(1.2), look4.x, port))
   // Seen from the side the middle of the cone is brightest; seen from behind, up the cone, its
   // walls are edge on, so the diamonds carry it there as nested rings.
   const facing: N = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
@@ -222,6 +226,7 @@ export class JetPlume {
   private readonly look = new THREE.Vector4()
   private readonly shape = new THREE.Vector4()
   private readonly ports = new THREE.Vector4()
+  private readonly portFade = new THREE.Vector4(1.2, 0, 0, 0)
 
   /** `geometry`: a vehicle's own shared cones (createPlumeGeometry); by default built from the fittings. */
   constructor(fittings: PlumeFittings, geometry?: THREE.BufferGeometry) {
@@ -232,7 +237,7 @@ export class JetPlume {
     this.mesh = new THREE.Mesh(geometry, plumeMaterial())
     this.mesh.name = 'jet-plume'; this.mesh.castShadow = false; this.mesh.receiveShadow = false; this.mesh.renderOrder = 2
     this.mesh.userData.plume = this.state; this.mesh.userData.plumeColor = this.colour; this.mesh.userData.plumeVector = this.vector
-    this.mesh.userData.thrusterLook = this.look; this.mesh.userData.thrusterShape = this.shape; this.mesh.userData.thrusterPorts = this.ports
+    this.mesh.userData.thrusterLook = this.look; this.mesh.userData.thrusterShape = this.shape; this.mesh.userData.thrusterPorts = this.ports; this.mesh.userData.thrusterPortFade = this.portFade
     this.setLook()
   }
 
@@ -241,6 +246,7 @@ export class JetPlume {
     this.look.set(((look.hue % 360) + 360) % 360 / 360, look.length, look.brightness, look.heat)
     this.shape.set(look.diamonds, look.pinch, look.sheath, look.flicker)
     this.ports.set(look.portRings, look.portSpeed, look.portSolid, look.portSharp)
+    this.portFade.x = look.portFade ?? 1.2
   }
 
   /** Lengths and strengths as drawn, for a vehicle that sets them itself: rear cones, then ports. */
