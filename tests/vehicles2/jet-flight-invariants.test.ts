@@ -3,10 +3,10 @@
  * are in the handling report, not here; these only say what must never happen. Each test
  * names the bug it catches.
  */
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { FIXED_DT, initPhysics } from '../../src/core/physics'
-import { Jet, jetDescentRate } from '../../src/vehicles/Jet'
+import { Jet, jetControlResponse, jetDescentRate } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
@@ -45,7 +45,13 @@ const seconds = (s: number) => Math.round(s / FIXED_DT)
 const KEYS = ['KeyE', 'KeyQ', 'KeyR', 'KeyF', 'KeyW', 'KeyS', 'KeyA', 'KeyD', 'ShiftLeft']
 const COMBOS = [...KEYS.map((k) => [k]), ...KEYS.flatMap((a, i) => KEYS.slice(i + 1).map((b) => [a, b]))]
 
-describe('jet flight invariants', () => {
+// At the default control response and at the original's full authority (1), which the owner
+// may set from the registry.
+describe.each([['default', undefined], ['the original authority 1', 1]] as const)('jet flight invariants, control response %s', (_name, response) => {
+  let saved = 0
+  beforeAll(() => { saved = jetControlResponse.value; if (response !== undefined) jetControlResponse.value = response })
+  afterAll(() => { jetControlResponse.value = saved })
+
   // Bug: a held key or pair (the owner's "hold E, it flips around and flies backwards") leaves
   // the jet flying tail-first, or a value goes non-finite. Flight mode is checked for
   // tail-first; in hover, moving backwards on S is the craft doing as it is told.

@@ -33,7 +33,9 @@ const JET_LIFT_BAND_ABOVE=.3
 const JET_LIFT_BAND_BELOW=.05
 export const jetStall = defineParam({id:'jet.stall',label:'Stall speed',group:'Jet',scope:'world',default:20,min:1,max:39,step:1})
 // Digital keys otherwise demand a near-loop from a half-second tap in the full-size port.
-export const jetControlResponse = defineParam({id:'jet.controlResponse',label:'Control response',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
+// 1 is the original's authority. 0.3 was chosen before the jet had any damping (a half-second
+// tap pitched the nose about 100 degrees); with pitch and roll damping it is safe this high.
+export const jetControlResponse = defineParam<number>({id:'jet.controlResponse',label:'Control response',group:'Jet',scope:'world',default:.75,min:.1,max:1,step:.05})
 // Not in Mira: its Throttle axis was momentary (VhiclMe.cs 16), so keyboard hover was climb or fall.
 // 0 is the original; 1 holds altitude when no throttle key is down. On by default: the owner chose it for the demo.
 export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover altitude hold',group:'Jet',scope:'world',default:1,min:0,max:1,step:.05})
@@ -80,8 +82,8 @@ export const jetVectorResponse = defineParam<number>({id:'jet.vectorResponse',la
 const JET_HANDLING = ['jet.steer', 'jet.controlResponse', 'jet.vectorResponse', 'jet.stall', 'jet.lift', 'jet.flightThrust']
 export const JET_PRESETS = definePresets('Jet', [
   defaultPreset(JET_HANDLING, 'Default', 'The standard jet.'),
-  { name: 'Gentle', description: 'Softer controls and a lower stall speed: easier to fly slowly and to keep level, and slower in a straight line.', values: { 'jet.steer': 14, 'jet.controlResponse': 0.2, 'jet.vectorResponse': 0.2, 'jet.stall': 14, 'jet.lift': 0.6, 'jet.flightThrust': 1.5 } },
-  { name: 'Sharp', description: 'Quick controls, strong thrust vectoring and more thrust: it snaps round and climbs hard, and stalls a little sooner.', values: { 'jet.steer': 28, 'jet.controlResponse': 0.5, 'jet.vectorResponse': 0.6, 'jet.stall': 22, 'jet.lift': 0.5, 'jet.flightThrust': 2.5 } },
+  { name: 'Gentle', description: 'Softer controls and a lower stall speed: easier to fly slowly and to keep level, and slower in a straight line.', values: { 'jet.steer': 14, 'jet.controlResponse': 0.5, 'jet.vectorResponse': 0.2, 'jet.stall': 14, 'jet.lift': 0.6, 'jet.flightThrust': 1.5 } },
+  { name: 'Sharp', description: 'Quick controls, strong thrust vectoring and more thrust: it snaps round and climbs hard, and stalls a little sooner.', values: { 'jet.steer': 28, 'jet.controlResponse': 1, 'jet.vectorResponse': 0.6, 'jet.stall': 22, 'jet.lift': 0.5, 'jet.flightThrust': 2.5 } },
 ])
 /**
  * Q and E work the jet's lift and thrust axis: lift and lower in hover mode, more and less
