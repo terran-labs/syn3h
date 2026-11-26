@@ -6,8 +6,8 @@
  * perspective so about half of it shows, dimmed,
  * standing outside the column where the host lets it show (welcome.css); the rest wait unseen
  * beyond them. Under the front picture its title and caption between a pair of round arrows,
- * then a dot for each picture. Where the screen leaves room either side, a second pair of round
- * arrows stands at the far edges, level with the pictures.
+ * then a dot for each picture. One pair of arrows only, beside the caption, at every size (the
+ * owner, 25 November 2026: a second pair at the page's edges was one too many).
  *
  * Moving: the arrows, the dots, a swipe across the pictures, the left and right arrow keys
  * anywhere in the panel, or a tap on a side picture. A move turns the panels round their hinges
@@ -16,8 +16,7 @@
  *
  * Narrow screens: when either side has less than SIDE_ROOM px outside the front picture (a phone
  * held upright), the side pictures are hidden rather than shown as slivers, and the front one
- * stays the column's full width. The far-edge arrows appear only with OUTER_ROOM px either side
- * on a screen at least 500 px tall; elsewhere the pair under the picture does the job.
+ * stays the column's full width.
  *
  * This module requests nothing: the pictures inside are Welcome's own, whose sources are set only
  * when the player opens Welcome (welcome.ts, loadShots).
@@ -27,8 +26,6 @@ export interface RingShot { title: string; caption: string }
 
 /** Below this many px either side of the front picture, the side pictures are hidden, not slivers. */
 export const SIDE_ROOM = 40
-/** The far-edge arrows need this many px either side of the front picture: a 48 px button, 16 px from the screen's edge and a clear gap from the front picture. */
-export const OUTER_ROOM = 120
 
 const arrow = (d: string) => `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${d}"/></svg>`
 const LEFT = 'M15 6l-6 6 6 6', RIGHT = 'M9 6l6 6-6 6'
@@ -37,13 +34,9 @@ const escape = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;
 /** The ring's markup round `cards` (each a picture's own <figure> html), with its captions and dots. */
 export function ringHtml(cards: readonly string[], shots: readonly RingShot[]): string {
   const count = cards.length
-  // The far-edge pair repeats the pair under the picture for a mouse or a finger; keyboards and
-  // screen readers use the pair under the picture, so these take no focus and are not announced.
-  const outer = (dir: 'prev' | 'next') => `<button type="button" class="welcome-ring-arrow welcome-ring-outer" data-ring="${dir}" tabindex="-1" aria-hidden="true">${arrow(dir === 'prev' ? LEFT : RIGHT)}</button>`
   return `<section class="welcome-ring" aria-roledescription="carousel" aria-label="Mira in pictures" style="--count:${count}">
   <div class="welcome-ring-stage">
     <ol class="welcome-ring-track">${cards.map((card, i) => `<li class="welcome-ring-card" aria-roledescription="slide" aria-label="${i + 1} of ${count}">${card}</li>`).join('')}</ol>
-    ${outer('prev')}${outer('next')}
   </div>
   <div class="welcome-ring-foot">
     <button type="button" class="welcome-ring-arrow" data-ring="prev" aria-label="Previous picture" data-tip="Previous picture">${arrow(LEFT)}</button>
@@ -120,10 +113,6 @@ export function wireRing(root: HTMLElement, shots: readonly RingShot[], signal?:
     const reach = (side: string) => { const v = parseFloat(style.getPropertyValue(`--reach-${side}`)); return Number.isFinite(v) ? v : 32 }
     const room = Math.min(front.left - ring.left + reach('left'), ring.right - front.right + reach('right'))
     root.toggleAttribute('data-sides', room >= SIDE_ROOM)
-    const outer = room >= OUTER_ROOM && innerHeight >= 500
-    root.toggleAttribute('data-outer', outer)
-    // The far-edge arrows stand 16 px in from the screen's edges (the narrower side sets both), as on the owner's site.
-    if (outer) root.style.setProperty('--outer', `${Math.round(room - 16 - 48)}px`)
   }
 
   for (const button of root.querySelectorAll<HTMLElement>('[data-ring]')) {

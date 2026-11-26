@@ -284,7 +284,7 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
     if(front.left<-1||front.right>innerWidth+1)problems.push('the front picture runs off the screen')
     const cap=r.querySelector('.welcome-ring-caption');if(cap.scrollHeight>cap.clientHeight+1)problems.push('the caption is cut off')
     if(document.scrollingElement.scrollWidth>innerWidth+1)problems.push('the page scrolls sideways')
-    return {problems,column:Math.round(r.getBoundingClientRect().width),front:{w:Math.round(front.width),h:Math.round(front.height)},sides:r.hasAttribute('data-sides'),outer:r.hasAttribute('data-outer')}
+    return {problems,column:Math.round(r.getBoundingClientRect().width),front:{w:Math.round(front.width),h:Math.round(front.height)},sides:r.hasAttribute('data-sides')}
    })
    console.log(JSON.stringify({ring:name,scrolled,...fit}))
    assert.deepEqual(fit.problems,[],`${name}${scrolled?' scrolled':''}: the carousel fits`)

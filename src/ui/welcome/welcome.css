@@ -57,7 +57,7 @@
    light enough that a dark picture still reads; standing outside the column where the host lets it show: a lobby
    sheet's body reaches past the column to the screen's edges (LobbySheet bleed) and says how far
    on each side in --sheet-reach-left and -right; the in-play guide has its own padding. ring.ts
-   sets data-sides when there is room for them and data-outer for the far-edge arrows.
+   sets data-sides when there is room for them.
    Each card's transform is one list, translate, turn, scale, translate, whose terms follow from
    --side (-1, 0 or 1), --near (beside the front or further) and --far (beyond the sides): the
    last translate puts the hinge on the card's inner edge, the first carries the hinge to the
@@ -139,13 +139,6 @@
 .mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-ink); }
 .welcome-ring-arrow svg { width: 18px; height: 18px; }
 .welcome-ring-arrow path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-/* The far-edge pair, level with the pictures' middle, 16 px in from the screen's edges (--outer, ring.ts). */
-.mira-shell .welcome-body .welcome-ring-outer.welcome-ring-outer {
-  position: absolute; top: calc(2px + var(--w) * 9 / 32 - 24px); z-index: 1; width: 48px; height: 48px; display: none;
-}
-.welcome-ring[data-outer] .welcome-ring-outer.welcome-ring-outer.welcome-ring-outer { display: grid; }
-.welcome-ring-outer[data-ring=prev] { right: calc(50% + var(--w) / 2 + var(--outer, 0px)); }
-.welcome-ring-outer[data-ring=next] { left: calc(50% + var(--w) / 2 + var(--outer, 0px)); }
 /* A dot for each picture: the front one's brighter and larger. Each is a 44 px target round a small dot. */
 .welcome-ring-dots { display: flex; justify-content: center; margin-top: 2px; }
 .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot {
