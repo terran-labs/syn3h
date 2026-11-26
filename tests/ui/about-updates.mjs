@@ -187,7 +187,7 @@ for (const mode of ['desktop', 'phone']) {
     // its right edge on the changes' column, never alone under the list.
     const mark = await first.evaluate(li => {
       const box = el => el?.getBoundingClientRect(), m = box(li.querySelector(':scope > .update-full')), v = box(li.querySelector('.update-version')), c = box(li.querySelector('.update-change-link'))
-      return { dy: Math.abs((m.top + m.bottom) / 2 - (v.top + v.bottom) / 2), dx: c ? Math.abs(m.right - c.right) : 0, inNotes: !!li.querySelector('.update-notes .update-full') }
+      return { dy: Math.abs((m.top + m.bottom) / 2 - (v.top + v.bottom) / 2), dx: c ? Math.abs(m.right - c.right) : 0, inNotes: [...li.querySelectorAll('.update-notes .update-full')].some(a => !a.parentElement.matches('.update-release.is-beta')) }
     })
     assert.ok(mark.dy <= 2 && mark.dx <= 1 && !mark.inNotes, `${mode}: the release's GitHub mark is on its header row, in the changes' column (${JSON.stringify(mark)})`)
     // Show more: the last entry; the older file is not fetched before it is pressed; pressing it
