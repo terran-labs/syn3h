@@ -389,7 +389,7 @@ export class PlayerPanel {
     fact('device', deviceName(p) || 'Unknown')
     const place = placeName(p, true)
     fact('place', place || (p.self && !this.actions.sharesLocation() ? 'Hidden' : 'Not shown'))
-    fact('status', [p.host ? 'Host' : '', p.paused ? 'Paused' : 'Playing'].filter(Boolean).join(' · '))
+    fact('status', p.paused ? 'Paused' : 'Playing') // Host is on the line under the name
     for (const b of el.querySelectorAll<HTMLButtonElement>('.pp-toggle')) {
       const on = b.dataset.mute === 'all' ? Boolean(p.mutedForAll) : p.muted
       if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on))
