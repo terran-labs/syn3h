@@ -47,18 +47,27 @@ try {
       inspector.fit = () => {}
     })
     // The Glass group's resets are the shared control (src/ui/resetControl.ts); live ones are changed.
-    assert.equal(await page.locator('.wi-row[data-id^="glass."] > .reset-control').count(), 9)
+    const glassRows = () => page.evaluate(() => [...document.querySelectorAll('.wi-row[data-id]')].filter(row => window.mira.params.get(row.dataset.id)?.def.group === 'Glass').map(row => !!row.querySelector(':scope > .reset-control')))
+    const glass = await glassRows()
+    assert(glass.length >= 9 && glass.every(Boolean), 'every Glass row has the reset')
     const heads = card.locator('.wi-cards > .wi-card:visible > .wi-head')
     for (const head of await heads.all()) {
       if (await head.getAttribute('aria-expanded') !== 'true') await head.tap()
     }
     await page.waitForTimeout(600)
     assert.equal(await card.locator('.wi-cards > .wi-card.is-open:visible').count(), await heads.count())
+    // Since 22 November (fed110c4) Liquid's tuning is a closed fold under Style and Tint, there
+    // only at Liquid: choose Liquid and open it before driving one of its sliders.
+    await page.evaluate(() => { window.mira.params.set('hud.glass', 0, 'local'); const fold = document.querySelector('#lobby-settings .lobby-liquid'); if (fold) fold.open = true })
+    await page.waitForTimeout(500)
     const frost = card.locator('.wi-row[data-id="glass.frostWidth"]')
     const reset = frost.locator('.reset-control')
-    assert.equal(await card.locator('.reset-control.is-live').count(), 0)
+    // The edited row's reset appears only once it is changed (others, such as Style under
+    // ?glass=inline, may already differ from their defaults).
+    const live = () => reset.evaluate(b => b.classList.contains('is-live'))
+    assert.equal(await live(), false)
     await frost.locator('input[type=range]').tap()
-    assert.equal(await card.locator('.reset-control.is-live').count(), 1)
+    assert.equal(await live(), true)
     const [numberBox, resetBox] = await Promise.all([frost.locator('.wi-num').boundingBox(), reset.boundingBox()])
     assert(resetBox.x >= numberBox.x + numberBox.width - 1 && Math.abs(resetBox.y + resetBox.height/2 - numberBox.y - numberBox.height/2) < 1)
     const value = () => page.evaluate(() => window.mira.params.get('glass.frostWidth').value)
@@ -87,6 +96,8 @@ try {
     })
     let taps = 0
     for (const control of await controls.all()) {
+      // A reset at its default is inert by design (resetControl.ts): nothing to press.
+      if (await control.evaluate(el => el.inert || !!el.closest('[inert]'))) continue
       await control.evaluate(el => {
         el.addEventListener('pointerdown', event => { if (event.isTrusted) el.dataset.auditTap = 'yes' }, { once: true })
       })
@@ -98,7 +109,7 @@ try {
     console.log(device, { sections: await heads.count(), taps, resetVerified: true, order, layers })
     await card.locator('.lobby-settings-close').tap()
     await page.locator('#lobby-settings').waitFor({state: 'detached'})
-    assert.equal(await page.locator('.wi-row[data-id^="glass."] > .reset-control').count(), 9)
+    assert((await glassRows()).every(Boolean))
     await page.close()
   }
 } finally { await browser.close() }

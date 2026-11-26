@@ -76,11 +76,14 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     // one task, so no frame ever draws the moved value. ----
     const failures = await page.evaluate(async deviceDefaults => {
       const bad = []
+      // Marks this page, so a reload that one setting causes is caught and named below.
+      window.resetWalk = true
       const tick = () => Promise.resolve().then(() => Promise.resolve())
       for (const row of document.querySelectorAll('.wi-row[data-id]')) {
         const id = row.dataset.id, p = mira.params.get(id), button = row.querySelector(':scope > .reset-control')
         if (!p || button.disabled || button.dataset.noReset) continue
         const def = p.def, before = p.value
+        sessionStorage.setItem('resetWalk', id)
         const other = typeof def.default === 'boolean' ? !before : (before !== Math.min(def.min ?? before, def.max ?? before) ? Math.min(def.min, def.max) : Math.max(def.min, def.max))
         if (other === undefined || other === before || !mira.params.set(id, other, 'local')) continue
         await tick()
@@ -96,6 +99,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       return bad
     }, [...DEVICE_DEFAULTS])
     assert.deepEqual(failures, [], 'every reset restores its true default')
+    await page.waitForTimeout(3000)
+    const walked = await page.evaluate(() => ({ same: window.resetWalk === true, last: sessionStorage.getItem('resetWalk') })).catch(error => ({ same: false, last: String(error) }))
+    assert.ok(walked.same, `moving and resetting a setting reloaded the page (last: ${walked.last})`)
 
     // ---- 6. A row does not move when its reset appears. ----
     const row = page.locator('.wi-row[data-id="paint.gloss"]')
@@ -115,7 +121,15 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       await page.waitForTimeout(250)
       const covered = await page.evaluate(() => {
         const plate = document.querySelector('.ui-tip.is-shown'), p = plate.getBoundingClientRect(), own = document.querySelector('.wi-row[data-id="paint.gloss"]')
-        const hit = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.left < p.right && b.right > p.left && b.top < p.bottom && b.bottom > p.top }
+        // Covered means shown there: the overlap's middle is this control on screen, not
+        // something scrolled out of view or behind another layer (the plate takes no pointer).
+        const hit = el => {
+          const b = el.getBoundingClientRect()
+          const l = Math.max(b.left, p.left), r = Math.min(b.right, p.right), t = Math.max(b.top, p.top), u = Math.min(b.bottom, p.bottom)
+          if (b.width === 0 || b.height === 0 || l >= r || t >= u) return false
+          const at = document.elementFromPoint((l + r) / 2, (t + u) / 2)
+          return !!at && (at === el || el.contains(at))
+        }
         return { text: plate.textContent, covered: [...document.querySelectorAll('button, input, select, summary')].filter(el => !own.contains(el) && !el.closest('[hidden], [inert]') && hit(el)).map(el => el.getAttribute('aria-label') || el.textContent.trim()) }
       })
       assert.equal(covered.text, 'Reset to 0.42')
