@@ -37,6 +37,8 @@
  */
 @property --rim-angle { syntax: "<angle>"; inherits: false; initial-value: 315deg; }
 :root {
+  /* Keep world labels from showing through floating panels and their pointers. */
+  --floating-panel-fill: rgb(8 12 17);
   /* Clear, matched to the shader's surface (its tint is capped at 6.5 %), so the hand-over
      between the two does not jump. */
   --glass-body: rgb(255 255 255 / .06);
