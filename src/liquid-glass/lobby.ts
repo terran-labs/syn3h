@@ -92,17 +92,18 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
   const phone = matchMedia('(max-width: 700px), (max-height: 500px) and (pointer: coarse)')
   let revision = -1, growth = 0
   const reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
-  let changed = true, registered: HTMLElement[] = [], shapes: Shape[] = []
+  let changed = true, registered: HTMLElement[] = [], observed: HTMLElement[] = [], shapes: Shape[] = []
   let width = 0, height = 0, pw = 1, ph = 1, tw = 1, th = 1, active = false
   const dirty = () => { changed = true }
   // Whether a control sits in a scrolling region, kept per element; a resize may change the layout's overflow.
   let scrolling = new WeakMap<Element, boolean>()
   const scrolls = (el: Element) => { let v = scrolling.get(el); if (v === undefined) scrolling.set(el, v = insideScroller(el)); return v }
-  const size = new ResizeObserver(dirty)
+  const reclassify = () => { scrolling = new WeakMap(); dirty() }
+  const size = new ResizeObserver(reclassify)
   const attributes = new MutationObserver(records => {
-    if (records.some(r => r.oldValue !== (r.target as Element).getAttribute(r.attributeName!))) dirty()
+    if (records.some(r => r.oldValue !== (r.target as Element).getAttribute(r.attributeName!))) reclassify()
   })
-  const membership = new MutationObserver(dirty)
+  const membership = new MutationObserver(reclassify)
   membership.observe(scope, { childList: true })
   const galaxyUI = scope.querySelector('.galaxy-ui')
   if (galaxyUI) membership.observe(galaxyUI, { childList: true })
@@ -122,29 +123,51 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     }
     changed = true
   }
+  // The shell also contains gameplay surfaces. Only retire markers that this
+  // renderer assigned and that still carry the assigned value.
+  const owned = new Map<HTMLElement, 'scroll' | 'shader'>()
+  const canMark = (el: HTMLElement) => el.dataset.glassSurface === undefined || el.dataset.glassSurface === owned.get(el)
+  const mark = (el: HTMLElement, kind: 'scroll' | 'shader') => {
+    if (!canMark(el)) return
+    if (el.dataset.glassSurface !== kind) el.dataset.glassSurface = kind
+    owned.set(el, kind)
+  }
   const clear = (el: HTMLElement) => {
-    delete el.dataset.glassSurface
+    const kind = owned.get(el)
+    if (kind && el.dataset.glassSurface === kind) delete el.dataset.glassSurface
+    owned.delete(el)
+  }
+  const clearMarkers = () => {
+    for (const el of owned.keys()) clear(el)
   }
   const layout = (now: number) => {
     const modal = scope.querySelector('dialog[open]')
     // Inside a scrolling region the CSS glass scrolls with the content; the shader cannot keep up (scrolling.ts).
-    const candidates = [...(modal ?? scope).querySelectorAll<HTMLElement>(surfaces)].filter(el => !el.matches(plain))
-    for (const el of candidates) if (scrolls(el) && el.dataset.glassSurface !== 'scroll') el.dataset.glassSurface = 'scroll'
-    const next = candidates.filter(el => !scrolls(el))
-    if (next.length !== registered.length || next.some((el,i) => el !== registered[i])) {
-      for (const old of registered) if (!next.includes(old)) clear(old)
+    const candidates = [...(modal ?? scope).querySelectorAll<HTMLElement>(surfaces)].filter(el => !el.matches(plain) && canMark(el))
+    const current = new Set(candidates)
+    for (const el of owned.keys()) if (!current.has(el)) clear(el)
+    registered = []
+    for (const el of candidates) {
+      if (scrolls(el)) mark(el, 'scroll')
+      else {
+        if (owned.get(el) === 'scroll') clear(el)
+        registered.push(el)
+      }
+    }
+    if (candidates.length !== observed.length || candidates.some((el,i) => el !== observed[i])) {
       size.disconnect(); size.observe(canvas); attributes.disconnect()
       const ancestors = new Set<Element>()
-      for (const el of next) {
+      for (const el of candidates) {
         size.observe(el)
         for (let p: Element | null = el; p; p = p.parentElement) ancestors.add(p)
       }
       for (const el of ancestors) attributes.observe(el, { attributes:true, attributeOldValue:true,
         attributeFilter:['class','style','hidden','aria-expanded','data-gfx','data-ui-frost'] })
-      for (const dialog of scope.querySelectorAll('dialog.lobby-sheet')) attributes.observe(dialog, {
-        attributes: true, attributeOldValue: true, attributeFilter: ['open'],
-      })
-      registered = next
+      for (const dialog of scope.querySelectorAll('dialog.lobby-sheet')) {
+        membership.observe(dialog, { childList: true, subtree: true })
+        attributes.observe(dialog, { attributes: true, attributeOldValue: true, attributeFilter: ['open'] })
+      }
+      observed = candidates
     }
     const rect = canvas.getBoundingClientRect()
     pw = Math.max(1,rect.width); ph = Math.max(1,rect.height)
@@ -181,7 +204,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     changed = false
   }
   for (const type of ['scroll','resize','orientationchange']) window.addEventListener(type,dirty,opts)
-  for (const type of ['resize','orientationchange']) window.addEventListener(type,() => { scrolling = new WeakMap() },opts)
+  for (const type of ['resize','orientationchange']) window.addEventListener(type,reclassify,opts)
   for (const type of ['pointerdown','pointerup','pointercancel','transitionrun','animationstart']) {
     scope.addEventListener(type,event=>{
       if (event.target instanceof Element && (event.target.closest(surfaces) || registered.some(el=>event.target instanceof Element && event.target.contains(el)))) dirty()
@@ -204,7 +227,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     get dirty() { return changed || clock.active || (active && shapes.length > 0 && revision !== tuning.revision()) },
     draw(enabled) {
       if (!enabled) {
-        if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); for (const el of registered) clear(el); for (const el of scope.querySelectorAll<HTMLElement>('[data-glass-surface="scroll"]')) clear(el) }
+        if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); clearMarkers() }
         lastBlur = 0
         active = false; changed = false
         return
@@ -256,6 +279,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       }
       gl.enable(gl.SCISSOR_TEST); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE_MINUS_SRC_ALPHA)
       for (const s of shapes) {
+        if (!canMark(s.el)) continue
         const x=Math.floor((s.x-s.w-14)*sx), y=Math.floor(height-(s.y+s.h+14)*sy)
         const right = x + Math.ceil((s.w*2+28)*sx)+1, top = y + Math.ceil((s.h*2+28)*sy)+1
         if (s.clip) {
@@ -266,7 +290,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         gl.uniform4f(u.box,s.x,s.y,s.w,s.h); gl.uniform1f(u.radius,s.radius)
         gl.uniform1f(u.panel,Number(s.panel)); gl.uniform1f(u.opacity,s.alpha); gl.uniform1f(u.pressed,Number(s.pressed))
         gl.drawArrays(gl.TRIANGLES,0,3)
-        if (s.el.dataset.glassSurface!=='shader') s.el.dataset.glassSurface='shader'
+        mark(s.el, 'shader')
       }
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND)
     },
@@ -274,8 +298,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       captions?.style.removeProperty('clip-path')
       scope.removeAttribute('data-lobby-glass')
       clock.release(); size.disconnect(); membership.disconnect(); attributes.disconnect(); events.abort()
-      for (const el of registered) clear(el)
-      for (const el of scope.querySelectorAll<HTMLElement>('[data-glass-surface="scroll"]')) clear(el)
+      clearMarkers()
       for (const free of dispose) free()
     }
   }

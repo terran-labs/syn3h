@@ -361,42 +361,72 @@ html[data-glass-material] .mira-shell.exploration-ui button.panel-action:focus-v
   visibility: hidden;
 }
 
-/* Liquid's icons and small-control labels (the owner's Liquid look at Tint 25 is a clear face, so
-   the ink carries its own falloff there, as the gear names do: a soft shadow under white ink, no
-   plate). Icons on the panel rail and the notice, and the labels of the rail's own small
-   controls; ordinary text inside the cards is governed by the face. Eased when the style
-   changes, like everything else. Measured 22 November 2026: Pause 2.2:1 and Close panels 3.0:1
-   without it over Alpine noon. */
-:is(.mira-shell > .world-inspector, .drive-notices) svg { transition: filter .22s ease; }
-:is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .mira-shell > .world-inspector > .panels-close, .drive-notices button) { transition: text-shadow .22s ease, filter .22s ease; }
-html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector, .drive-notices) svg {
-  filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
-}
-/* A control the shader draws turns its own text-shadow off (shader-surface.css, !important);
-   this falloff is the exception at Liquid, so it is !important too, on the label and its spans. */
-html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > :is(button, input), .mira-shell > .world-inspector > .panels-close, .drive-notices button),
-html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector :is(.rail-command, .rail-foot) > button, .mira-shell > .world-inspector > .panels-close, .drive-notices button) :is(span, kbd) {
-  text-shadow: 0 0 1px rgb(0 0 0 / .95), 0 0 2px rgb(0 0 0 / .85), 0 0 4px rgb(0 0 0 / .7), 0 0 8px rgb(0 0 0 / .45), 0 0 14px rgb(0 0 0 / .3) !important;
-}
-/* Close panels' chevrons keep a light glow on phones (phone-panels.css); at Liquid they take the
-   same dark falloff as the other icons. */
-html[data-glass-material="liquid"] .mira-shell.exploration-ui > .world-inspector > .panels-close .nav-chevrons {
+/* Free-standing rail and notice graphics still carry their own contrast. */
+html[data-glass-material="liquid"] :is(.mira-shell > .world-inspector, .drive-notices)
+svg:not(:where(button *, summary *, .rail-search-icon, .s3-switch-field *)) {
+  transition: filter .22s ease;
   filter: drop-shadow(0 0 .6px rgb(0 0 0 / .95)) drop-shadow(0 0 1.5px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .55)) drop-shadow(0 0 8px rgb(0 0 0 / .3));
 }
 
-/* Liquid inside a scrolling region (src/liquid-glass/scrolling.ts). The shader draws a glass face
-   from positions read on the main thread, and the browser scrolls a region's contents without
-   waiting for it, so there the face trails its control by a few frames. Controls in a scroller
-   are marked data-glass-surface="scroll" and drawn by CSS, which scrolls with them. At Liquid
-   this approximates the shader's face: the backdrop lightly blurred and darkened under white
-   ink, a thin lit rim and a dark hairline, so a scrolling card beside a shader-drawn control
-   reads as the same material. Frost and Flat keep their own CSS. Not while Liquid is shed. */
-html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) [data-glass-surface="scroll"],
-html[data-glass-material="liquid"]:not([data-drive-glass="shed"]) .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
-:is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost)[data-glass-surface="scroll"] {
-  background: rgb(8 8 10 / .1);
-  border: 1px solid rgb(255 255 255 / .16);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 -1px 0 rgb(0 0 0 / .14), 0 0 0 .5px rgb(0 0 0 / .3);
-  -webkit-backdrop-filter: blur(3px) brightness(.74) saturate(1.4);
-  backdrop-filter: blur(3px) brightness(.74) saturate(1.4);
+/* The glass face carries the ink contrast. Clear filters on the control and its ink:
+   a shadow on the whole SVG still paints even when the path has no filter. */
+html:is([data-glass-material="liquid"], [data-glass-material="flat"]) .mira-shell :is(
+  button:is(.liquid-glass, .wi-glass, .inspector-toggle, .panels-close),
+  :is(.liquid-glass, .wi-glass, .lobby-sheet, .in-play-about, .exit-confirm-card, .join-card)
+    :is(button, summary, .s3-switch-field, .wi-row.is-switch),
+  .rail-command > :is(.wi-search, .rail-search-icon)
+) {
+  &, & *, &::before, &::after, & *::before, & *::after, &::placeholder {
+    text-shadow: none !important;
+    filter: none !important;
+  }
+}
+
+/* The CSS face can stand in for the shader over a white scene. Keep this a
+   fill so releasing the post graph also drops the compositor's backdrop work. */
+html[data-glass-material="liquid"] :is(
+  .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+    :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > :is(button, input), .rail-foot > button, .panels-close),
+  .pause-actions > button.liquid-glass,
+  .hud-navigation > .inspector-toggle.liquid-glass,
+  .touch-actions > button.liquid-glass,
+  .gear-actions > button.liquid-glass,
+  .mira-shell .performance-recommendation
+):not([data-glass-surface="shader"]) {
+  background-color: rgb(14 14 16 / .82);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* The browser moves these faces with their scrollers (src/liquid-glass/scrolling.ts).
+   Other parts of the same surface, such as a panel arrow, can use its face tokens. */
+html[data-glass-material="liquid"] [data-glass-surface="scroll"] {
+  --panel-material-fill: rgb(14 14 16 / .82);
+  --panel-material-filter: none;
+  --panel-material-edge: rgb(255 255 255 / .16);
+  --panel-material-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 -1px 0 rgb(0 0 0 / .14), 0 0 0 .5px rgb(0 0 0 / .3);
+}
+html[data-glass-material="liquid"][data-gfx="0"] [data-glass-surface="scroll"],
+html[data-glass-material="liquid"] [data-ui-frost="off"] [data-glass-surface="scroll"] {
+  --panel-material-fill: rgb(14 14 15 / .94);
+}
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  /* Compress the bright sky behind secondary text while keeping the dark scene visible.
+     Collapsed cards, expanded cards and their ghosts all use the same curve. */
+  html[data-glass-material="liquid"]:not([data-drive-glass="shed"], [data-gfx="0"]) [data-glass-surface="scroll"]:not([data-ui-frost="off"] *) {
+    --panel-material-fill: rgb(8 8 10 / .1);
+    --panel-material-filter: blur(3px) brightness(.74) saturate(1.4) contrast(.76) brightness(.50);
+  }
+}
+/* Keep the marker's face above the ordinary panel face and its tier overrides. */
+html[data-glass-material="liquid"] :is(
+  [data-glass-surface="scroll"],
+  .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+    :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost)[data-glass-surface="scroll"]
+) {
+  background: var(--panel-material-fill);
+  border: 1px solid var(--panel-material-edge);
+  box-shadow: var(--panel-material-shadow);
+  -webkit-backdrop-filter: var(--panel-material-filter);
+  backdrop-filter: var(--panel-material-filter);
 }

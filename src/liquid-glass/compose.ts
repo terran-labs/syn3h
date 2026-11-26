@@ -1,7 +1,7 @@
 import { Fn, If, Loop, Continue, abs, dot, float, length, max, min, mix, clamp, screenSize, step, uv, vec2, vec3, vec4 } from 'three/tsl'
 import { mergedGlassPair } from './mergedPair'
 import { glassOptics } from './optics'
-import { whiteInkFace, regularGlass, type RegularUniforms } from './regular'
+import { iconFaceLimit, whiteInkFace, regularGlass, type RegularUniforms } from './regular'
 
 type N = any // TSL expression with a shader-dependent node type.
 
@@ -11,7 +11,7 @@ export interface GlassSurfaces {
   capacity: number
   viewport: N
   clips?: N // Visible scrollport in canvas coordinates.
-  presentation?: N // Effective DOM opacity and card flag.
+  presentation?: N // Effective DOM opacity, bevel weight, ink luminance ceiling and pressed brightness.
   boxes: N // Centre and half-size in CSS pixels, origin at top left.
   radii: N // Top left, top right, bottom left, bottom right.
   filters: N
@@ -90,7 +90,7 @@ export function composeGlass(original: N, sample: (at: N) => N, glass: GlassSurf
           if (presentation) {
             body.assign(mix(body, vec3(1), presentation.w.mul(tuning?.edges.z ?? .405)))
           }
-          if (tuning) body.assign(whiteInkFace(body, distance, presentation?.z ?? float(1), tuning, uv()))
+          if (tuning) body.assign(whiteInkFace(body, distance, presentation?.z ?? float(iconFaceLimit), tuning, uv()))
           under.assign(mix(under, body, coverage))
         })
         result.assign(vec4(mix(result.rgb, under, opacity) as N, 1))

@@ -388,10 +388,14 @@ export class RoomDO {
   private clockOn = false
   /** Epoch ms of the last failed presence report line; at most one a minute. */
   private reportErrorAt = -Infinity
+  /** This world's banishes as stored (server/banish.ts), read before the room is made. */
+  private banishes: unknown
 
   constructor(private readonly state: DurableObjectState, private readonly env: Env) {
     state.blockConcurrencyWhile(async () => {
       this.snapshot = await state.storage.get<RoomSnapshot>('room')
+      // Banishes are kept apart from the snapshot (server/banish.ts): a world's reset never clears them.
+      this.banishes = await state.storage.get('banishes')
     })
   }
 
@@ -688,6 +692,8 @@ export class RoomDO {
     if (this.room) return this.room
     const room = new Room(name, {
       onPersist: (s) => void this.state.storage.put('room', s),
+      banishes: this.banishes,
+      onBanishes: (list) => void this.state.storage.put('banishes', list),
       // No binding, no analytics work at all: no sessions, copies or extra roster saves.
       analytics: this.env.ANALYTICS ? (event, common, extra) => { this.rows.write(event, common, extra) } : undefined,
       creatorKeySha256: this.env.CREATOR_KEY_SHA256, reservedNames: this.env.CREATOR_RESERVED_NAMES,

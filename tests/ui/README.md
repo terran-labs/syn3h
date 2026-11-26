@@ -579,7 +579,7 @@ The galaxy caps its shared loop at 30 fps outside a drop, below the logo's deskt
 
 The in-game right-edge Interface tab opens the configuration rail. Exit world at its top
 returns to the solar system; Escape opens or closes the rail without returning to the lobby.
-Players, music, gear and the optional connection diagnostics live under Players & session.
+The Players card lists people and bots and offers bot count, connection diagnostics, and room invites.
 The old upper-left HUD is hidden. Speed and ground clearance use the exploration readouts;
 the minimap stays centred on the player at bottom left, with a generated radial vignette.
 On phones it sits above the driving thumb control.

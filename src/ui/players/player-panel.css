@@ -1,0 +1,142 @@
+/* The Players card's rows and the player panel (PlayerPanel.ts, Scoreboard.ts).
+   Liquid Glass rules: the panel is a .wi-glass surface like the setting tooltip; no shadows on
+   text or icons inside it. Icons are white silhouettes in the text colour. */
+
+/* ---- Rows: name, then label, states, score, and the vehicle pinned to the far edge ---- */
+.mira-shell .rail-player-body .score-row.is-rich { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.mira-shell .rail-player-body .score-row.is-rich > .score-name { order: 0; flex: 0 1 auto; min-width: 0; }
+.mira-shell .rail-player-body .score-row.is-rich > .score-meta { order: 1; flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-align: right; color: var(--s3-dim, #a9b0bd); font-size: 11.5px; }
+.mira-shell .rail-player-body .score-row.is-rich > small { order: 2; flex: none; }
+.mira-shell .rail-player-body .score-row.is-rich > .score-muted { order: 3; flex: none; display: flex; }
+.mira-shell .rail-player-body .score-row.is-rich > strong { order: 4; flex: none; min-width: 2ch; }
+.mira-shell .rail-player-body .score-row.is-rich > .score-vehicle { order: 5; flex: none; display: flex; width: 20px; justify-content: flex-end; color: #fff; }
+/* Every name starts at the same x: one fixed slot for the mark, wide enough for the creator's
+   (1.6em), with the bot icon and the tint circle centred in it. */
+.mira-shell .mark-slot { display: inline-flex; flex: none; justify-content: center; align-items: center; width: 1.6em; margin-right: .35em; vertical-align: -.12em; }
+.mira-shell .mark-slot > svg { margin: 0; vertical-align: 0; }
+.mira-shell .mark-slot > .tint-dot { width: .62em; height: .62em; }
+/* The creator's mark is drawn wider than the slot elsewhere (1.8em); here it fits the slot's width. */
+.mira-shell .mark-slot > .creator-mark { width: 100%; height: auto; aspect-ratio: 200 / 128; vertical-align: 0; }
+.mira-shell .score-row.is-rich > .score-name { display: flex; align-items: center; }
+.mira-shell .score-row.is-rich .mark-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mira-shell .score-vehicle .vehicle-mark { width: 20px; height: 12px; }
+.mira-shell .score-muted .muted-mark { width: 14px; height: 14px; color: #fff; }
+/* Muted for me: the same speaker, dimmed; only the muter sees it. */
+.mira-shell .score-muted[data-state="me"] .muted-mark { opacity: .45; }
+.mira-shell .rail-player-body .score-row.is-rich:has(> .score-name[aria-expanded="true"]) { background: rgb(255 255 255 / .08); border-radius: 7px; }
+/* No lines between rows (the owner's Players card); theme-halo.css draws one on every score row. */
+.mira-shell.exploration-ui .rail-player-body .score-row.is-rich { margin: 0 -6px; padding-left: 6px; padding-right: 6px; border-bottom: 0; border-image: none; }
+
+/* ---- The panel ---- */
+.mira-shell .player-panel { --arrow-y: 24px; position: fixed; z-index: 59; box-sizing: border-box; display: flex; width: 300px; padding: 0; font: 400 13px/1.45 'Barlow', sans-serif; color: var(--s3-ink, #fff); text-shadow: none;
+  /* The panel's face is the sidebar cards' own (glass.css): the four face tokens each glass
+     style sets, and at Liquid the cards' CSS face for surfaces the shader does not draw, which
+     the panel joins through data-glass-surface="scroll" (PlayerPanel.ts). A change to the cards'
+     material reaches the panel with no edit here. --pp-fill is only the fallback before any
+     style has painted. */
+  --pp-fill: rgb(25 25 25 / .82);
+  border: 1px solid var(--panel-material-edge, var(--s3-line, rgb(255 255 255 / .24))); border-radius: var(--halo-r, 16px);
+  background: var(--panel-material-fill, var(--pp-fill));
+  -webkit-backdrop-filter: var(--panel-material-filter, blur(30px) saturate(1.9) brightness(.84)); backdrop-filter: var(--panel-material-filter, blur(30px) saturate(1.9) brightness(.84));
+  box-shadow: var(--panel-material-shadow, none); }
+/* TEMPORARY legibility floor, under the content and over the shared face: the player reads and
+   operates this panel over any scene, so small text must keep 4.5:1 over a bright busy one
+   (player-panel.mjs checks every style). Remove when the cards' shared face passes that check
+   alone (the glass lead's legibility change); .no-floor turns it off for that comparison. */
+.mira-shell .player-panel::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: rgb(20 20 20 / .65); pointer-events: none; }
+.mira-shell .player-panel.no-floor::before { content: none; }
+.mira-shell .player-panel[hidden] { display: none; }
+.mira-shell .player-panel .pp-body { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 16px 16px; }
+/* The tooltip's pointer toward its row: a small diamond half outside the right edge, in the
+   panel's own border and fill. Not on the phone sheet, which has no row beside it. */
+.mira-shell .player-panel .pp-arrow { position: absolute; right: -7px; top: var(--arrow-y); width: 12px; height: 12px; margin-top: -6px; box-sizing: border-box; transform: rotate(45deg); background: var(--panel-material-fill, var(--pp-fill)); border-top: 1px solid var(--panel-material-edge, var(--s3-line)); border-right: 1px solid var(--panel-material-edge, var(--s3-line)); border-radius: 0 2px 0 0;
+  /* Only the half outside the panel, so the tint does not double over the panel's edge. */
+  clip-path: polygon(0 0, 100% 0, 100% 100%); pointer-events: none; }
+.mira-shell .player-panel.is-sheet .pp-arrow { display: none; }
+.mira-shell .player-panel * { text-shadow: none; }
+.mira-shell .player-panel svg { filter: none; }
+.mira-shell .player-panel .pp-head { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 10px; align-items: center; }
+.mira-shell .player-panel .pp-head > .pp-vehicle { width: 28px; height: 16px; color: #fff; }
+.mira-shell .player-panel .pp-name { display: flex; align-items: center; margin: 0; font: 600 17px/1.25 'Barlow', sans-serif; letter-spacing: 0; overflow-wrap: anywhere; }
+/* The sub-line starts under the name, past the mark slot. */
+.mira-shell .player-panel .pp-sub { grid-column: 1 / -1; margin: 0 0 0 calc(17px * 1.9); color: var(--s3-dim, #a9b0bd); font-size: 12px; }
+.mira-shell .player-panel .pp-sub:empty { display: none; }
+.mira-shell .player-panel .pp-close { width: 32px; height: 32px; min-height: 0; padding: 6px; margin: -6px -8px 0 0; border: 0; background: none; color: var(--s3-dim, #a9b0bd); }
+.mira-shell .player-panel .pp-close svg { width: 100%; height: 100%; stroke: currentColor; stroke-width: 1.6; fill: none; }
+.mira-shell .player-panel .pp-facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 16px; margin: 14px 0 0; }
+.mira-shell .player-panel .pp-facts dt { color: var(--s3-dim, #a9b0bd); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; align-self: center; }
+.mira-shell .player-panel .pp-facts dd { margin: 0; }
+.mira-shell .player-panel .pp-note { margin: 12px 0 0; color: var(--s3-dim, #a9b0bd); font-size: 12px; }
+/* One rhythm for Mute, Eject and each personality row: a 32 px control line, 6 px, then the
+   explanation in its own box below, never beside or under a control; 18 px between lines. */
+.mira-shell .player-panel .pp-line, .mira-shell .player-panel .pp-traits { margin-top: 18px; }
+.mira-shell .player-panel .pp-line-head, .mira-shell .player-panel .pp-traits-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 32px; }
+.mira-shell .player-panel .pp-line-title { color: var(--s3-dim, #a9b0bd); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+.mira-shell .player-panel .pp-why { margin: 6px 0 0; color: var(--s3-dim, #a9b0bd); font-size: 11.5px; line-height: 1.4; }
+.mira-shell .player-panel .pp-why + .pp-why { margin-top: 2px; }
+.mira-shell .player-panel .pp-traits-head + .pp-why { margin-top: 0; }
+.mira-shell .player-panel .pp-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 0; }
+/* Buttons are the house panel action (glass.css: 30 px, thin rim; touch gets a 44 px hit area). */
+.mira-shell .player-panel .pp-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.mira-shell .player-panel .pp-toggle .muted-mark { width: 14px; height: 14px; flex: none; }
+/* A lit toggle is on: filled in the ink, as the house's on-state fills (--s3-on-fill). */
+html[data-glass-material] .mira-shell.exploration-ui .player-panel button.pp-toggle[aria-pressed="true"]:not([hidden]),
+.mira-shell .player-panel button.pp-toggle[aria-pressed="true"] { background: var(--s3-on-fill, #ececec); color: var(--s3-on-ink, #141416); border-color: transparent; }
+.mira-shell .player-panel button:disabled { opacity: .45; cursor: default; }
+.mira-shell .player-panel .pp-eject-go { min-width: 96px; }
+.mira-shell .player-panel .pp-trait { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--reset-slot, 24px); align-items: center; column-gap: 8px; margin-top: 14px; }
+.mira-shell .player-panel .pp-trait label { font: 500 13px/1.3 'Barlow', sans-serif; letter-spacing: 0; }
+.mira-shell .player-panel .pp-trait output { color: var(--s3-dim, #a9b0bd); font-variant-numeric: tabular-nums; font-size: 12px; }
+.mira-shell .player-panel .pp-trait input { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; height: 24px; accent-color: #fff; touch-action: pan-y; }
+.mira-shell .player-panel .pp-trait .pp-why { grid-column: 1 / -1; margin-top: 4px; }
+/* The nature notch on this panel's native slider, whose thumb is 16 px (the shared rule assumes 6). */
+:root .mira-shell .player-panel input[type=range].has-default.has-default { background-position: calc(7.5px + (100% - 16px) * var(--wi-default, 0)) 50%; }
+.mira-shell .player-panel .pp-traits-head button.pp-reset-all { min-height: 28px; }
+/* Phone: the panel stands where the sidebar is, as its one open card; controls at thumb size. */
+.mira-shell .player-panel.is-sheet { right: auto; }
+/* The sidebar it stands in for is hidden while the sheet is open, so nothing shows through. */
+.mira-shell .world-inspector.is-under-sheet { visibility: hidden; }
+.mira-shell .player-panel.is-sheet .pp-close { width: 44px; height: 44px; padding: 12px; margin: -12px -14px 0 0; }
+.mira-shell .player-panel.is-sheet .pp-trait input { height: 36px; }
+
+/* ---- The eject dialog: the Leave-world card (exploration.css) with Banish for ---- */
+.mira-shell .exit-confirm.eject-confirm { z-index: 61; }
+.mira-shell.is-paused .exit-confirm.eject-confirm { z-index: 63; }
+/* Nearly opaque: a decision card must not show the notices or world behind it. */
+.mira-shell .eject-confirm-card { background: rgb(8 12 17 / .92); justify-items: stretch; width: min(440px, 100%); box-sizing: border-box; text-align: left; }
+.mira-shell .eject-confirm strong { letter-spacing: .06em; margin-right: 0; text-transform: none; font-size: 16px; font-weight: 600; }
+.mira-shell .eject-confirm .banish[hidden] { display: none; }
+.mira-shell .eject-confirm .banish-heading { display: block; margin-top: 6px; color: var(--s3-dim, #a9b0bd); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
+.mira-shell .banish-slider { --at: 0; position: relative; height: 58px; margin: 6px 12px 0; touch-action: none; cursor: pointer; outline: none; }
+.mira-shell .banish-track { position: absolute; left: 0; right: 0; top: 14px; height: 4px; border-radius: 2px; background: rgb(255 255 255 / .2); }
+.mira-shell .banish-fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--at) * 100%); border-radius: 2px; background: #fff; }
+.mira-shell .banish-thumb { position: absolute; top: 6px; left: calc(var(--at) * 100%); width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: #fff; }
+.mira-shell .banish-slider:focus-visible .banish-thumb { outline: 2px solid #fff; outline-offset: 3px; }
+.mira-shell .banish-stops > span { position: absolute; top: 24px; left: calc(var(--at) * 100%); transform: translateX(-50%); padding-top: 10px; color: var(--s3-dim, #a9b0bd); font-size: 11.5px; white-space: nowrap; }
+.mira-shell .banish-stops > span::before { content: ''; position: absolute; top: 0; left: 50%; width: 2px; height: 7px; margin-left: -1px; background: rgb(255 255 255 / .5); }
+.mira-shell .banish-stops > span.is-current { color: #fff; font-weight: 600; }
+/* The end words hang inward from their ticks so they stay inside the card. */
+.mira-shell .banish-stops > span:first-child { transform: translateX(-10px); }
+.mira-shell .banish-stops > span:first-child::before { left: 10px; }
+.mira-shell .banish-stops > span:last-child { transform: translateX(calc(-100% + 10px)); }
+.mira-shell .banish-stops > span:last-child::before { left: auto; right: 9px; }
+.mira-shell .eject-confirm .banish-says { margin: 8px 0 0; color: #fff; font-size: 14px; font-weight: 500; }
+.mira-shell .eject-confirm .banish-scope { margin: 2px 0 0; font-size: 12px; }
+.mira-shell .eject-confirm .exit-confirm-actions { justify-content: flex-end; }
+/* Eject is the dangerous action: filled red, never the default focus (EjectDialog.ts). */
+html[data-glass-material] .mira-shell.exploration-ui .eject-confirm button.panel-action.is-danger:not([hidden]),
+.mira-shell.exploration-ui .eject-confirm button.is-danger { background: rgb(190 48 48 / .92); border-color: rgb(255 140 140 / .45); color: #fff; font-weight: 600; }
+html[data-glass-material] .mira-shell.exploration-ui .eject-confirm button.panel-action.is-danger:hover,
+.mira-shell.exploration-ui .eject-confirm button.is-danger:hover { background: rgb(212 62 62 / .96); }
+/* Phone: the card sits low, within reach of the thumb. */
+@media (max-width: 700px) { .mira-shell .eject-confirm { align-items: end; padding-bottom: 32px; } .mira-shell .banish-stops > span { font-size: 10.5px; } }
+
+/* ---- Banished (N), at the foot of the Players card, moderators only ---- */
+.mira-shell .rail-player-body .rail-banished { order: 4; margin-top: 6px; font-size: 12px; }
+.mira-shell .rail-banished[hidden] { display: none; }
+.mira-shell .rail-banished summary { cursor: pointer; padding: 4px 0; }
+.mira-shell .rail-banished .banished-list { list-style: none; margin: 2px 0 0; padding: 0 0 0 14px; }
+.mira-shell .rail-banished li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px; min-height: 32px; }
+.mira-shell .rail-banished .banished-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mira-shell .rail-banished .banished-left { color: var(--s3-dim, #a9b0bd); white-space: nowrap; }
+.mira-shell .rail-player-body .rail-banished button.banished-lift { min-height: 28px; padding: 3px 12px; border-radius: 999px; }

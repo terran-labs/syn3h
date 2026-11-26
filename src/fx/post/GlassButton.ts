@@ -2,12 +2,15 @@ import { respectReducedTransparency } from '../../ui/glassMaterial'
 import { paintedInset, GlassMotionClock } from '../../liquid-glass/paintedSurface'
 import { GlassPress, pressAllowances } from './GlassPress'
 import { insideScroller } from '../../liquid-glass/scrolling'
+import { cardFaceLimit, iconFaceLimit, keycapFaceLimit, textFaceLimit } from '../../liquid-glass/regular'
 import { longFrames } from '../../core/longFrames'
 import { Vector4 } from 'three/webgpu'
 import { uniform, uniformArray } from 'three/tsl'
 
 const panel = '.hud-navigation .inspector-toggle.liquid-glass'
 const round = '.touch-actions .liquid-glass.glass-round'
+const textControls = [panel, round, '.rail-command > input.wi-search', '.world-inspector > .panels-close',
+  '.gear-actions > button', '.rail-foot > button'].join(',')
 const inspector = '.mira-shell > .world-inspector:not(.lobby-settings)'
 const card = inspector + ' > .wi-cards > .wi-card, ' + inspector + ' > .wi-ghosts > .wi-ghost.wi-glass, .drive-notices > .performance-recommendation'
 const buttons = [panel, round, '.pause-actions > button', '.rail-command > button', '.rail-command > input.wi-search',
@@ -265,10 +268,17 @@ export class GlassButton {
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      // Keep the bevel local to the corners as the card opens. Its face transfer stays the same.
+      // The bevel and the ceiling for secondary card text follow the painted opening.
       const panelWeight = isCard ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
+      let inkLimit = isCard ? textFaceLimit + (cardFaceLimit - textFaceLimit) * panelWeight : iconFaceLimit
+      if (b.matches('.pause-actions > button')) {
+        // The shared shortcut and the full Pause labels are hidden in the compact layout.
+        const keycap = b.querySelector('kbd')
+        if (keycap?.checkVisibility()) inkLimit = Number(styleFor(keycap).opacity) < 1 ? keycapFaceLimit : textFaceLimit
+        else if ([...b.querySelectorAll('.pause-word')].some(word => word.checkVisibility())) inkLimit = textFaceLimit
+      } else if (b.matches(textControls)) inkLimit = textFaceLimit
       const press = this.pressEnabled && b.matches(pressable) ? this.pressFor(b) : undefined
-      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, Number(!isCard), press ? 0 : Number(!isCard && pressed))
+      ;(this.presentation.array[i] as Vector4).set(alpha, panelWeight, inkLimit, press ? 0 : Number(!isCard && pressed))
       ;(this.clips.array[i] as Vector4).set(clip.left - c.left, clip.top - c.top, clip.right - c.left, clip.bottom - c.top)
       const half = Math.min(rect.width, rect.height) / 2
       const radius = (s: string) => Math.min(half, s.endsWith('%') ? parseFloat(s) * half / 50 : parseFloat(s) * sx)
