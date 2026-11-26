@@ -49,6 +49,21 @@ try {
       assert.ok(look.writing.startsWith('vertical'), `${name}: Close panels is rotated (${look.writing})`)
       assert.ok(look.box.right <= look.railLeft + 1 && look.box.left >= 0, `${name}: Close panels stands left of the names, on screen (${JSON.stringify(look.box)} rail ${look.railLeft})`)
     }
+    // At rest every row draws at full strength across its whole height, the last included: no
+    // mask and no transparency on the stack or anything round the last row (the owner: "show all
+    // the buttons"). On its side the list runs to the screen's bottom edge.
+    const rest = await page.evaluate(() => {
+      const stack = document.querySelector('.wi-cards'), last = [...stack.children].filter(c => !c.hidden).at(-1)
+      const faded = []
+      for (let el = last; el && el !== document.body; el = el.parentElement) {
+        const s = getComputedStyle(el), mask = s.maskImage || s.webkitMaskImage || 'none'
+        if (mask !== 'none' || Number(s.opacity) < 1) faded.push(`${el.className}: ${mask} ${s.opacity}`)
+      }
+      return { scrollTop: stack.scrollTop, faded, stackBottom: stack.getBoundingClientRect().bottom, viewport: innerHeight }
+    })
+    assert.equal(rest.scrollTop, 0)
+    assert.deepEqual(rest.faded, [], `${name}: at rest the last row draws at full strength (${JSON.stringify(rest.faded)})`)
+    if (name === 'landscape') assert.ok(Math.abs(rest.stackBottom - rest.viewport) <= 1, `${name}: the list runs to the bottom edge (${rest.stackBottom} of ${rest.viewport})`)
     await page.screenshot({ path: `${shots}/${name}-list.png` })
     // Scrolled, the list fades under the search field instead of a hard cut.
     const fade = await page.evaluate(() => { const s = document.querySelector('.wi-cards'); s.scrollTop = 40; return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r({ scrolled: s.scrollTop, mask: getComputedStyle(s).maskImage || getComputedStyle(s).webkitMaskImage || 'none' })))) })

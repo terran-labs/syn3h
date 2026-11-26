@@ -121,10 +121,12 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::before
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::after { display: none; }
 @media (max-width: 700px), (max-height: 500px) {
   /* The list as tall as its names, so what follows it (Close panels) sits right under the last. */
+  /* Upright, the list as tall as its names, so Close panels sits right under the last; longer
+     than the screen, it still runs to the bottom edge. */
   html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards { flex: 0 1 auto; }
-  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards.is-scrolled:not(.is-at-end) { -webkit-mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); }
-  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards.is-scrolled.is-at-end { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
-  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards:not(.is-scrolled):not(.is-at-end) { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
+  /* The only fade is where rows pass under the search field, once scrolled. Every row draws at
+     full strength at rest and at the foot (the owner, 26 November 2026: "show all the buttons"). */
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards.is-scrolled { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
   /* Chat alone on screen: the log fills the card and the field sits at its foot, one line or several. */
   html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body { display: flex; flex-direction: column; overflow: hidden; }
   html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body > * { flex: none; }
@@ -138,6 +140,12 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::after 
     position: absolute; top: calc(var(--rail-command-height, 48px) + 8px); left: -46px; right: auto;
     width: 40px; height: auto; min-height: 0; padding: 14px 0; writing-mode: vertical-rl;
   }
-  html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { rotate: -90deg; }
+  /* Its chevrons point at the game, the open area a tap closes the panels from (the owner). */
+  html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { rotate: 90deg; }
   html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close { left: auto; right: -46px; }
+  html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { rotate: -90deg; }
+  /* The list runs to the bottom edge of the screen (the safe-area edge), rows scrolling off under
+     it with no fade (the owner: "extend all the way down to the very bottom of the screen"). */
+  html .mira-shell.exploration-ui.has-touch .world-inspector { bottom: env(safe-area-inset-bottom, 0px); height: calc(100dvh - var(--edge-top) - env(safe-area-inset-bottom, 0px)); padding-bottom: 0; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards { flex: 1 1 auto; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 }
