@@ -33,6 +33,12 @@ allows three at once machine-wide. Always call it by the trunk path,
 limit, the reaping of a finished job's leftovers and the priority lane (`MIRA_HEAVY_PRIORITY=1`,
 for release-path jobs only), and a waiter on an old copy does not honour the lane (26 November
 2026). `tools/heavy.sh status` shows holders, ages and waiters without taking a slot.
+Every job is stopped after 30 minutes unless it sets `MIRA_HEAVY_TIMEOUT_S`: a production-tier run
+(the full browser set, the 5x6 performance matrix) sets its own, for example 3600, or it is cut
+short and only part of it runs (26 November 2026: a step-2 batch stopped after 26 of 51 checks and
+the matrix after 17 of 30 cells). Report what ran from the result lines, never as a total.
+`tools/vehicle-switch-cost.mjs`'s camera orbit does not move under the Orchestrator's runner (every
+row invalid, "camera did not move", 26 November); its builder's runs measure. To fix another day.
 Unit tests and typechecks need no allocation or
 permission: run them. There is no separate runtime allocation, receipt or pin step; the
 testing principle in `AGENTS.md` sets how much checking a change needs.
