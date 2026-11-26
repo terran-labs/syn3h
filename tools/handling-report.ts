@@ -32,6 +32,8 @@ import * as skip from '../tests/vehicles2/waterSkipScenarios'
 import { skipAngle } from '../src/vehicles/skip'
 import { harness } from '../tests/vehicles2/harness'
 import { MiraBuggy } from '../src/vehicles/MiraBuggy'
+import '../src/bots/params'
+import { ride } from '../tests/bots/camera-ride'
 import { HOVER_PRESETS, Hovercraft } from '../src/vehicles/Hovercraft'
 import { makeBed } from '../tests/vehicles/harness'
 
@@ -189,6 +191,9 @@ async function miraBuggy(): Promise<VehicleReport> {
     fig('On ice: full lock at 15 m/s, sideslip', 'deg', iceTurn.slip),
     fig('On ice: course change in 1 s at full lock, 25 m/s', 'deg', (await onIce(() => buggy.courseChange(25))).after1),
   )
+  // A bot drives the real buggy for 180 s on generated islands with the chase camera following
+  // (tests/bots/camera-ride.ts): RMS vertical acceleration of the lens.
+  for (const kind of [0, 1, 2]) for (const seed of ['a', 'b', 'c', 'd']) detail.push(fig(`Chase camera bounce, bot drive on world ${kind}, seed ${seed}`, 'm/s²', await at(() => ride(seed, 180, kind).bounce)))
   const glide = await at(buggyGlideSink)
   detail.push(fig('Wings open at 35 m/s: height lost in 3 s', 'm', glide.sink), fig('Wings open at 35 m/s: speed after 3 s', 'm/s', glide.speed))
   for (const [model, name] of [[0, 'Classic'], [1, 'Catch'], [2, 'Glide']] as const) {

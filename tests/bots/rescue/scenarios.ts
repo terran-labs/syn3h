@@ -90,7 +90,11 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   const world = createWorld(9.81)
   let height: Height, liquid: Height | undefined
   let stuckAt: Vector3, stuckHeading: number, kind: StuckKind, pull: { x: number; z: number }, flip = false
+  // The buggy's tail fin (buggy.fin) lets it climb out of this notch by itself, so the notch is
+  // run with the fin off: otherwise nothing is stuck and the rescue proves nothing.
+  const finWas = params.get('buggy.fin')?.value
   if (scenario === 'notch') {
+    params.set('buggy.fin', 0)
     // A trench 3.2 m deep and 3.2 m wide across the z axis, steep walls.
     height = (x, z) => -3.2 * Math.max(0, 1 - Math.abs(z) / 1.6) ** 0.6 * Math.min(1, Math.max(0, (14 - Math.abs(x)) / 3))
     stuckAt = new Vector3(0, 0.5, -0.4); stuckHeading = 0; kind = 'wedged'
@@ -191,6 +195,7 @@ export function trial(scenario: Scenario, seed: number, limit = 60, selfTry = 4,
   }
   const result = { scenario, seed, freed: rescue.phase === 'done', seconds: Math.round(t * 10) / 10, attempts: rescue.attempt, stuckAlone, phases }
   gear.dispose(); world.free()
+  if (finWas !== undefined) params.set('buggy.fin', finWas)
   return result
 }
 

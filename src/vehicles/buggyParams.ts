@@ -126,7 +126,7 @@ export const buggyGrip = defineParam({
  */
 export const buggySlide = defineParam({
   id: 'buggy.slide', label: 'Grip at high speed', group: 'Buggy', scope: 'world',
-  default: 3, min: 0.2, max: 4, step: 0.01,
+  default: 3.3, min: 0.2, max: 4, step: 0.01,
 })
 /** Speed (m/s) by which grip has gone from its low speed to its high speed value. */
 export const buggyGripFade = defineParam({
@@ -264,15 +264,16 @@ export const buggyStability = defineParam({
  * Handling presets (the Handling dropdown in the Buggy settings). Each sets the same settings;
  * the defaults above are Assisted, the first. Measured in the handling report (tools/handling-report.ts),
  * 16 November 2026. Assisted became the default on 26 November 2026 (the owner: Balanced fishtailed
- * and could not be controlled at speed). It differs from Sunday 15 November's Assisted in two values
- * kept as they were: the tail fin does not act in the air, and stall blending stays on.
+ * and could not be controlled at speed). It differs from Sunday 15 November's Assisted in three
+ * values kept as they were: the tail fin does not act in the air, stall blending stays on, and grip
+ * at high speed stays 3.3 (at 3, bots on bumpy worlds shook the chase camera twice as hard).
  * "Course change" is in one second at full lock.
  */
 export const BUGGY_PRESETS = definePresets('Buggy', [
   {
     name: 'Assisted',
-    description: 'The default. Counter-steer assist and a tail fin catch any slide, so it stays under control at speed; it is heavier to turn at speed and the wheels steer themselves. The fin works only on the ground, and the wings keep stall blending.',
-    values: { 'buggy.steerFollow': 1, 'buggy.rearSteerFast': 0, 'buggy.sideHold': 0.5, 'buggy.fin': 1, 'buggy.finAir': false, 'buggy.stability': 0, 'buggy.steerLimit': 2, 'buggy.slide': 3, 'buggy.downforce': 0, 'buggy.flightSlip': true, 'buggy.flightModel': 1 },
+    description: 'The default. Counter-steer assist and a tail fin catch any slide, so it stays under control at speed; it is heavier to turn at speed and the wheels steer themselves. Three changes from the Sunday 15 November version: the fin works only on the ground, the wings keep stall blending, and grip at high speed is 3.3 instead of 3.',
+    values: { 'buggy.steerFollow': 1, 'buggy.rearSteerFast': 0, 'buggy.sideHold': 0.5, 'buggy.fin': 1, 'buggy.finAir': false, 'buggy.stability': 0, 'buggy.steerLimit': 2, 'buggy.slide': 3.3, 'buggy.downforce': 0, 'buggy.flightSlip': true, 'buggy.flightModel': 1 },
   },
   {
     name: 'Balanced',
