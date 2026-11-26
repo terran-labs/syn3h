@@ -55,17 +55,17 @@ try {
 
     if (height === 1100) {
       // An empty chat starts below the stack's 200 px comfort floor. Choose a stack height
-      // where it and an older Me card fit inline, but cross the normal collapse threshold
+      // where it and an older Game card (the old Me card, sidebar consolidation) fit inline, but cross the normal collapse threshold
       // when the composer takes a second row. The real content observer must trigger the fit.
       await page.evaluate(() => {
         const shell = window.mira.shell
         const chat = document.querySelector('.wi-card[data-section="chat"]')
         chat.querySelector('.wi-head').click()
-        shell.showCard('you')
+        shell.showCard('game')
         window.miraChat.panel.openAndFocus()
         chat.querySelector('.chat-log').replaceChildren()
       })
-      const me = page.locator('.wi-card[data-section="you"]')
+      const me = page.locator('.wi-card[data-section="game"]')
       await page.waitForFunction(() => !document.querySelector('.wi-card.is-moving'))
       const room = await card.evaluate(chat => {
         const stack = chat.closest('.wi-cards')
@@ -73,7 +73,7 @@ try {
         const height = row => row.querySelector('.wi-head')?.offsetHeight + row.offsetHeight - row.clientHeight || row.offsetHeight
         const headers = visible.reduce((sum, row) => sum + height(row), 0)
         const gaps = (visible.length - 1) * parseFloat(getComputedStyle(stack).rowGap)
-        const me = stack.querySelector('[data-section="you"]')
+        const me = stack.querySelector('[data-section="game"]')
         const inlineChat = Math.min(200, chat.offsetHeight)
         const total = headers + gaps + 200 - height(me) + inlineChat - height(chat)
         stack.style.maxHeight = `${Math.ceil(total - 19)}px`
@@ -81,9 +81,9 @@ try {
       })
       assert.ok(room.inlineChat < 195, `${tag}: empty chat starts under the stack floor ${JSON.stringify(room)}`)
       await page.waitForFunction(() => !document.querySelector('.wi-card.is-moving'))
-      assert.ok(await me.evaluate(el => el.classList.contains('is-open')), `${tag}: Me fits beside the one-line draft`)
+      assert.ok(await me.evaluate(el => el.classList.contains('is-open')), `${tag}: Game fits beside the one-line draft`)
       await draft.fill('One\nTwo')
-      await page.waitForFunction(() => !document.querySelector('.wi-card[data-section="you"]').classList.contains('is-open'), null, { timeout: 8000 })
+      await page.waitForFunction(() => !document.querySelector('.wi-card[data-section="game"]').classList.contains('is-open'), null, { timeout: 8000 })
       await draft.fill('')
       await card.evaluate(el => el.closest('.wi-cards').style.removeProperty('max-height'))
       console.log(`${tag}: the existing stack fit collapsed the older card as the empty history grew`)
