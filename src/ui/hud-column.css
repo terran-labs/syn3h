@@ -167,6 +167,11 @@
 /* The number's cap is taller than the name's letters: it takes no extra height in the row, so
    the name stays centred on its node. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label .gs-index.keycap { margin-block: -.35em; }
+/* At the compact pitch the number caps are stacked 16 px apart: their box is a little shorter
+   here (the same cap, less padding above and below the digit), so the selected row's larger cap
+   clears its neighbours' by more than 2 px with the cursor free. One pitch, free or captured,
+   so nothing moves when the cursor locks. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label .gs-index.keycap { line-height: 1.2; }
 /* The meter follows the name across the change of form by transform, with the names' slide. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-meter { translate: var(--gs-name-x) 0; transition: translate .18s cubic-bezier(.16,1,.3,1); }
 /* As in gear.css: a row crossing the back of the ring jumps, and reduced motion never slides. */
