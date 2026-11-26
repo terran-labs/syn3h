@@ -48,6 +48,8 @@ export interface System {
   prepareCoveredDraw?(): void
   /** Apply world render state after updates can attach actors or switch their materials. */
   prepareWorldDraw?(): void
+  /** Refresh inputs for a screenshot or paused repaint without exposing warm-up meshes. */
+  prepareWorldCapture?(): void
   /** Apply forces. Runs before every physics step. */
   fixedUpdate?(dt: number): void
   /** Read results. Runs after every physics step. */
@@ -380,7 +382,7 @@ export class Game {
       finally {
         this.renderer.setPixelRatio(before)
         // The resize cleared the canvas; the loop is stopped, so draw the paused view again.
-        try { runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) } catch { /* The copy below draws too. */ }
+        try { this.drawWorldCapture(1) } catch { /* The copy below draws too. */ }
       }
     }
     return this.copyFrame(1)
@@ -395,10 +397,7 @@ export class Game {
     const copy = document.createElement('canvas'); copy.width = width; copy.height = height
     const context = copy.getContext('2d'); if (!context) return null
     let drawn = false
-    const draw = () => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
-      for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
-      drawn = true
-    })
+    const draw = () => { drawn = this.drawWorldCapture(draws) }
     if (this.postChain?.withoutGlass) this.postChain.withoutGlass(draw)
     else draw()
     if (!drawn) return null
@@ -412,7 +411,17 @@ export class Game {
    * Physics and the simulation clock stay stopped. */
   redrawPaused(): void {
     if (!this.started || !this.paused || document.hidden) return
-    runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
+    this.drawWorldCapture(1)
+  }
+
+  private drawWorldCapture(draws: number): boolean {
+    let drawn = false
+    runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+      for (const system of this.systems) system.prepareWorldCapture?.()
+      for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      drawn = true
+    })
+    return drawn
   }
 
   /** Frames the loop has run since start, drawn or not. Stands still while paused. */

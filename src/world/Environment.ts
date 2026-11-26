@@ -275,6 +275,12 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const avgSky: RGB = [0, 0, 0]
   let adapted = Number.NaN
   const hc = horizonColors(sun, P.currentSkyParams())
+  let reflectionElapsed = 0
+  const prepareReflections = () => {
+    const elapsed = reflectionElapsed
+    reflectionElapsed = 0
+    reflections.update(elapsed, hour)
+  }
 
   const applyUniforms = () => {
     sky.mieDirectionalG.value = P.skyMieDirectionalG.value
@@ -424,7 +430,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     hz.tintAmount.value = hazeTintAmount.value
     banks.update(hour, game.camera.position, sun[1])
 
-    reflections.update(dt, hour)
+    // Age the capture during simulation, even when the opaque lobby skips world draws.
+    reflectionElapsed += dt
 
     // Cascades are computed from the camera projection; redo them when it changes.
     const cam = game.camera
@@ -459,6 +466,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     horizonColor,
     get hour() { return hour },
     update,
+    prepareWorldDraw: prepareReflections,
+    prepareWorldCapture: prepareReflections,
     dispose() {
       unlisten()
       unbindDay()
