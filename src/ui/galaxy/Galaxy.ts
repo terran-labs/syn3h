@@ -32,7 +32,7 @@ let openingPlayed = false
 /** The loading veil is still up: loading, or waiting for the tap that begins (src/ui/TapToBegin.ts). */
 const veiled = () => { const boot = document.documentElement.dataset.boot; return boot === 'loading' || boot === 'ready' }
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
-import { defineParam, type ParamValue } from '../../../shared/params'
+import { defineParam, params, type ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { lobbyLook, type LobbyLook } from '../../world/lobbyLook'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
@@ -126,7 +126,7 @@ const VIEW_TAN = 0.62
  * half (16 November 2026). The opening grows them to this; the in-scene name keeps the light it
  * had from them at 0.95.
  */
-export const sunRays = defineParam({ id: 'lobby.sunRays', label: 'Lobby sun: god ray strength', group: 'Graphics', scope: 'client', default: 0.475, min: 0, max: 1.5, step: 0.025 })
+export const sunRays = defineParam({ id: 'lobby.sunRays', lobbyGroup: 'Sun', label: 'Lobby sun: god ray strength', group: 'Graphics', scope: 'client', default: 0.475, min: 0, max: 1.5, step: 0.025 })
 /**
  * A world's radius in the lobby from its size. Slightly compressed, so the ratios read true
  * (a moon is plainly a moon) while the smallest world is still something to tap on a phone.
@@ -1074,6 +1074,12 @@ export class Galaxy {
     this.distance = this.reach = fitDistance(options.worlds.map(bodyOf))
     const recipes = [...new Set(options.worlds.filter(w => w.id !== 'custom').map(w => w.recipe ?? w.id))]
     this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
+    // A held backdrop or reduced-motion frame still needs to reflect a visual setting edit.
+    const unsubscribe = params.onChange(id => {
+      const group = params.get(id)?.def.lobbyGroup
+      if (group && group !== 'Opening' && group !== 'Lobby music') this.wake = 2
+    })
+    this.abort.signal.addEventListener('abort', unsubscribe, { once: true })
     this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
     addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
     // Any input ends the lobby's rest at once (idlePulse.ts).

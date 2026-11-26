@@ -206,3 +206,15 @@ dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
 .mira-shell.exploration-ui .lobby-settings .lobby-liquid > summary::-webkit-details-marker { display: none; }
 .mira-shell.exploration-ui .lobby-settings .lobby-liquid > summary:focus-visible { outline: 2px solid var(--s3-ink); outline-offset: 2px; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { .mira-shell.exploration-ui .lobby-settings .lobby-liquid-wrap { transition: none; } }
+
+.mira-shell .lobby-settings .lobby-scene-group .wi-actions button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+@media (pointer: coarse) {
+  .mira-shell .lobby-settings .lobby-scene-group > summary,
+  .mira-shell .lobby-settings .lobby-scene-group .wi-actions button {
+    min-height: 44px;
+  }
+}

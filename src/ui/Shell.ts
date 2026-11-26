@@ -487,6 +487,8 @@ export class Shell implements System {
       quality: this.game.quality, host: this.hostControls, build,
       // The card and a sheet never show together: the card takes over from an open sheet.
       opening: () => { for (const sheet of this.lobbySheets) sheet.close(false) },
+      canReplayOpening: () => !!this.galaxy && !this.playing && !this.dropping && this.panels.active === 'index' && levelNumber(graphicsLevel.value) > 0,
+      replayOpening: mode => this.galaxy?.replayOpening(mode),
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)

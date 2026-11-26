@@ -13,6 +13,8 @@
 
 export type ParamValue = number | boolean
 
+export type LobbySettingsGroup = 'Sun' | 'Planets' | 'Orbits' | 'Camera' | 'Mira name' | 'Opening' | 'Lobby music'
+
 export interface ParamDef<T extends ParamValue = ParamValue> {
   /** Unique dotted id, e.g. 'buggy.traction'. Also the wire key. */
   id: string
@@ -20,6 +22,8 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   /** UI folder, e.g. 'Buggy'. */
   group: string
   scope: 'world' | 'client'
+  /** This setting controls the lobby scene and appears in this advanced Settings group. */
+  lobbyGroup?: LobbySettingsGroup
   default: T
   /** Numbers only. */
   min?: number

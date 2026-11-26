@@ -1,7 +1,7 @@
-import { defineParam } from '../../shared/params'
+import { defineParam, type LobbySettingsGroup } from '../../shared/params'
 
-const mix = (id: string, label: string, value: number) => defineParam({
-  id: `audio.${id}`, label, group: 'Audio', scope: 'client', default: value, min: 0, max: 1, step: 0.01,
+const mix = (id: string, label: string, value: number, lobbyGroup?: LobbySettingsGroup) => defineParam({
+  id: `audio.${id}`, label, lobbyGroup, group: 'Audio', scope: 'client', default: value, min: 0, max: 1, step: 0.01,
 })
 /** First in the Me card's Audio group: the one sound switch a player reaches for (moved from Players & session, 22 November 2026). */
 export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group: 'Audio', scope: 'client', default: false })
@@ -37,4 +37,4 @@ export const leadVolume = mix('lead', 'Theremin level', 0.5)
 /** Share of the night level the lead keeps in full daylight. Dusk and dawn ease between the two. */
 export const leadDaylight = mix('leadDay', 'Theremin by day', 0.25)
 /** The lead in the lobby. 0 keeps it silent there. */
-export const leadLobby = mix('leadLobby', 'Theremin in the lobby', 0)
+export const leadLobby = mix('leadLobby', 'Theremin in the lobby', 0, 'Lobby music')

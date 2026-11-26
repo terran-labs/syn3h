@@ -12,7 +12,7 @@
 import { defineParam } from '../../../shared/params'
 
 /** The lobby's opening: 2, push in, for everyone. 0 (the old veil and fade) and 1 (pull back) are previews, by ?intro=. */
-export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening: 2 push in (the lobby); 0 off, 1 pull back', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
+export const introMode = defineParam({ id: 'lobby.intro', lobbyGroup: 'Opening', label: 'Lobby opening: 2 push in (the lobby); 0 off, 1 pull back', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
 
 /**
  * The opening, every load: a cartoon Big Bang (the owner's direction, 16 November 2026), made
