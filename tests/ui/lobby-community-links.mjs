@@ -207,7 +207,6 @@ async function checkLayout(page, touch, requested, result) {
     const overlapY = Math.min(box.bottom, caption.bottom) - Math.max(box.top, caption.top)
     assert.ok(overlap <= 1 || overlapY <= 1, `caption overlaps the community dock: ${name}`)
   }
-  if (width < 500) assert.ok(Math.abs((controls.left + controls.right) / 2 - width / 2) <= 1)
   assert.ok(result.targets.every(target => target.hit && target.width >= 44 && target.height >= 44))
   assert.equal(githubBox.left, discordBox.left)
   assert.equal(versionBox.left, studioBox.left)

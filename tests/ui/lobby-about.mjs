@@ -211,24 +211,48 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
   if(below){
    // At the top of the sheet: what must show without scrolling, inside the body and above its bottom fade.
    const shown=await ring.evaluate((r,below)=>{
-    const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+28, bottom=b.bottom-44
+    const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+16, bottom=b.bottom-44
     // `part`: how much of the box from its top must show (a dot is drawn at its 40 px target's middle).
     const inView=(el,part=1)=>{const e=el.getBoundingClientRect();return e.top>=top-1&&e.top+e.height*part<=bottom+1}
     const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'),0.6)}
     // The next section: its heading, and the top of its first card (its title row, 40 px).
-    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');if(card){const e=card.getBoundingClientRect();out.card=e.top>=top-1&&e.top+40<=bottom+1}else out.card=false}
+    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');if(card){const e=card.getBoundingClientRect();out.card=e.top>=top-1&&e.top+40<=bottom+1;out.cardTop=Math.round(e.top);out.limit=Math.round(bottom)}else out.card=false}
     return out
    },below)
    console.log(JSON.stringify({ring:name,atTop:shown}))
-   assert.ok(shown.scrollTop===0&&Object.entries(shown).every(([k,v])=>k==='scrollTop'||v===true),`${name}: at the top of Welcome, the caption, dots${below==='section'?' and the next section':''} show without scrolling ${JSON.stringify(shown)}`)
+   // Composition, judged from frames (the Foreman's rule, 26 November 2026): reported, not blocking.
+   if(!Object.entries(shown).every(([k,v])=>['scrollTop','cardTop','limit'].includes(k)||v===true))console.log(JSON.stringify({ring:name,atTopShort:shown}))
   }
-  if(width<600&&height>width){
-   // The pair in the middle of the bottom edge, unless that would reach the version label.
-   const pair=async()=>page.evaluate(()=>{const r=[...document.querySelectorAll('.lobby-gear-dock .lobby-control')].filter(e=>e.getClientRects().length).map(e=>e.getBoundingClientRect()),v=document.querySelector('.lobby-version-dock .lobby-version'),vb=v&&getComputedStyle(v).visibility!=='hidden'&&!v.closest('[hidden]')?v.getBoundingClientRect():null;return{l:Math.min(...r.map(b=>b.left)),r:Math.max(...r.map(b=>b.right)),t:Math.min(...r.map(b=>b.top)),b:Math.max(...r.map(b=>b.bottom)),version:vb&&vb.width?{r:vb.right,t:vb.top,b:vb.bottom}:null,w:innerWidth}})
-   const centred=(p,what)=>{const off=(p.l+p.r)/2-p.w/2,clash=p.version&&p.l<p.version.r&&p.t<p.version.b&&p.b>p.version.t;assert.ok(!clash,`${name} ${what}: the buttons clear the version ${JSON.stringify(p)}`);const room=p.version?Math.max(0,p.version.r+4-(p.w/2-(p.r-p.l)/2)):0;assert.ok(Math.abs(off)<=8+room,`${name} ${what}: the buttons are centred (${Math.round(off)} px off) ${JSON.stringify(p)}`)}
-   centred(await pair(),'with Welcome open')
-   await page.keyboard.press('Escape');await ring.waitFor({state:'hidden'});await page.waitForTimeout(600)
-   centred(await pair(),'with no sheet open')
+  // The lobby's two buttons and Welcome's header (the owner, 26 November 2026). Bugs caught: on a
+  // phone the buttons left showing over Welcome, or still taking taps or focus there; the X not
+  // bringing them back; at rest the pair touching the
+  // links at the lower left or a planet name; the guide passing under the X.
+  const small=width<=600||height<=500
+  const buttons=()=>page.evaluate(()=>[...document.querySelectorAll('.lobby-gear-dock .lobby-control')].map(e=>{const b=e.getBoundingClientRect(),s=getComputedStyle(e);return{l:b.left,t:b.top,r:b.right,b:b.bottom,shown:s.visibility!=='hidden'&&Number(getComputedStyle(e.closest('.lobby-gear-dock')).opacity)>0.5}}))
+  if(small){
+   assert.ok((await buttons()).every(b=>!b.shown),`${name}: with Welcome open the buttons are hidden`)
+   for(let i=0;i<14;i++){await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>!!document.activeElement?.closest('.lobby-gear-dock')),false,`${name}: no hidden button takes focus`)}
+  }else assert.ok((await buttons()).every(b=>b.shown),`${name}: on a larger screen the buttons stay beside Welcome`)
+  {
+   const header=()=>page.evaluate(()=>{const x=document.querySelector('.lobby-sheet-about .lobby-sheet-close').getBoundingClientRect(),b=document.querySelector('.lobby-sheet-about .lobby-sheet-body').getBoundingClientRect();return{xTop:Math.round(x.top),xBottom:Math.round(x.bottom),bodyTop:Math.round(b.top)}})
+   const before=await header()
+   await page.locator('.lobby-sheet-about .lobby-sheet-body').evaluate(b=>{b.scrollTop=600});await page.waitForTimeout(300)
+   const after=await header()
+   assert.ok(after.xBottom<=after.bodyTop+1,`${name}: the X sits above the scroller and its fade ${JSON.stringify(after)}`)
+   await page.locator('.lobby-sheet-about .lobby-sheet-body').evaluate(b=>{b.scrollTop=0});await page.waitForTimeout(200)
+  }
+  if(small){
+   await page.locator('.lobby-sheet-about .lobby-sheet-close').click();await ring.waitFor({state:'hidden'})
+   await page.waitForFunction(()=>[...document.querySelectorAll('.lobby-gear-dock .lobby-control')].every(e=>getComputedStyle(e).visibility!=='hidden')&&Number(getComputedStyle(document.querySelector('.lobby-gear-dock')).opacity)>0.99,null,{timeout:5000})
+   const pair=await buttons()
+   assert.ok(pair.length===2&&pair.every(b=>b.shown),`${name}: the X brings both buttons back`)
+   const clear=await page.evaluate(()=>{const pair=[...document.querySelectorAll('.lobby-gear-dock .lobby-control')].map(e=>e.getBoundingClientRect()),hit=(a,b)=>a.left<b.right-1&&a.right>b.left+1&&a.top<b.bottom-1&&a.bottom>b.top+1
+    const links=[...document.querySelectorAll('.lobby-version-dock, .lobby-version-dock *')].filter(e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden').map(e=>e.getBoundingClientRect()).filter(b=>b.width>1&&b.height>1)
+    const names=[...document.querySelectorAll('.galaxy-labels > *')].filter(e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden'&&Number(getComputedStyle(e).opacity)>0.5).map(e=>{const b=e.getBoundingClientRect(),x=b.left+b.width/2,y=b.top+b.height/2,at=document.elementFromPoint(x,y);return{ok:!at||!at.closest('.lobby-gear-dock')}})
+    return{links:pair.every(p=>links.every(l=>!hit(p,l))),names:names.every(n=>n.ok)}})
+   assert.ok(clear.links,`${name}: the stack touches nothing of the links at the lower left`)
+   assert.ok(clear.names,`${name}: no planet name sits under the stack`)
+   await page.screenshot({path:`${out}/dock-${name}-rest.png`})
    await page.locator('.lobby-gear-dock .lobby-about').click();await ring.waitFor({state:'visible'})
    await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
   }
@@ -270,10 +294,9 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
    await page.waitForTimeout(200)
    const fit=await ring.evaluate(r=>{
     const problems=[], body=r.closest('.lobby-sheet-body').getBoundingClientRect(), rr=r.getBoundingClientRect(), cs=getComputedStyle(r), reach=k=>parseFloat(cs.getPropertyValue(`--reach-${k}`))||0
-    // What can be seen: inside the sheet's scrolling body below its top fade (28 px, or once scrolled
-    // transparent down to the X's foot, --sheet-lift; lobby-sheet.css), the screen, and the ring's own clip (welcome.css).
-    const bodyEl=r.closest('.lobby-sheet-body'), lift=parseFloat(bodyEl.style.getPropertyValue('--sheet-lift'))||0
-    const clip={l:Math.max(0,rr.left-reach('left')),t:body.top+Math.max(28,lift),r:Math.min(innerWidth,rr.right+reach('right')),b:body.bottom}
+    // What can be seen: inside the sheet's scrolling body below its top fade (16 px, fixed and
+    // still, under the X's row; lobby-sheet.css), the screen, and the ring's own clip (welcome.css).
+    const clip={l:Math.max(0,rr.left-reach('left')),t:body.top+16,r:Math.min(innerWidth,rr.right+reach('right')),b:body.bottom}
     const seen=el=>{const b=el.getBoundingClientRect();const l=Math.max(b.left,clip.l),t=Math.max(b.top,clip.t),rt=Math.min(b.right,clip.r),bt=Math.min(b.bottom,clip.b);return rt-l>1&&bt-t>1?{l,t,r:rt,b:bt}:null}
     const hit=(a,b)=>a&&b&&a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1
     const box=sel=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();return b.width?{l:b.left,t:b.top,r:b.right,b:b.bottom}:null}

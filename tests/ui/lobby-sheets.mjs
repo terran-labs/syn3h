@@ -27,7 +27,14 @@ try {
   assert.match((await active()).dialog ?? '', /lobby-sheet-about/, 'focus inside the Welcome sheet')
   const reach = async (word) => { for (let i = 0; i < 80; i++) { await page.keyboard.press('Tab'); if ((await active()).button === word) return true } return false }
   // Settings from beside the sheet: the sheet goes and the right-hand card takes over, with focus.
-  assert.ok(await reach('Settings'), 'Tab reaches the Settings button beside the sheet')
+  // On a small screen the buttons step out while Welcome is open (the owner, 26 November 2026):
+  // Tab never reaches them there, and the way on is the X (Escape), then Settings from its corner.
+  if (width <= 600 || height <= 500) {
+    assert.equal(await reach('Settings'), false, 'on a small screen Tab never reaches the hidden buttons beside Welcome')
+    await page.keyboard.press('Escape')
+    await waitForState(page, 'Welcome closed', () => !document.querySelector('dialog.lobby-sheet[open]'), undefined, 30)
+    await page.locator('.lobby-gear-dock .lobby-gear').focus()
+  } else assert.ok(await reach('Settings'), 'Tab reaches the Settings button beside the sheet')
   await page.keyboard.press('Enter')
   await waitForState(page, 'the settings card in place of Welcome, the name back down', () => !!document.querySelector('#lobby-settings') && !document.querySelector('dialog.lobby-sheet[open]') && window.mira.shell.galaxy.liftShown === 0, undefined, 30)
   assert.ok(await page.evaluate(() => document.activeElement?.closest('#lobby-settings') !== null), 'focus inside the settings card')

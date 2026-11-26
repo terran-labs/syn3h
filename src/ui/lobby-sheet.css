@@ -52,7 +52,6 @@
 /* Welcome has no visible title: it opens on its first line, "Welcome to Mira, ..." (the owner,
    25 November 2026), which keeps clear of the X beside it. The title stays for screen readers. */
 .mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-title { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.mira-shell .lobby-sheet-about .welcome-body .welcome-lede { padding-right: 56px; }
 /* Close is the shared bare X (.card-close, card-chrome.css). A tap outside and Escape close as well. */
 /* In a sheet it stands in the column's upper right, level with the title (the body's top padding). */
 .mira-shell.exploration-ui .lobby-sheet .lobby-sheet-close { position: absolute; right: 8px; top: 30px; }
@@ -74,18 +73,17 @@
   .mira-shell.exploration-ui .lobby-sheet .about-columns { grid-template-columns: 1fr; gap: 16px; }
 }
 
-/* Welcome: the X stays where it is while the guide scrolls, so the top fade deepens as the guide
-   scrolls, down to just below the X (--sheet-lift, LobbySheet), and nothing reads under the X: a
-   picture fades out before it reaches it. At the top nothing moves (the fade is as on every sheet).
-   On a phone held upright the column is centred, the pictures its full width, with the X above
-   them at the right of the title row; held on its side the column keeps its lane clear of the X
-   and the carousel stays inside the column (welcome.css), so the fade stays shallow there. */
-.lobby-sheet-about .lobby-sheet-body {
-  -webkit-mask-image: linear-gradient(180deg, transparent var(--sheet-lift, 0px), #000 calc(var(--sheet-lift, 0px) + 28px), #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(180deg, transparent var(--sheet-lift, 0px), #000 calc(var(--sheet-lift, 0px) + 28px), #000 calc(100% - 44px), transparent);
-}
+/* Welcome: one still header row for the X, and under it the scroller with a fixed top fade (the
+   owner, 26 November 2026: "the gradient location remains constant and the X is always above
+   it"). As on Updates, the header does not scroll: the guide's body starts below the X's row, so
+   its top edge, and the 28 px fade along it, never move, and nothing passes under the X. */
+.lobby-sheet-about .lobby-sheet-panel { --x-row: 78px; }
+/* The fade along the scroller's top is shallower than elsewhere (16 px), so the first line starts
+   just under it; the bottom keeps the usual 44 px. */
+.mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-body { margin-top: var(--x-row); padding-top: 16px;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 16px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 16px, #000 calc(100% - 44px), transparent); }
+@media (max-width: 600px), (max-height: 500px) { .lobby-sheet-about .lobby-sheet-panel { --x-row: 70px; } }
 @media (max-width: 600px) and (min-height: 501px) { .lobby-sheet-about .lobby-sheet-body { padding-right: 12px; } }
-@media (max-height: 500px) { .lobby-sheet-about .lobby-sheet-body { -webkit-mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent); } }
 
 /* Text behind the sheet would read through it and tangle with the sheet's own: the planet
    captions, the corner icons, the hint, the lobby's buttons and the update banner step aside

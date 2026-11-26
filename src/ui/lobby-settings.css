@@ -55,11 +55,12 @@
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px 0 2px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
   font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: none; color: rgb(236 236 236 / .84);
-  text-decoration: underline; text-decoration-color: rgb(236 236 236 / .4); text-decoration-thickness: 1px; text-underline-offset: 4px;
-  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s, text-decoration-color .18s;
+  /* No underline in any state (the owner, 26 November 2026); the focus ring below marks keyboard focus. */
+  text-decoration: none;
+  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s;
 }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus, :focus-visible, :active, :visited) { color: #fff; text-decoration: none; background: none; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
 /* Put the update dot after the version so the two text starts stay aligned. */
@@ -169,23 +170,28 @@ html .mira-shell.exploration-ui .world-inspector.lobby-settings .wi-card > .wi-b
   .mira-shell.exploration-ui .world-inspector.lobby-settings > .lobby-settings-foot { font-size: 11px; letter-spacing: .18em; gap: 8px; padding: 0 12px; }
 }
 
-/* A phone held upright: the pair stands side by side in the middle (the owner, 25 November 2026:
-   "The settings and welcome should also be centered"), the same row as beside an open sheet, raised
-   so the bottom 96 px stay free for the version dock's two lines at the left (its links are being
-   added on another branch). */
-@media (max-width: 600px) and (orientation: portrait) {
-  .lobby-gear-dock:not(.is-beside-sheet) {
-    left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); width: auto;
-    bottom: calc(max(12px, env(safe-area-inset-bottom)) + 96px);
-    grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: calc((100% - 12px) / 3); justify-content: center; gap: 6px;
-  }
-  .mira-shell.exploration-ui .lobby-gear-dock:not(.is-beside-sheet) .lobby-control { justify-content: center; gap: 6px; padding: 0 8px; letter-spacing: .12em; font-size: 10.5px; }
+/* A phone held upright: the same stack as on a desktop, in the lower right (the owner, 26 November
+   2026: "the settings and welcome button should continue to stack vertically in the lower right").
+   The links dock at the lower left (version, GitHub, Discord, terranlabs.com) takes up to 220 px;
+   where the screen is too narrow for both side by side, the stack stands above its 88 px. */
+@media (max-width: 373px) and (orientation: portrait) {
+  .lobby-gear-dock:not(.is-beside-sheet) { bottom: calc(max(12px, env(safe-area-inset-bottom)) + 84px); }
 }
+/* Back from an open sheet, the stack fades in where it stands; it never slides there. */
+.lobby-gear-dock:not(.is-beside-sheet) { animation: lobby-dock-in .25s ease-out both; }
+@keyframes lobby-dock-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .lobby-gear-dock:not(.is-beside-sheet) { animation: none; } }
 
 /* Beside an open sheet (Shell moves the dock into the sheet's dialog): the open one shows as
    pressed (.is-current, glass.css), the others switch to theirs. A phone held upright has no room
    beside it: a row of three under it. */
 dialog.lobby-sheet .lobby-gear-dock { z-index: 2; }
+/* Welcome on a small screen (the sheet's own phone layout): the buttons step out and the X is the
+   way back (the owner, 26 November 2026). Hidden, they take no tap and no focus, and the sheet
+   takes their room (LobbySheet.frame). */
+@media (max-width: 600px), (max-height: 500px) {
+  dialog.lobby-sheet-about .lobby-gear-dock.is-beside-sheet { visibility: hidden; opacity: 0; pointer-events: none; }
+}
 @media (max-width: 600px) and (orientation: portrait) {
   /* Centred under the sheet, each as wide as a third of the row would be (the owner, 25 November
      2026: "centered rather than biased to the left"; there were three, Updates has since gone). */

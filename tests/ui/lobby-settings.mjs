@@ -47,8 +47,8 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     const version = page.locator('[data-lobby-version]')
     // The version is plain text: no card, no glass, no fill behind it.
     assert.deepEqual(await version.evaluate((el) => ({ glass: el.classList.contains('liquid-glass'), fill: getComputedStyle(el).backgroundColor })), { glass: false, fill: 'rgba(0, 0, 0, 0)' }, `${mode}: version has no card`)
-    // It reads as a link and is a full touch target.
-    assert.equal(await version.evaluate((el) => getComputedStyle(el).textDecorationLine), 'underline', `${mode}: version underlined`)
+    // A full touch target, with no underline (the owner, 26 November 2026), in any state.
+    assert.equal(await version.evaluate((el) => getComputedStyle(el).textDecorationLine), 'none', `${mode}: version not underlined`)
     assert.ok((await version.boundingBox()).height >= 44, `${mode}: version is a 44 px target`)
     assert.match(await version.textContent(), /\S/, `${mode}: version shown beside the gear`)
     const versionBox = await version.boundingBox()
