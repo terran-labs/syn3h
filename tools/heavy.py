@@ -49,6 +49,56 @@ def record(path):
     return pid, start, ' '.join(parts[1:] if start is not None else parts)
 
 
+def slot_free(i):
+    """Whether slot i's kernel lock can be taken now (taken and let go at once)."""
+    try:
+        with open(root / f'slot-{i}.lock', 'a+') as probe:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(probe, fcntl.LOCK_UN)
+            return True
+    except BlockingIOError:
+        return False
+
+
+def leftover_pids(i):
+    """None if slot i's lock is free; else the PIDs holding it (lsof), or [] if lsof says nothing."""
+    path = root / f'slot-{i}.lock'
+    try:
+        probe = open(path, 'a+')
+    except FileNotFoundError:
+        return None
+    try:
+        fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        fcntl.flock(probe, fcntl.LOCK_UN)
+        return None
+    except BlockingIOError:
+        try:
+            out = subprocess.run(['lsof', '-t', str(path)], capture_output=True, text=True, timeout=5).stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            out = []
+        return [p for p in out if p != str(os.getpid())]
+    finally:
+        probe.close()
+
+
+def reap(group, grace=3.0):
+    """Stop what is left of a job's own process group once its command has ended (or been
+    stopped): TERM, up to `grace` seconds, then KILL. Only that group: a process that left it
+    (setsid) is not chased, and status shows it if it still holds a slot."""
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(group, sig)
+        except (ProcessLookupError, PermissionError):
+            return
+        deadline = time.time() + grace
+        while time.time() < deadline:
+            try:
+                os.killpg(group, 0)
+            except (ProcessLookupError, PermissionError):
+                return
+            time.sleep(0.1)
+
+
 def status():
     """Who holds each slot and for how long, who waits, and any release hold. Takes no slot."""
     print(f'heavy: {slots} slots under {root}')
@@ -59,7 +109,10 @@ def status():
             when = age(start or owner.stat().st_mtime)  # an older owner file: written at its start
             print(f'  slot {i}: pid {pid}{"" if alive(pid) else " (gone)"}, {when}: {command[:160]}')
         except (FileNotFoundError, ValueError, IndexError):
-            print(f'  slot {i}: free')
+            # No owner: free only if the kernel lock can be taken. A process that inherited the
+            # lock and outlived its job (a watchdog's sleep, on 26 November) still holds it.
+            held = leftover_pids(i)
+            print(f'  slot {i}: free' if held is None else f'  slot {i}: held by a leftover of a finished job{": pid " + ", ".join(held) if held else ""}')
     waiters = []
     for path in sorted(root.glob('waiting-*')):
         try:
@@ -67,7 +120,9 @@ def status():
         except (FileNotFoundError, ValueError, IndexError):
             continue
         if alive(pid):
-            waiters.append(f'  waiting: pid {pid}, {age(start) if start else "?"}: {command[:160]}')
+            waiters.append(f'  waiting{" (priority)" if path.name.startswith("waiting-p-") else ""}: pid {pid}, {age(start) if start else "?"}: {command[:160]}')
+        else:
+            path.unlink(missing_ok=True)  # a waiter that died without tidying up
     print('\n'.join(waiters) if waiters else '  nobody waiting')
     phase = hold_phase()
     print('  release hold: none' if phase is None else f'  release hold: {phase or "full"} ({hold.read_text().split()[0]})')
@@ -125,8 +180,28 @@ if sys.argv[1:] == ['status']:
     sys.exit(0)
 
 # A waiter says so while it waits, so status can list it; gone once it has a slot or ends.
-waiting = root / f'waiting-{os.getpid()}'
-waiting.write_text(f'{os.getpid()} {time.time():.0f} ' + ' '.join(sys.argv[1:]) + '\n')
+# MIRA_HEAVY_PRIORITY=1: a release-path job (a train run, or a branch blocking a release). While
+# a priority waiter waits, ordinary waiters take no free slot; among equals the oldest goes
+# first, so a free slot goes in turn rather than to whoever polls first.
+PRIORITY = os.environ.get('MIRA_HEAVY_PRIORITY') == '1'
+waiting = root / f'waiting-{"p-" if PRIORITY else ""}{os.getpid()}'
+# The rank uses exactly the start time written, so two waiters always agree who is ahead.
+waiting_since = float(f'{time.time():.3f}')
+waiting.write_text(f'{os.getpid()} {waiting_since:.3f} ' + ' '.join(sys.argv[1:]) + '\n')
+MY_RANK = (0 if PRIORITY else 1, waiting_since, os.getpid())
+
+
+def ahead_of_me():
+    """Live waiters that go before this one: priority first, then the oldest."""
+    count = 0
+    for path in root.glob('waiting-*'):
+        try:
+            pid, start, _ = record(path)
+        except (FileNotFoundError, ValueError, IndexError):
+            continue
+        if pid != os.getpid() and alive(pid) and (0 if path.name.startswith('waiting-p-') else 1, start or 0, pid) < MY_RANK:
+            count += 1
+    return count
 
 
 def done_waiting():
@@ -148,6 +223,10 @@ while True:
             time.sleep(2)
             continue
         usable = range(max(1, slots - shared + 1), slots + 1)
+    # Wait my turn: only as many waiters as there are free slots may take one.
+    if ahead_of_me() >= sum(slot_free(i) for i in usable):
+        time.sleep(1)
+        continue
     for i in usable:
         lock = open(root / f'slot-{i}.lock', 'a+')
         try:
@@ -204,6 +283,9 @@ while True:
                     except subprocess.TimeoutExpired:
                         continue
                 code = 124
+            # The command has ended: anything it left running in its own group (a watchdog's
+            # sleep inherits the slot's lock) goes too, so the slot frees now, not later.
+            reap(child.pid)
         finally:
             try:
                 if owner.read_text().startswith(token + ' '):
