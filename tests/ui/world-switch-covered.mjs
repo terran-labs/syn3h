@@ -35,12 +35,28 @@ async function leave(page) {
   }, null, { timeout: 45000 })
 }
 
+async function chooseWithKeyboard(page, id) {
+  const selector = `.galaxy-world-key[data-world="${id}"], .galaxy-label[data-world="${id}"]`
+  for (let i = 0; i < 40; i++) {
+    await page.keyboard.press('Tab')
+    if (await page.evaluate(selector => document.activeElement?.matches(selector), selector)) {
+      await page.keyboard.press('Enter')
+      return
+    }
+  }
+  assert.fail(`Keyboard could not reach ${id}`)
+}
+
 async function choose(page, id, touch, flat) {
   const label = page.locator(`.galaxy-label[data-world="${id}"]`)
   const input = touch ? 'tap' : 'click'
-  if (flat || await label[input]({ trial: true, timeout: 1600 }).then(() => true, () => false)) {
+  if (await label[input]({ trial: true, timeout: 1600 }).then(() => true, () => false)) {
     await label[input]()
     return
+  }
+  if (flat) {
+    console.log(`Flat ${id} label could not receive ${input}; using native Tab and Enter`)
+    return chooseWithKeyboard(page, id)
   }
   // A caption can be suppressed on a narrow screen. Use the foreground disc where it is hit-testable.
   const point = await page.evaluate(id => {
@@ -65,9 +81,7 @@ async function choose(page, id, touch, flat) {
     else await page.mouse.click(point.x, point.y)
     return
   }
-  const choice = page.locator(`.galaxy-world-key[data-world="${id}"]:not([disabled]), .galaxy-label[data-world="${id}"]:not([disabled])`).first()
-  await choice.focus()
-  await page.keyboard.press('Enter')
+  await chooseWithKeyboard(page, id)
 }
 
 function observeSwitch() {
