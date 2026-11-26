@@ -25,8 +25,12 @@ const [out, dir] = argv
 const webgl = argv.includes('--webgl')
 const sizes = opt('--sizes', '1280x800,390x844').split(',').map((s) => { const [w, h] = s.split('x').map(Number); return { width: w, height: h } })
 const HEIGHTS = [0.1, 0.07, 0.05, 0.03, 0.01, -0.01, -0.03, -0.05, -0.07, -0.1]
-const POSES = { level: { pitch: 0, roll: 0 }, pitched: { pitch: -15, roll: 0 }, rolled: { pitch: -4, roll: 20 } }
-const SEAS = { calm: 0, waves: null }
+const POSES_ALL = { level: { pitch: 0, roll: 0 }, pitched: { pitch: -15, roll: 0 }, rolled: { pitch: -4, roll: 20 } }
+// --quick: one sea and pose, for checking the check.
+const quick = argv.includes('--quick')
+const POSES = quick ? { level: POSES_ALL.level } : POSES_ALL
+const SEAS = quick ? { calm: 0 } : { calm: 0, waves: null }
+let saved = 0
 await mkdir(out, { recursive: true })
 const app = await serveStable({ dir, port: 0 })
 const port = app.server.address().port
@@ -44,6 +48,8 @@ for (const viewport of sizes) {
   await page.evaluate(() => {
     const s = window.mira
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0)
+    // No post effects: bloom would spread the probe's colours across the edges being measured.
+    s.params.set('post.on', false)
     const q = s.game.quality; q.setAuto?.(false); q.setLevel(3)
     const canvas = s.game.canvas ?? document.querySelector('canvas')
     for (const el of document.body.querySelectorAll('*')) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden'
@@ -58,8 +64,33 @@ for (const viewport of sizes) {
     let work = 0
     for (const key of ['createRenderPipeline', 'createProgram']) { if (typeof b[key] !== 'function') continue; const o = b[key].bind(b); b[key] = (...a) => { work++; return o(...a) } }
     window.wlaWork = () => work
+    // The lens exactly where it is put: the lens rule (WaterEffects.applyLens) would hold it clear
+    // of the surface or ease it across, so two frames would show the line in different places.
+    const fx = s.game.systems?.find?.((x) => x.waterline)
+    if (fx) fx.applyLens = () => {}
+    // The shaders' clock (three's NodeFrame time) runs on wall time even while the game is paused,
+    // and the sea's visual detail moves with it: a few hundred milliseconds between two frames move
+    // the line by tens of pixels at the near plane. Hold it while the two probe frames are drawn.
+    const nf = s.game.renderer._nodes?.nodeFrame
+    if (nf) { const update = nf.update.bind(nf); nf.update = () => { update(); if (window.wlaTime != null) nf.time = window.wlaTime } }
+    window.wlaNodeFrame = nf
+    // The swell's phases follow the room's clock (net ServerClock, wall time). Hold it while the
+    // two probe frames are drawn, so the swell is the same in both. (Holding the page's own clocks
+    // instead stops the game drawing at all.)
+    const clock = window.miraNet?.clock
+    if (clock) { const now = clock.now.bind(clock); clock.now = () => window.wlaClock ?? now() }
+    window.wlaFreeze = (on) => { window.wlaClock = on && clock ? clock.now() : null }
   })
   await page.waitForTimeout(6000)
+  // Count shader work from here on: the level change above prepares its own, as in play.
+  const work0 = await page.evaluate(() => window.wlaWork())
+  // One frame of the game, then held: both probe frames show the same waves.
+  const step = () => page.evaluate(async () => {
+    const g = window.mira.game
+    g.resume()
+    for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(r))
+    g.pause()
+  })
   // Edge rows per column from a screenshot, decoded in the page.
   const analyse = (png, kind) => page.evaluate(async ({ b64, kind }) => {
     const img = new Image(); img.src = `data:image/png;base64,${b64}`; await img.decode()
@@ -71,9 +102,10 @@ for (const viewport of sizes) {
       for (let y = 1; y < c.height; y++) {
         const i = (y * c.width + x) * 4, j = ((y - 1) * c.width + x) * 4
         if (kind === 'red') { const a = d[i] > 128 && d[i + 1] < 64, b = d[j] > 128 && d[j + 1] < 64; if (a !== b) hits.push(y) }
-        else if (d[i + 1] > 200 && d[i] < 120 && d[i + 2] < 120) hits.push(y)
+        else if (d[i + 1] > 200 && d[i] < 150 && d[i + 2] < 150) hits.push(y)
       }
-      rows.push(kind === 'red' ? hits : hits.length ? [hits.reduce((s, v) => s + v, 0) / hits.length] : [])
+      // The green band lies against the cut on the drawn side: its pixel nearest the line is the cut.
+      rows.push(hits)
     }
     return { width: c.width, rows }
   }, { b64: png.toString('base64'), kind })
@@ -88,34 +120,43 @@ for (const viewport of sizes) {
           s.game.camera.up.set(Math.sin(roll), Math.cos(roll), 0)
           s.camera.setCinematicPose(new V(at.x, y, at.z), new V(at.x, y + Math.tan(pitch) * 50, at.z - 50), 60)
         }, { h, pose })
-        await page.waitForTimeout(1200)
+        await page.waitForTimeout(1500)
         const shots = {}
+        await page.evaluate(() => { window.wlaTime = window.wlaNodeFrame?.time ?? null; window.wlaFreeze(true) })
         for (const mode of [1, 2]) {
           await page.evaluate((m) => window.__miraWaterlineProbe(m), mode)
-          await page.waitForTimeout(300)
+          await step()
           shots[mode] = await page.screenshot()
         }
-        await page.evaluate(() => window.__miraWaterlineProbe(0))
+        await page.evaluate(() => { window.__miraWaterlineProbe(0); window.wlaTime = null; window.wlaFreeze(false); window.mira.game.resume() })
         const red = await analyse(shots[1], 'red'), green = await analyse(shots[2], 'green')
-        const gaps = []
+        const gaps = [], bands = []
         let skipped = 0
         for (let x = 0; x < red.width; x++) {
-          const g = green.rows[x][0], r = red.rows[x]
-          if (g === undefined || !r.length) { skipped++; continue }
-          gaps.push(Math.min(...r.map((y) => Math.abs(y - g))))
+          const g = green.rows[x], r = red.rows[x]
+          if (!g.length || !r.length) { skipped++; continue }
+          // The band's two edges: one is the cut, the other lies 2 per cent of the near distance into
+          // the water. The gap is to the nearer edge, so a line inside the band is not read as 0.
+          const top = g[0], bottom = g[g.length - 1]
+          bands.push(bottom - top + 1)
+          let best = Infinity
+          for (const a of r) best = Math.min(best, Math.abs(a - top), Math.abs(a - bottom))
+          gaps.push(best)
         }
         gaps.sort((a, b) => a - b)
         const at = (q) => (gaps.length ? gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * q))] : null)
         const name = `${report.backend}-${viewport.width}x${viewport.height}-${seaName}-${poseName}-${h >= 0 ? '+' : ''}${h.toFixed(2)}m`
-        const row = { name, columns: gaps.length, skipped, p50: at(0.5), p95: at(0.95), max: gaps.at(-1) ?? null }
+        bands.sort((a, b) => a - b)
+        const row = { name, columns: gaps.length, skipped, p50: at(0.5), p95: at(0.95), max: gaps.at(-1) ?? null, bandPx: bands.length ? bands[Math.floor(bands.length / 2)] : null }
         row.pass = row.p95 === null || row.p95 <= MAX_PX
+        if (row.p95 === null && saved < 4) { saved++; await writeFile(`${out}/${name}-red.png`, shots[1]); await writeFile(`${out}/${name}-green.png`, shots[2]) }
         if (!row.pass) { await writeFile(`${out}/${name}-red.png`, shots[1]); await writeFile(`${out}/${name}-green.png`, shots[2]) }
         report.frames.push(row)
         console.log(JSON.stringify(row))
       }
     }
   }
-  report.builds[`${viewport.width}x${viewport.height}`] = await page.evaluate(() => window.wlaWork())
+  report.builds[`${viewport.width}x${viewport.height}`] = (await page.evaluate(() => window.wlaWork())) - work0
   await ctx.close()
 }
 await browser.close()

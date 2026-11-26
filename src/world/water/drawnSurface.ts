@@ -19,7 +19,7 @@
  * switch); elsewhere a uniform branch skips the work.
  */
 import * as THREE from 'three/webgpu'
-import { cameraNear, cameraWorldMatrix, float, Fn, If, mix, positionView, renderGroup, sin, smoothstep, uniform, vec4 } from 'three/tsl'
+import { cameraNear, cameraWorldMatrix, float, floor, Fn, If, mod, positionView, renderGroup, select, sin, smoothstep, uniform, vec2, vec4 } from 'three/tsl'
 import { SEA_COMPONENTS } from './seaWaves'
 import { detailHeight } from './seaDetail'
 
@@ -84,11 +84,36 @@ export function updateDrawnSea(f: DrawnSeaFrame): void {
   }
 }
 
-/** Height of the drawn sea at world (x, z) near the lens, metres. */
-export function drawnSeaHeight(xz: N): N {
+/** The sea's surface at a vertex of the clipmap's finest level: what its vertex stage computes there. */
+function vertexHeight(xz: N): N {
   let h: N = float(0)
   for (const u of swell) h = h.add(u.w.mul(sin(u.x.mul(xz.x).add(u.y.mul(xz.y)).add(u.z))))
   return level.add(h.mul(shoal)).add(detailHeight(xz, baseCell))
+}
+
+/**
+ * Height of the drawn sea at world (x, z) near the lens, metres: the mesh itself, not the smooth
+ * surface it samples. At the lens a pixel spans a fraction of a millimetre of the near plane, so the
+ * flat triangles between vertices (a few millimetres off the smooth sum) would move the line tens
+ * of pixels. So the four corners of the finest level's cell under (x, z) are evaluated as its
+ * vertices are, and interpolated over the same triangle the GPU draws: clipmap.ts splits each cell
+ * along the diagonal its index parity picks (clipmapIndices), and the finest level's vertices sit at
+ * whole multiples of its cell (its centre snaps to two cells), with no morph near the camera.
+ */
+export function drawnSeaHeight(xz: N): N {
+  const g = xz.div(baseCell)
+  const i: N = floor(g)
+  const f: N = g.sub(i)
+  const corner = (dx: number, dz: number) => vertexHeight(i.add(vec2(dx, dz)).mul(baseCell))
+  const h00 = corner(0, 0), h10 = corner(1, 0), h01 = corner(0, 1), h11 = corner(1, 1)
+  const u = f.x, v = f.y
+  // Odd cells: diagonal from (1, 0) to (0, 1). Even cells: from (0, 0) to (1, 1).
+  const odd = mod(i.x.add(i.y), 2).abs().greaterThan(0.5)
+  const oddLow = h00.add(u.mul(h10.sub(h00))).add(v.mul(h01.sub(h00)))
+  const oddHigh = h11.add(float(1).sub(u).mul(h01.sub(h11))).add(float(1).sub(v).mul(h10.sub(h11)))
+  const evenUpper = h00.add(u.mul(h11.sub(h01))).add(v.mul(h01.sub(h00)))
+  const evenLower = h00.add(u.mul(h10.sub(h00))).add(v.mul(h11.sub(h10)))
+  return select(odd, select(u.add(v).lessThan(1), oddLow, oddHigh), select(v.greaterThan(u), evenUpper, evenLower))
 }
 
 /**

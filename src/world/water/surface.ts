@@ -557,7 +557,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   material.colorNode = mix(vec3(0), above, fromAbove)
   // The waterline check (drawnSurface.ts waterlineProbe): mode 2 marks the sea's fragments at
   // the near plane, the drawn edge of the water on the lens, in green.
-  const atCut = positionView.z.negate().lessThan(cameraNear.mul(1.03))
+  const atCut = positionView.z.negate().lessThan(cameraNear.mul(1.02))
   material.emissiveNode = select(waterlineProbe.equal(2).and(atCut), vec3(0, 60, 0), below.mul(float(1).sub(fromAbove)))
   // Inside the window the bright sky is the surface's own colour: mostly opaque so it reads
   // as a window of light rather than the fogged sky dome behind it.
