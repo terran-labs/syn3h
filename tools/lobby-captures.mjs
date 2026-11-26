@@ -16,9 +16,7 @@
  *   --out          output root (default captures/lobby in this checkout)
  *   --no-clip      skip the dive clip (the slowest part: 7 s at 60 fps, 420 frames)
  *   --card-only    skip the README still and clip
- *   --card         which card --install and --site use: starfield (the default) or galaxy;
- *                  both are always written
- *   --tagline-y    the tagline's baseline in card pixels (default 565; the earlier cards had 492)
+ *   --tagline-size the tagline's size in card pixels (default 58; the earlier cards had 38)
  *   --install      write the card into public/brand under a new content-hashed name and point
  *                  index.html's og:image and twitter:image at it
  *   --site         also copy the still into a terranlabs.com checkout (public/products/mira/
@@ -33,19 +31,16 @@
  * so a still never catches a world mid-pulse; and a build without a release version (a local
  * build of main) has its "dev" version line hidden rather than shown.
  *
- * The share card, on the owner's direction of 25 November 2026: the earlier cards' black
- * silhouette and warm gold glow, drawn by their own generator (logoSvg's 'card' layout, through
- * tools/brand/card-svg.ts), at the same position and scale, with "Your galaxy awaits." only, in
- * generate.ts's font, size and colour, moved down to --tagline-y. Two backgrounds:
- * - starfield: the earlier cards' own dark starfield. The mark and glow are pixel for pixel the
- *   earlier card's. Lossless PNG.
- * - galaxy: the same mark and glow over the real lobby galaxy: the lobby in a 1200 x 780 window
- *   at 2x with its own wordmark sent off screen (the "behind the sun" placement, lobby.wordmark 1,
- *   places the name by the HTML logo box, so a box moved away leaves the galaxy without it) and
- *   its buttons, names and planet glow hidden. The card is its top 630 rows, so the sun sits
- *   below the mark; the galaxy is dimmed in an ellipse behind the mark, only as much as the glow
- *   needs. PNG at six bits per channel, rounded: within 2/255 of the composite, no banding at 200
- *   percent, two thirds of the full-colour bytes. (A 256-colour palette greyed the worlds.)
+ * The share card, as the owner chose on 25 November 2026: the earlier cards' black silhouette
+ * and warm gold glow on their own dark starfield, drawn by their own generator (logoSvg's 'card'
+ * layout, through tools/brand/card-svg.ts), so the mark, glow and sky are pixel for pixel the
+ * earlier card's. Under it "Your galaxy awaits." only, in generate.ts's face and colour
+ * (Barlow Condensed 600, #edf3ff) at --tagline-size, vertically centred in the space below the
+ * logo: the text's optical centre (the mean of its cap-height and x-height middles, measured from
+ * the font) sits midway between the bottom edge and where the glow below the mark fades back to
+ * the sky (the first row under the mark where the mark-and-glow layer alone, mark.svg, is nowhere more
+ * than 4/255 opaque).
+ * Lossless PNG. The lobby galaxy was tried behind it and the owner preferred the plain sky.
  *
  * A released version's share card stays at its own address (tools/frozen-versions.mjs refuses a
  * build that changes bytes an archived version serves), so --install writes a new name,
@@ -68,16 +63,14 @@ const root = resolve(here, '..')
 const FFMPEG = process.env.FFMPEG ?? '/opt/homebrew/bin/ffmpeg'
 const CARD = { width: 1200, height: 630 }
 
-const options = parseArgs(process.argv.slice(2), ['dir', 'url', 'label', 'out', 'no-clip', 'card-only', 'card', 'tagline-y', 'install', 'site'])
+const options = parseArgs(process.argv.slice(2), ['dir', 'url', 'label', 'out', 'no-clip', 'card-only', 'tagline-size', 'install', 'site'])
 if (!options.dir === !options.url) throw new Error('Give exactly one of --dir or --url')
 const label = typeof options.label === 'string' ? options.label : 'vlobby'
 if (!/^v[\w.-]+$/.test(label)) throw new Error('--label starts with v, like v26.11.2500')
 const out = resolve(typeof options.out === 'string' ? options.out : join(root, 'captures/lobby'))
 const source = options.dir ? ['--dir', resolve(options.dir)] : ['--url', options.url]
-const cardChoice = typeof options.card === 'string' ? options.card : 'starfield'
-if (!['starfield', 'galaxy'].includes(cardChoice)) throw new Error('--card takes starfield or galaxy')
-const TAGLINE_Y = Number(options['tagline-y'] ?? 565)
-if (!(TAGLINE_Y > 300 && TAGLINE_Y < 600)) throw new Error('--tagline-y is a baseline between 300 and 600')
+const TAGLINE_SIZE = Number(options['tagline-size'] ?? 58)
+if (!(TAGLINE_SIZE >= 20 && TAGLINE_SIZE <= 90)) throw new Error('--tagline-size is between 20 and 90 pixels')
 
 function showcase(args) {
   return new Promise((ok, fail) => {
@@ -98,64 +91,44 @@ if (!options['card-only']) {
   for (const f of ['lobby.png', 'lobby.jpg', 'lobby-1600.webp']) if (!existsSync(join(still, f))) throw new Error(`no ${f} in ${still}`)
 }
 
-// 2. The share cards.
-const galaxyRun = join(out, 'card-galaxy'), svgDir = join(out, 'card-svg')
-await showcase(['--only', 'lobby', '--view', `${CARD.width}x780@2`, '--bare', '--params', JSON.stringify({ ...NO_GLOW, 'lobby.wordmark': 1 }),
-  '--css', '.shell-logo { margin-top: -4000px !important; animation: none !important; }', '--out', galaxyRun])
-const galaxy = join(galaxyRun, label, 'lobby.png')
-if (pngSize(galaxy).join() !== `${CARD.width * 2},1560`) throw new Error(`galaxy capture is ${pngSize(galaxy).join(' x ')}`)
+// 2. The share card: no capture, only the generator and a headless page's canvas.
+const svgDir = join(out, 'card-svg')
 execFileSync('npx', ['tsx', join(here, 'brand/card-svg.ts'), svgDir], { cwd: root, stdio: ['ignore', 'ignore', 'inherit'] })
-const composed = await compose(galaxy, svgDir)
-// Six bits per channel, rounded (see the header), for the galaxy card; the starfield is lossless.
-const SIX_BITS = "bitand(min(val+2\\,255)\\,252)"
-const cards = {}
-for (const [name, data] of Object.entries(composed)) {
-  const full = join(out, `share-card-${name}-full.png`), file = join(out, `share-card-${name}.png`)
-  writeFileSync(full, data)
-  const vf = name === 'galaxy' ? ['-vf', `format=rgb24,lutrgb=r='${SIX_BITS}':g='${SIX_BITS}':b='${SIX_BITS}'`] : ['-vf', 'format=rgb24']
-  execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', full, ...vf, '-compression_level', '100', '-pred', 'mixed', file])
-  if (pngSize(file).join() !== `${CARD.width},${CARD.height}`) throw new Error(`${file} is ${pngSize(file).join(' x ')}`)
-  cards[name] = file
-}
-const card = cards[cardChoice]
+const composed = await compose(svgDir)
+const card = join(out, 'share-card.png'), cardFull = join(out, 'share-card-full.png')
+writeFileSync(cardFull, composed.png)
+execFileSync(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-i', cardFull, '-vf', 'format=rgb24', '-compression_level', '100', '-pred', 'mixed', card])
+if (pngSize(card).join() !== `${CARD.width},${CARD.height}`) throw new Error(`${card} is ${pngSize(card).join(' x ')}`)
+console.log(`tagline ${TAGLINE_SIZE}px: glow ends at y ${composed.glowEnd}, optical centre at ${composed.centre.toFixed(1)}, baseline ${composed.baseline}, width ${composed.width.toFixed(0)} px (cap ${composed.cap}, x-height ${composed.xHeight})`)
 
-/** Both cards, drawn in a headless page's canvas from the generator's SVGs and the galaxy frame. */
-async function compose(galaxyFile, dir) {
+/** The card from the generator's SVG, with the tagline placed by the rule in the header. */
+async function compose(dir) {
   const { chromium } = await import('playwright-core')
   const font = readFileSync(join(root, 'public/fonts/barlow-condensed-600-latin.woff2')).toString('base64')
   const browser = await chromium.launch({ channel: 'chrome', headless: true })
   try {
     const page = await browser.newPage()
     await page.route('**/*', (route) => route.abort())
-    const r = await page.evaluate(async ({ sky, mark, box, galaxy, font, W, H, y }) => {
-      const img = async (src) => { const i = new Image(); i.src = src; await i.decode(); return i }
-      const svg = (s) => img(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(s)}`)
-      const S = await svg(sky), M = await svg(mark), G = await img(`data:image/png;base64,${galaxy}`)
+    const r = await page.evaluate(async ({ sky, mark, box, font, W, H, size }) => {
+      const i = new Image(); i.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(sky)}`; await i.decode()
+      const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d')
+      x.drawImage(i, 0, 0)
+      // Where the glow ends: the first row under the mark where the mark-and-glow layer alone
+      // (mark.svg, on nothing) is nowhere more than 4/255 opaque.
+      const m = new Image(); m.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(mark)}`; await m.decode()
+      const mc = document.createElement('canvas'); mc.width = W; mc.height = H; const mx = mc.getContext('2d'); mx.drawImage(m, 0, 0)
+      const a = mx.getImageData(0, 0, W, H).data
+      let glowEnd = Math.ceil(box.y + box.height)
+      for (let y = glowEnd; y < H; y++) { let most = 0; for (let px = 0; px < W; px++) most = Math.max(most, a[(y * W + px) * 4 + 3]); if (most > 4) glowEnd = y + 1; else break }
       const face = new FontFace('Mira', `url(data:font/woff2;base64,${font})`); await face.load(); document.fonts.add(face)
-      const make = (onGalaxy) => {
-        const c = document.createElement('canvas'); c.width = W; c.height = H; const x = c.getContext('2d')
-        if (!onGalaxy) x.drawImage(S, 0, 0)
-        else {
-          x.drawImage(G, 0, 0, G.width, H * G.width / W, 0, 0, W, H)
-          // The galaxy dimmed behind the mark only, the ellipse ending above the sun.
-          x.save(); x.translate(box.x + box.width / 2, box.y + box.height / 2 - 20); x.scale(1, 0.62)
-          const g = x.createRadialGradient(0, 0, 0, 0, 0, box.width * 0.72)
-          g.addColorStop(0, 'rgba(3,6,11,0.5)'); g.addColorStop(0.6, 'rgba(3,6,11,0.375)'); g.addColorStop(1, 'rgba(3,6,11,0)')
-          x.fillStyle = g; x.fillRect(-W, -W, 2 * W, 2 * W); x.restore()
-          x.drawImage(M, 0, 0)
-        }
-        // generate.ts's tagline; over the galaxy a soft shadow keeps it clear of the rays.
-        x.textAlign = 'center'; x.fillStyle = '#edf3ff'; x.font = '38px Mira'
-        if (onGalaxy) { x.shadowColor = 'rgba(0,0,0,0.7)'; x.shadowBlur = 8 }
-        x.fillText('Your galaxy awaits.', W / 2, y)
-        return c.toDataURL('image/png').split(',')[1]
-      }
-      return { starfield: make(false), galaxy: make(true) }
-    }, {
-      sky: readFileSync(join(dir, 'sky.svg'), 'utf8'), mark: readFileSync(join(dir, 'mark.svg'), 'utf8'), box: JSON.parse(readFileSync(join(dir, 'box.json'), 'utf8')),
-      galaxy: readFileSync(galaxyFile).toString('base64'), font, W: CARD.width, H: CARD.height, y: TAGLINE_Y,
-    })
-    return { starfield: Buffer.from(r.starfield, 'base64'), galaxy: Buffer.from(r.galaxy, 'base64') }
+      x.font = `${size}px Mira`
+      const cap = x.measureText('H').actualBoundingBoxAscent, xHeight = x.measureText('x').actualBoundingBoxAscent
+      const centre = (glowEnd + H) / 2, baseline = Math.round(centre + (cap / 2 + xHeight / 2) / 2)
+      const text = 'Your galaxy awaits.'
+      x.textAlign = 'center'; x.fillStyle = '#edf3ff'; x.fillText(text, W / 2, baseline)
+      return { png: c.toDataURL('image/png').split(',')[1], glowEnd, centre, baseline, cap: +cap.toFixed(1), xHeight: +xHeight.toFixed(1), width: x.measureText(text).width }
+    }, { sky: readFileSync(join(dir, 'sky.svg'), 'utf8'), mark: readFileSync(join(dir, 'mark.svg'), 'utf8'), box: JSON.parse(readFileSync(join(dir, 'box.json'), 'utf8')), font, W: CARD.width, H: CARD.height, size: TAGLINE_SIZE })
+    return { ...r, png: Buffer.from(r.png, 'base64') }
   } finally { await browser.close() }
 }
 
@@ -163,7 +136,7 @@ if (!options['card-only']) {
   console.log(`\nlobby still: ${join(still, 'lobby.jpg')} (${bytes(join(still, 'lobby.jpg'))} bytes), ${join(still, 'lobby-1600.webp')} (${bytes(join(still, 'lobby-1600.webp'))} bytes)`)
   if (!options['no-clip']) console.log(`dive clip: ${join(still, 'clip-dive.webp')} (${bytes(join(still, 'clip-dive.webp'))} bytes), ${join(still, 'clip-dive.mp4')}`)
 }
-for (const [name, file] of Object.entries(cards)) console.log(`share card ${name}: ${file} (${bytes(file)} bytes)`)
+console.log(`share card: ${card} (${bytes(card)} bytes)`)
 
 // 3. Install into this checkout and, if asked, a terranlabs.com checkout.
 if (options.install) {
