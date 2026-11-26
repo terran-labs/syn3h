@@ -72,7 +72,7 @@ describe('the release hint beside the status', () => {
   const fling: GearAction = { id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start() {} }
   const held = (a: GearAction, status?: string): GearControls => ({ gear: 'bungee', name: 'Grapple', description: '', state: 'ground', status, actions: [a] })
   it('shows the key from the action while the gear holds something, and nothing otherwise', () => {
-    expect(releaseHint(held(release, 'Cord 13 m'), false)).toEqual({ key: 'G', text: 'or double-click to let go' })
+    expect(releaseHint(held(release, 'Cord 13 m'), false)).toEqual({ key: 'G', alt: 'or double-click to', text: 'let go' })
     expect(releaseHint(held(release), false)).toBeNull()
     expect(releaseHint(undefined, false)).toBeNull()
     expect(releaseHint(held(action('launch'), 'Cord 13 m'), false)).toBeNull()

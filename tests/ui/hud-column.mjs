@@ -259,9 +259,16 @@ try {
       assert.ok(free.status?.whole && free.status.clear && !free.shown, `cursor free: the status beside the name, the way to let go said once, by the hints ${JSON.stringify(free)}`)
       await page.mouse.click(w / 2, h * .3)
       await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 })
-      await page.waitForTimeout(400)
+      await page.waitForTimeout(100)
+      await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running' || a.animationName === 'gs-ring-full'), null, { timeout: 10000 })
       const locked = await releaseHint(page)
-      assert.ok(locked.status?.whole && locked.status.clear && locked.hint?.whole && locked.hint.clear && locked.key && /double-click to let go/i.test(locked.text), `captured with a cord: status and release hint whole and clear ${JSON.stringify(locked)}`)
+      assert.ok(locked.status?.whole && locked.status.clear && locked.hint?.whole && locked.hint.clear && locked.key && /let go/i.test(locked.text), `captured with a cord: status and release hint whole and clear ${JSON.stringify(locked)}`)
+      // Captured, the line follows the selected name: within 20 px of its last letter, on its baseline.
+      const follows = await page.evaluate(() => {
+        const name = document.querySelector('.gear-selector .gs-drum button.gs-item.is-active .gs-text').getBoundingClientRect(), line = document.querySelector('.gear-selector .gs-held').getBoundingClientRect()
+        return { gap: line.left - name.right, baseline: line.bottom - name.bottom }
+      })
+      assert.ok(follows.gap >= 0 && follows.gap <= 20 && Math.abs(follows.baseline) <= 3, `captured: the Grapple line follows its name ${JSON.stringify(follows)}`)
       await page.keyboard.press(`Key${locked.key}`)
       await page.waitForFunction(() => !window.miraNet.bungee.attached, null, { timeout: 5000 })
       await page.waitForTimeout(200)

@@ -77,6 +77,8 @@ const METER_FADE_MS = 220
  * limited to these names. Reduced motion: no slide.
  */
 const NAME_SLIDE_MS = 180
+/** The space after the selected name before what it holds, with the cursor captured: a word's gap. */
+const HELD_GAP = 15
 const NAME_SLIDE_EASE = 'cubic-bezier(.16,1,.3,1)'
 
 /** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
@@ -95,7 +97,7 @@ export function slotPose(offset: number): { scale: number; opacity: number } {
  * the action, or on touch its gesture ("double-tap to let go"). An action let go of with the
  * mouse button (Yoink's fling) reads "let go to fling".
  */
-export function releaseHint(own: GearControls | undefined, touch: boolean): { key?: string; text: string } | null {
+export function releaseHint(own: GearControls | undefined, touch: boolean): { key?: string; alt?: string; text: string } | null {
   if (!own?.status) return null
   const action = own.actions.find(a => a.id === 'release' || a.id === 'fling')
   if (!action) return null
@@ -110,8 +112,9 @@ export function releaseHint(own: GearControls | undefined, touch: boolean): { ke
   // A keyboard: the key as a cap, then any other real input in words. A double tap of the tag
   // control is a double-click (or a double press of L) here.
   const key = action.keys.find(k => !k.includes(' ') && isKey(k))
+  // The second input is `alt`, dropped where the line would run too far (placeHeld).
   const other = action.keys.find(k => /\btap\b/i.test(k)) ? 'double-click' : undefined
-  if (key) return { key, text: other ? `or ${other} to ${label}` : label }
+  if (key) return other ? { key, alt: `or ${other} to`, text: label } : { key, text: label }
   return { text: label === 'let go' ? label : `let go to ${label}` }
 }
 
@@ -224,6 +227,11 @@ export class GearSelector {
     if (this.touch) root.dataset.touch = ''
 
     this.drum.className = 'gs-drum'
+    // The selected name's size settles at the end of its row's scale transition: place what the
+    // gear holds after it again then (placeHeld).
+    this.drum.addEventListener('transitionend', (e) => {
+      if (e.propertyName === 'transform' && (e.target as Element).classList.contains('gs-label')) this.placeHeld()
+    }, { signal: this.abort.signal })
     this.drum.setAttribute('role', 'listbox')
     this.drum.setAttribute('aria-label', 'Gear')
     this.drum.setAttribute('aria-orientation', 'vertical')
@@ -393,6 +401,33 @@ export class GearSelector {
       item.label.style.setProperty('--fit', String(fit))
     }
     this.fitDetail()
+    this.placeHeld()
+  }
+
+  /**
+   * Cursor captured on a desktop, what the gear holds and how to let go follow the selected name
+   * on its own line, a word's space after its last letter (the Foreman, 25 November 2026: there
+   * is no description to align with, and beside the description's column it floated mid-sky).
+   * The detail moves there by transform (--gs-held-shift, hud-column.css); with the cursor free it
+   * stays in its column, the description's first line. Measured from the name as drawn, again
+   * once its row's scale has settled. Where the name and the line
+   * would run past a third of the window, the line drops its second input ("or double-click").
+   */
+  private placeHeld(): void {
+    const el = this.element
+    const item = this.items[this.ids.indexOf(this.current)]
+    if (this.touch || !this.focused || this.heldEl.hidden || !item) { el.style.removeProperty('--gs-held-shift'); this.releaseEl.classList.remove('is-short'); return }
+    const text = item.label.querySelector<HTMLElement>('.gs-text')
+    if (!text) return
+    // The name as drawn, in the selector's frame. Its size settles after a change of gear or of
+    // form (the row's scale transition): placeHeld runs again when it ends (the drum listens).
+    const nameRight = text.getBoundingClientRect().right - el.getBoundingClientRect().left
+    // The line's own left edge in the selector, untransformed (inside the detail's padding).
+    const shift = Math.round(nameRight + HELD_GAP - this.detail.offsetLeft - this.heldEl.offsetLeft)
+    el.style.setProperty('--gs-held-shift', `${shift}px`)
+    this.releaseEl.classList.remove('is-short')
+    const right = el.getBoundingClientRect().left + this.detail.offsetLeft + this.heldEl.offsetLeft + shift + this.heldEl.offsetWidth
+    this.releaseEl.classList.toggle('is-short', right > innerWidth / 3)
   }
 
   /**
@@ -449,6 +484,7 @@ export class GearSelector {
     if (instant) { void this.drum.offsetHeight; for (const item of this.items) item.button.classList.remove('gs-snap') }
     const active = this.items[now]
     this.placeMeter(active.button)
+    this.placeHeld()
     this.drum.setAttribute('aria-activedescendant', active.button.id)
     if (this.drum.contains(document.activeElement) && document.activeElement !== active.button) active.button.focus({ preventScroll: true })
     this.element.dataset.gear = current
@@ -514,11 +550,14 @@ export class GearSelector {
     for (const t of texts) for (const a of t.getAnimations()) a.cancel()
     change()
     if (still) return
+    const slides: Animation[] = []
     texts.forEach((t, i) => {
       const dx = drawn[i] - t.offsetLeft
       if (Math.abs(dx) < 0.25) return
-      t.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: NAME_SLIDE_MS, easing: NAME_SLIDE_EASE })
+      slides.push(t.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: NAME_SLIDE_MS, easing: NAME_SLIDE_EASE }))
     })
+    // What the gear holds follows the name to where it comes to rest (placeHeld).
+    if (slides.length) Promise.all(slides.map(a => a.finished)).then(() => this.placeHeld(), () => {})
   }
 
   private setControls(controls: GearControls | undefined): void {
@@ -529,17 +568,19 @@ export class GearSelector {
     const status = own?.status ?? ''
     if (status !== this.status) {
       this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status
-      this.heldStatusEl.textContent = status; this.heldEl.hidden = !status; this.fitDetail()
+      this.heldStatusEl.textContent = status; this.heldEl.hidden = !status; this.fitDetail(); this.placeHeld()
       const row = this.meter.parentElement
       if (row && row !== this.element) { if (status) row.setAttribute('aria-description', status); else row.removeAttribute('aria-description') }
     }
     // The release hint follows the status: shown while the gear holds something.
     const release = releaseHint(own, this.touch)
-    const releaseKey = release ? `${release.key ?? ''}|${release.text}` : ''
+    const releaseKey = release ? `${release.key ?? ''}|${release.alt ?? ''}|${release.text}` : ''
     if (releaseKey !== this.releaseShown) {
       this.releaseShown = releaseKey
-      this.releaseEl.replaceChildren(...(release ? [...(release.key ? [keycap(release.key), ' '] : []), release.text] : []))
+      const alt = release?.alt ? Object.assign(document.createElement('span'), { className: 'gs-release-alt', textContent: `${release.alt} ` }) : null
+      this.releaseEl.replaceChildren(...(release ? [...(release.key ? [keycap(release.key), ' '] : []), ...(alt ? [alt] : []), release.text] : []))
       this.releaseEl.hidden = !release
+      this.placeHeld()
     }
     this.own = own
     this.showLevel(own)
