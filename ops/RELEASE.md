@@ -49,11 +49,22 @@ No rebuild between beta and production: the bytes the owner approved are the byt
   change between the owner's test and production without the tool noticing. Promote deploys
   from the frozen copy itself (its wrangler.toml, server/ and shared/), never from the checkout.
 - **Secrets.** A Worker secret is declared in the config's `[secrets] required = [...]` (wrangler
-  supports it). Every deploy checks the target Worker has each declared secret first and stops,
-  with nothing deployed, if one is missing. A beta checks both Workers, so a new secret must be
-  set on production and on staging before the beta that needs it. New bindings and vars are in
-  the frozen copy's config and travel with it; a new resource such as an Analytics Engine dataset
-  is created by Cloudflare on first write.
+  supports it). Setting a secret (`wrangler secret put`) deploys a new version of that Worker, so
+  occupied rooms reset as in a release: set each one only where a deploy is about to reset them
+  anyway. New bindings and vars are in the frozen copy's config and travel with it; a new resource
+  such as an Analytics Engine dataset is created by Cloudflare on first write.
+  - `--beta` requires every declared secret on the staging Worker (set it right before the beta's
+    deploy) and only warns about production: "promote will need: <name> on syn3h". <!-- rename-keep -->
+  - `--promote` (and any release to production) refuses, before deploying, if production lacks one.
+  - The promote step, by hand, in one minute: wait until the load is under the gate, set the
+    secret on syn3h from its private file (`wrangler secret put <name> --name syn3h < <!-- rename-keep -->
+    <file>`, the value never printed), confirm it by name with `wrangler secret list --name
+    syn3h`, then run `tools/release.sh <n> "note" --promote ...` at once (no ship.sh gap or <!-- rename-keep -->
+    gate in between, so production's rooms reset once). Delete the private file after.
+  - The creator key's hash waits in `~/.config/syn3h/creator-hash.pending` (mode 600) from the <!-- rename-keep -->
+    key tool's run (tools/creator-key.mjs) until production has it. The key itself is only in the
+    owner's `~/.config/syn3h/creator-links.txt`, which nobody else opens. A rotation reruns the <!-- rename-keep -->
+    tool and repeats both steps.
 - **Beta hosts are checked as they serve.** The beta Worker rewrites https://mira.cc/ in HTML and
   plain text to its own origin and marks HTML noindex, on beta.* and every workers.dev address
   (production's own workers.dev name included). The checkers (tools/lib/served.mjs) compare what a
