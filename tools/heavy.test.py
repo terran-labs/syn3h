@@ -27,7 +27,9 @@ class HeavyTests(unittest.TestCase):
         self.assertEqual(hung.returncode, 124)
         self.assertLess(time.time() - started, 30)
         self.assertIn('stopped pid', hung.stderr)
-        self.assertIn('time.sleep(60)', (self.root / 'slots' / 'heavy.log').read_text())
+        logged = (self.root / 'slots' / 'heavy.log').read_text()
+        self.assertIn('time.sleep(60)', logged)
+        self.assertIn(f' in {os.getcwd()}:', logged, 'the log names the worktree the job ran in')
         after = subprocess.run(['sh', str(SCRIPT), 'true'], env=env, timeout=20)
         self.assertEqual(after.returncode, 0, 'the slot is free again')
 

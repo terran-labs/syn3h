@@ -189,7 +189,7 @@ while True:
                 # Over its limit: stop this job's own process group (never anything else),
                 # give it 15 s to end, then kill what is left; the slot frees when we exit.
                 line = (f'{time.strftime("%Y-%m-%d %H:%M:%S")} heavy: stopped pid {child.pid} after '
-                        f'{age(started)} (limit {TIMEOUT_S:.0f} s, MIRA_HEAVY_TIMEOUT_S): {" ".join(sys.argv[1:])[:300]}')
+                        f'{age(started)} (limit {TIMEOUT_S:.0f} s, MIRA_HEAVY_TIMEOUT_S) in {os.getcwd()}: {" ".join(sys.argv[1:])[:300]}')
                 print(line, file=sys.stderr, flush=True)
                 with open(log, 'a') as f:
                     f.write(line + '\n')
