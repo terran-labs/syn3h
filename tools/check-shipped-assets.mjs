@@ -30,6 +30,12 @@ export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.p
  * tools/welcome-images.mjs pass; tools/runtime-assets-check.mjs and the about and
  * discoverability browser checks prove none loads in ordinary play.
  */
+/**
+ * Social share cards made by tools/lobby-captures.mjs from the lobby itself. Each is named by its
+ * content hash, because a released version keeps loading its own card from the same address
+ * (index.html's og:image); earlier cards stay for the frozen versions that name them.
+ */
+export const SHARE_CARDS = /^brand\/share-[0-9a-f]{8}\.png$/
 export const ABOUT_PICTURES = /^welcome\/[a-z0-9-]+-(640|960|1280|1920)\.webp$/
 
 function walk(dir, out = []) {
@@ -53,7 +59,7 @@ export function findForbidden(dir, allow = []) {
     const kind = AUDIO.test(name) ? audio : IMAGE.test(name) ? images : null
     if (!kind) continue
     const item = { path: name, bytes: statSync(path).size }
-    if (kind === images && ABOUT_PICTURES.test(name)) continue
+    if (kind === images && (ABOUT_PICTURES.test(name) || SHARE_CARDS.test(name))) continue
     if (!allowed.has(name)) kind.push(item)
     else if (allow.includes(name)) waived.push(item)
   }

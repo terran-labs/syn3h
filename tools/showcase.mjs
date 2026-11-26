@@ -20,6 +20,13 @@
  *              the README's showcase block (the change is left uncommitted)
  *   --publish-only  publish an earlier capture in <out>/<version>/ without capturing again
  *   --repo     GitHub repository (default terran-labs/syn3h)
+ *   --view     WIDTHxHEIGHT[@DPR], another window size, e.g. 1200x630@2 for the share card
+ *              (tools/lobby-captures.mjs); not with --publish
+ *   --bare     lobby shots only: hide the lobby's buttons, version line and world names with one
+ *              injected style, leaving the wordmark, sun, orbits and worlds (the share card,
+ *              tools/lobby-captures.mjs); not with --publish
+ *   --params   JSON of parameter values set after load, e.g. '{"lobby.wordmark":1}'; local only
+ *   --css      one extra style for lobby shots (the share card's logo box); recorded; local only
  *   --hud hidden  capture every in-world shot with the interface hidden (key I's Hidden);
  *              for the Welcome guide's pictures (tools/welcome-images.mjs), not for publishing
  *
@@ -53,13 +60,28 @@ const GPU_ARGS = ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-b
 const here = fileURLToPath(new URL('.', import.meta.url))
 const root = resolve(here, '..')
 
-const options = parseArgs(process.argv.slice(2), ['version', 'dir', 'url', 'port', 'out', 'only', 'preview', 'publish', 'publish-only', 'repo', 'hud'])
+const options = parseArgs(process.argv.slice(2), ['version', 'dir', 'url', 'port', 'out', 'only', 'preview', 'publish', 'publish-only', 'repo', 'hud', 'view', 'bare', 'params', 'css'])
 if (!options.version || !/^v[\w.-]+$/.test(options.version)) throw new Error('--version is required, like v26.11.1607')
 if (options.dir && options.url) throw new Error('Give at most one of --dir or --url')
 const version = options.version
 const repo = typeof options.repo === 'string' ? options.repo : 'terran-labs/syn3h'
 const preview = Boolean(options.preview)
-const VIEW = preview ? { width: 1280, height: 720, dpr: 1 } : { width: 1920, height: 1080, dpr: 2 }
+// --view WIDTHxHEIGHT[@DPR]: another window, for a picture of another shape (the share card,
+// tools/lobby-captures.mjs). The default is the README's 1920 x 1080 at device pixel ratio 2.
+const VIEW = typeof options.view === 'string' ? parseView(options.view)
+  : preview ? { width: 1280, height: 720, dpr: 1 } : { width: 1920, height: 1080, dpr: 2 }
+if ((options.params || options.css) && options.publish) throw new Error('--params and --css are for local captures, not the release showcase')
+const EXTRA_PARAMS = typeof options.params === 'string' ? JSON.parse(options.params) : {}
+const EXTRA_CSS = typeof options.css === 'string' ? options.css : null
+if (options.bare && options.publish) throw new Error('--bare is for the share card; the release showcase shows the lobby as it is')
+// The share card's lobby: the scene without the interface over it. Recorded in the manifest.
+const BARE_CSS = '.lobby-gear-dock, .lobby-version-dock, .galaxy-label { visibility: hidden !important; }'
+if (options.view && options.publish) throw new Error('--view is for local captures; the release showcase is 1920 x 1080 at 2x')
+function parseView(text) {
+  const m = /^(\d{3,4})x(\d{3,4})(?:@([123]))?$/.exec(text)
+  if (!m) throw new Error('--view takes WIDTHxHEIGHT or WIDTHxHEIGHT@DPR, e.g. 1200x630@2')
+  return { width: Number(m[1]), height: Number(m[2]), dpr: Number(m[3] ?? 1) }
+}
 const SETTLE = preview ? { min: 30, quiet: 12, max: 240 } : { min: 120, quiet: 45, max: 900 }
 const outDir = resolve(typeof options.out === 'string' ? options.out : join(root, 'captures'), version)
 // --hud hidden: every in-world shot without the interface (the Welcome guide's pictures, which
@@ -114,6 +136,13 @@ function installClock() {
       const s = window.mira, p = s.player
       return s.shell.playing && !s.shell.dropping && s.terrain.ready !== false && !s.game.holdDraws
         && (p.kind === 'jet' || p.kind === 'hovercraft' || p.wheelsGrounded > 0)
+    },
+    // The lobby with its opening over: the sun lit, every world arrived, the wordmark's reveal
+    // swept and its fade finished, and the camera at rest on its pose.
+    lobby() {
+      const g = window.mira.shell.galaxy
+      const mode = window.mira.params.get('lobby.wordmark')?.value ?? 7
+      return g.live && g.opening === null && g.settled && !g.returning && !g.flight && (mode <= 0 || g.markShown >= 0.999)
     },
     bots() {
       const s = window.mira, want = Math.min(4, s.params.get('bots.count')?.value ?? 4)
@@ -249,7 +278,9 @@ function pageHelpers() {
 // `staging` text), may set showcase.onFrame to steer on the frame clock, and returns
 // { frames } to run before the picture plus a check run just before it.
 const STAGES = {
-  lobby: { page: null, frames: 60 },
+  // Wait for the opening to finish (READY.lobby) before the frames and the settling, so a busy
+  // machine cannot catch the wordmark mid-reveal.
+  lobby: { page: null, ready: 'lobby', frames: 60 },
 
   'canyon-convoy': {
     frames: 200,
@@ -473,9 +504,9 @@ async function openShot(browser, shot) {
     const s = window.mira
     const set = (id, v) => { if (s.params.get(id)) s.params.set(id, v) }
     set('gfx.auto', false); set('gfx.quality', 5); set('daydream.seconds', 0); set('sun.dayLength', 0)
-    for (const [id, v] of Object.entries(shot.params ?? {})) set(id, v)
+    for (const [id, v] of Object.entries({ ...shot.params, ...shot.extraParams })) set(id, v)
     window.__showcaseShot = shot
-  }, shot)
+  }, { ...shot, extraParams: EXTRA_PARAMS })
   await page.evaluate(pageHelpers)
   await page.addScriptTag({ content: `window.resolveCaptureTeleport = ${resolveCaptureTeleport.toString()}` })
   return { context, page, errors }
@@ -535,6 +566,7 @@ async function stage(page, shot, { clip = false } = {}) {
   if (!recipe) throw new Error(`no staging for ${id}`)
   await page.evaluate(() => window.__showcaseClock.start())
   let settle = null
+  if (recipe.ready && await page.evaluate((name) => window.__showcaseClock.until(name, 1800), recipe.ready) < 0) throw new Error(`${id}: not ready (${recipe.ready}) within 30 s of game time`)
   if (clip) settle = await page.evaluate((o) => window.__showcaseClock.settle(o), SETTLE)
   // Staging counts its frames from here.
   await page.evaluate(() => { window.showcase.t0 = window.__showcaseClock.frames })
@@ -552,6 +584,8 @@ async function captureShot(browser, shot) {
   try {
     const cdp = await context.newCDPSession(page)
     if (shot.hud === 'lobby') await waitLobby(page)
+    if (shot.hud === 'lobby' && options.bare) await page.addStyleTag({ content: BARE_CSS })
+    if (shot.hud === 'lobby' && EXTRA_CSS) await page.addStyleTag({ content: EXTRA_CSS })
     const have = await features(page)
     if (shot.vehicle && shot.hud !== 'lobby') have.vehicles.push(shot.vehicle) // checked after entry below
     const missing = missingFeature(shot, have)
@@ -571,7 +605,12 @@ async function captureShot(browser, shot) {
       const verdict = judgeFrame(stats, FRAME_LIMITS)
       if (!verdict.ok) return { failed: verdict.reason, stats }
       await writeFile(join(outDir, names.png), png)
-      return { record: { ...pick(shot), files: names, pose: pose.note, poseOk: pose.ok, settle: pose.settle, stats, render: build, pageErrors: errors, seconds: Math.round((Date.now() - started) / 1000) } }
+      // Where the lobby put its logo box and its sun, in CSS pixels: what a composite lines up with.
+      const layout = shot.hud === 'lobby' ? await page.evaluate(() => {
+        const r = document.querySelector('.shell-logo')?.getBoundingClientRect(), sun = window.mira.shell.galaxy.sunScreen
+        return { logo: r ? { x: r.x, y: r.y, width: r.width, height: r.height } : null, sun: sun ?? null }
+      }) : null
+      return { record: { ...pick(shot), ...(options.bare && shot.hud === 'lobby' ? { bare: BARE_CSS } : {}), ...(EXTRA_CSS ? { css: EXTRA_CSS } : {}), params: { ...shot.params, ...EXTRA_PARAMS }, layout, files: names, pose: pose.note, poseOk: pose.ok, settle: pose.settle, stats, render: build, pageErrors: errors, seconds: Math.round((Date.now() - started) / 1000) } }
     }
     // A clip: the lobby dive starts from the lobby with a real key press; the others stage first.
     const frames = join(outDir, `.${shot.id}-frames`)
