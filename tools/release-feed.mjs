@@ -29,6 +29,7 @@ import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve, dirname } from 'node:path'
+import { bannedWords } from './lib/public-words.mjs'
 import { fileURLToPath } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -139,6 +140,23 @@ function findCommit(graph, commit) {
  * as `git log --first-parent from..to`, worked out from the graph read once (readGraph).
  */
 const NOT_CHANGES = /^(Record v\d|v\d+\.\d+\.\d+ notes|Notes renamed to v\d|Merge )/
+/**
+ * Subjects that are not for players: tools, checks, tests, records and paths. The Changes list
+ * shows players what changed in the game, and on 25 Nov about half of it was this. Errs toward
+ * dropping: a player-facing change worded like one of these is left out, never a tool shown.
+ */
+const NOT_FOR_PLAYERS = [
+  /^[\w?=.\/-]*[-.\/=?][\w.\/-]*\s*:/, // "release.sh:", "creator-key:", "about-updates:", "?frameProbe=1:"
+  /\b(tools|tests|src|docs|ops|scripts)\//i, // a path
+  /\.(mjs|cjs|js|ts|sh|py|md|tsv|json|toml|css|html)\b/i, // a file name
+  /^(Runbook|STATE|Shorter summary|Water tools|Stop the old|Remove a stray|Type the|Shade the reference|Prototype|Pin graphics|Require the|Verify|Settle the|Keep the Apache|Record|Measure|Ask what|Wait for|Assert|Check|Document|Correct|Digest|Notes|Names|Hand fixes|Dev server|Release feed|Heavy|Mark today|Identify|Compare|Calibrate|Fit|Exercise|Leave World|Let the|Make the|Attribute|Include|Finish the|Add the|Add tools|Address switch)\b/i,
+  /\b(tests?|checks?|checker|probe|harness|fixtures?|diagnostics?|trace|reports?|evidence|smoke|suite|typecheck|asserts?|measured|calibrat\w*|benchmark|ledger|notes|digest|README|documents?|rename\w*|Worker|R2|frozen|release\w*|betas?|deploy\w*|hosted|heavy|analytics|switch(es)?|pilot|trial|replay|sweep|rolls? back|rollback|keep-list|kept|CI|tested|auditing|measurements?|reference|alias(es)?|runbook|bytecode|prototype|summary line|attribution)\b/i,
+  /\bwindow\.\w+/, // a page global, named for tools
+]
+/** Whether a commit subject belongs in the players' Changes list. */
+export function forPlayers(title) {
+  return !NOT_CHANGES.test(title) && !NOT_FOR_PLAYERS.some(re => re.test(title)) && bannedWords(title).length === 0
+}
 function trainChanges(graph, from, to) {
   const head = findCommit(graph, to)
   if (!head) return []
@@ -161,7 +179,7 @@ function trainChanges(graph, from, to) {
   return tips
     .filter(tip => graph.has(tip))
     .map(tip => ({ title: graph.get(tip).subject, commit: graph.get(tip).short }))
-    .filter(c => !NOT_CHANGES.test(c.title))
+    .filter(c => forPlayers(c.title))
     .reverse()
 }
 
@@ -246,7 +264,11 @@ export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIR
     if (betas.length) entry.betas = betas
     return entry
   })
-  return own ? { build: own, releases } : { releases }
+  const feed = own ? { build: own, releases } : { releases }
+  // Nothing banned reaches players in any field: the build fails instead (public-words.mjs).
+  const banned = bannedWords(JSON.stringify(feed))
+  if (banned.length) throw new Error(`The release feed would show players banned words: ${banned.join(', ')}. Reword the notes or digest, or the filter in release-feed.mjs.`)
+  return feed
 }
 
 function gitHead(repo) {
