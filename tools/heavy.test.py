@@ -33,6 +33,53 @@ class HeavyTests(unittest.TestCase):
         after = subprocess.run(['sh', str(SCRIPT), 'true'], env=env, timeout=20)
         self.assertEqual(after.returncode, 0, 'the slot is free again')
 
+    def test_a_finished_job_leaves_nothing_holding_its_slot(self):
+        # 26 November: a bounded job's watchdog, `( sleep 1800; kill $$ ) &`, inherited the slot's
+        # lock and pinned the slot for up to 30 minutes after the job ended.
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
+        done = subprocess.run(['sh', str(SCRIPT), 'sh', '-c', '( sleep 60 ) & echo started'], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0)
+        started = time.time()
+        after = subprocess.run(['sh', str(SCRIPT), 'true'], env=env, timeout=20)
+        self.assertEqual(after.returncode, 0)
+        self.assertLess(time.time() - started, 8, 'the slot is free within seconds')
+
+    def test_a_priority_waiter_goes_before_an_older_ordinary_one(self):
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
+        order = self.root / 'order'
+        holder = subprocess.Popen(['sh', str(SCRIPT), 'sleep', '3'], env=env)
+        time.sleep(0.8)
+        ordinary = subprocess.Popen(['sh', str(SCRIPT), 'sh', '-c', f'echo ordinary >> {order}'], env=env)
+        time.sleep(0.8)
+        priority = subprocess.Popen(['sh', str(SCRIPT), 'sh', '-c', f'echo priority >> {order}'], env={**env, 'MIRA_HEAVY_PRIORITY': '1'})
+        for p in (holder, ordinary, priority):
+            p.wait(timeout=30)
+        self.assertEqual(order.read_text().split(), ['priority', 'ordinary'])
+
+    def test_ordinary_waiters_go_oldest_first(self):
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
+        order = self.root / 'order'
+        holder = subprocess.Popen(['sh', str(SCRIPT), 'sleep', '3'], env=env)
+        time.sleep(0.8)
+        waiters = []
+        for name in ('first', 'second', 'third'):
+            waiters.append(subprocess.Popen(['sh', str(SCRIPT), 'sh', '-c', f'echo {name} >> {order}'], env=env))
+            time.sleep(0.5)
+        for p in (holder, *waiters):
+            p.wait(timeout=30)
+        self.assertEqual(order.read_text().split(), ['first', 'second', 'third'])
+
+    def test_status_does_not_call_a_held_slot_free(self):
+        import fcntl
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        with open(slots / 'slot-1.lock', 'a+') as held:  # a leftover holding the lock, no owner file
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            (slots / 'waiting-999999').write_text('999999 1700000000 gone\n')  # a dead waiter
+            out = subprocess.run(['sh', str(SCRIPT), 'status'], env=env, capture_output=True, text=True, timeout=10)
+        self.assertIn('slot 1: held by a leftover of a finished job', out.stdout)
+        self.assertFalse((slots / 'waiting-999999').exists(), 'a dead waiter file is removed')
+
     def test_status_lists_holders_and_waiters_without_taking_a_slot(self):
         env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
         holder = subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', 'import time; time.sleep(30)'], env=env)
