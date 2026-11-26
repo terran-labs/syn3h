@@ -278,7 +278,7 @@ export class GearSelector {
     this.heldEl.append(this.heldStatusEl)
     // Where the way to let go goes: beside the name on a desktop, under the status on touch
     // (only when no thumb button lets go, releaseHint).
-    if (this.touch) this.meter.append(this.releaseEl); else this.heldEl.append(this.releaseEl)
+    this.heldEl.append(this.releaseEl)
     // Under the name: the bar (and on touch the status, the bar after it, so it never moves the
     // words when it appears). On a desktop the status and the way to let go sit beside the name
     // instead, the detail's first line (gear.css, hud-column.css): clear of the rows below.
@@ -407,7 +407,8 @@ export class GearSelector {
   }
 
   /**
-   * Cursor captured on a desktop, what the gear holds and how to let go follow the selected name
+   * Cursor captured on a desktop, and always on touch (whose rows are too close to carry it
+   * underneath), what the gear holds and how to let go follow the selected name
    * on its own line, a word's space after its last letter (the Foreman, 25 November 2026: there
    * is no description to align with, and beside the description's column it floated mid-sky).
    * The detail moves there by transform (--gs-held-shift, hud-column.css); with the cursor free it
@@ -418,7 +419,7 @@ export class GearSelector {
   private placeHeld(): void {
     const el = this.element
     const item = this.items[this.ids.indexOf(this.current)]
-    if (this.touch || !this.focused || this.heldEl.hidden || !item) { el.style.removeProperty('--gs-held-shift'); this.releaseEl.classList.remove('is-short'); return }
+    if ((!this.touch && !this.focused) || this.heldEl.hidden || !item) { el.style.removeProperty('--gs-held-shift'); this.releaseEl.classList.remove('is-short'); return }
     const text = item.label.querySelector<HTMLElement>('.gs-text')
     if (!text) return
     // The name as drawn, in the selector's frame. Its size settles after a change of gear or of

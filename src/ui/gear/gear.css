@@ -91,8 +91,6 @@
 }
 .gear-selector .gs-meter > :is(.gs-status, .gs-release) { flex: none; }
 /* Touch rows are narrow: the release hint takes its own line under the status. */
-.gear-selector[data-touch] .gs-meter { flex-wrap: wrap; row-gap: 3px; }
-.gear-selector[data-touch] .gs-meter > .gs-release { flex-basis: 100%; margin-left: 0; font-size: 10px; letter-spacing: .08em; }
 .gear-selector .gs-meter.is-arriving { animation: gs-meter-in .22s cubic-bezier(.2,.8,.2,1) both; }
 .gear-selector .gs-meter.is-leaving { animation: gs-meter-out .22s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes gs-meter-in { from { opacity: 0; } }
@@ -103,7 +101,7 @@
    a keycap, coming in with the bar's .15 s fade. On touch the status stays under the name. */
 .gear-selector .gs-held { margin: 3px 0 7px; white-space: nowrap; font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 .gear-selector .gs-held-status { color: var(--s3-accent-2); }
-.gear-selector[data-touch] .gs-held { display: none; }
+.gear-selector[data-touch] .gs-meter .gs-status { display: none; }
 .gear-selector .gs-release { margin-left: 10px; color: var(--s3-dim); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; animation: gs-release-in .15s ease; }
 @keyframes gs-release-in { from { opacity: 0; } }
 .gear-selector .gs-status { color: var(--s3-accent-2); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
@@ -152,9 +150,15 @@
    The description shows only while the panels do (Shell's .is-panels); phones hide the drum
    then (exploration.css), so on a phone it never shows. It sits under the drum. */
 :root .gear-selector[data-touch] {
-  --gs-slots: 3; --gs-pitch: 38px; --gs-width: 164px; --gear-detail-width: 0px;
-  top: var(--gear-top, var(--edge-top)); transform: none;
+  /* Tighter rows (the owner, 26 November 2026), each still a full row to tap, and the first
+     name's capitals level with the world name's at the top right (--gear-name-cap, where those
+     capitals start below the top edge; --gear-name-half, the first row's capitals' half height). */
+  --gs-slots: 3; --gs-pitch: 26px; --gs-width: 164px; --gear-detail-width: 0px;
+  top: var(--gear-top, max(env(safe-area-inset-top), calc(var(--gear-name-base, var(--edge-top)) + var(--gear-name-cap, 3px) - var(--gs-pitch) / 2 + var(--gear-name-half, 4px)))); transform: none;
 }
+/* The world name sits on the top edge only on an upright phone (inspector/focus-readouts.css);
+   elsewhere, a phone on its side included, it keeps its 34 px from the top. */
+@media not ((max-width: 700px) and (orientation: portrait)) { :root .gear-selector[data-touch] { --gear-name-base: 34px; } }
 .gear-selector[data-touch] .gs-desc { display: none; }
 /* On touch the drum runs at full strength (outdoors over sky and snow), and small type is thin
    type: the neighbours draw at least 0.86 of the selected name's size, not 0.76. */

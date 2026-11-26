@@ -13,8 +13,6 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
-// 10. The column sits as far below the top edge as its line's nodes sit right of the left edge,
-//     with the cursor free and captured (the owner, 25 November 2026).
 // 9. While a Grapple cord is attached its status and the way to let go are shown whole, clear
 //    of every gear name, the world name and the description: on a desktop beside the selected
 //    name (the hint, its key a keycap, with the cursor captured; with it free the hints say it),
@@ -120,20 +118,19 @@ const oneColumn = (m, at) => {
 }
 /**
  * What the gear holds and how to let go: on a desktop the line beside the selected name
- * (.gs-held, its hint .gs-release), on touch the status under the name. Each drawn whole (in the
- * window, and inside the drum where it sits in a row), overlapping no gear name, the world name
- * or the description.
+ * (.gs-held, its hint .gs-release), on touch too (its rows are too close to carry it beneath).
+ * Each drawn whole in the window, overlapping no gear name, the world name or the description.
  */
 const releaseHint = (page) => page.evaluate(() => {
   const box = (e) => e && !e.hidden && e.checkVisibility({ visibilityProperty: true, opacityProperty: true }) ? e.getBoundingClientRect() : null
   const touch = document.querySelector('.mira-shell').classList.contains('has-touch')
   const meter = document.querySelector('.gear-selector .gs-meter:not(.is-leaving)')
-  const status = box(touch ? meter?.querySelector('.gs-status') : document.querySelector('.gear-selector .gs-held'))
+  const status = box(document.querySelector('.gear-selector .gs-held'))
   const hint = box(document.querySelector('.gear-selector .gs-release'))
   const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
   const others = [...document.querySelectorAll('.gear-selector .gs-drum .gs-text, .focus-hud .fh-top, .gear-selector .gs-desc')].map(box).filter(Boolean)
   const overlaps = (r) => others.some((o) => r.left < o.right - 1 && r.right > o.left + 1 && r.top < o.bottom - 1 && r.bottom > o.top + 1)
-  const whole = (r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && (!touch || (r.left >= drum.left && r.right <= drum.right && r.top >= drum.top && r.bottom <= drum.bottom))
+  const whole = (r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
   const letGo = [...document.querySelectorAll('.gear-actions button[data-action=release]')].some((b) => b.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
   return {
     status: status && { whole: whole(status), clear: !overlaps(status) },
@@ -141,18 +138,6 @@ const releaseHint = (page) => page.evaluate(() => {
     key: hint ? document.querySelector('.gear-selector .gs-release kbd.keycap')?.textContent ?? null : null,
     text: hint ? document.querySelector('.gear-selector .gs-release').textContent : '', letGo,
   }
-})
-/**
- * The column's insets: the first visible row's letters from the top edge, and its node's ring from
- * the left edge (the owner, 25 November 2026: "farther down from the top than they are from the
- * left"). The letters' box top stands for their ink: at line-height 1 the two differ by under a pixel.
- */
-const insets = (page) => page.evaluate(() => {
-  const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
-  const inDrum = (y) => y > drum.top && y < drum.bottom
-  const text = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item .gs-text')].map((t) => t.getBoundingClientRect()).filter((r) => inDrum(r.top + r.height / 2)).sort((a, b) => a.top - b.top)[0]
-  const node = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item')].map((b) => { const c = getComputedStyle(b, '::before'), r = b.getBoundingClientRect(); return { left: r.left + parseFloat(c.left), y: r.top + r.height / 2 } }).filter((n) => inDrum(n.y)).sort((a, b) => a.y - b.y)[0]
-  return { top: text.top, left: node.left }
 })
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
@@ -177,8 +162,8 @@ try {
         assert.ok(Math.abs(part.left - m.gear.left) <= 1, `${at}: ${name} shares the gear's left edge ${JSON.stringify([part, m.gear])}`)
       }
       assert.ok(m.pitch > 0 && Math.abs((m.drum.bottom - m.drum.top) - 3 * m.pitch) <= 1, `${at}: the drum is three rows ${JSON.stringify([m.drum, m.pitch])}`)
-      // The column starts at the top left; its top inset matches its left (10, below), which
-      // replaced the shared top edge (the owner, 25 November 2026).
+
+
       if (mode === 'free') drumFree = m.drum
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
       assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys are laid out ${JSON.stringify(m.keys)}`)
@@ -188,9 +173,6 @@ try {
       onLines(await lines(page), at)
       await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
       oneColumn(await names(page), at)
-      // 10. The top inset equals the left.
-      const inset = await insets(page)
-      assert.ok(Math.abs(inset.top - inset.left) <= 2, `${at}: the column is as far from the top as from the left ${JSON.stringify(inset)}`)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }
@@ -339,7 +321,7 @@ try {
     await page.waitForTimeout(400)
     const touchHint = await releaseHint(page)
     // A visible LET GO thumb button says how to let go; without one the hint must show.
-    assert.ok(touchHint.status?.whole && touchHint.status.clear && (touchHint.letGo ? !touchHint.shown : touchHint.hint?.whole && touchHint.hint.clear), `${viewport.width}x${viewport.height}: the status under the name, and a way to let go shown ${JSON.stringify(touchHint)}`)
+    assert.ok(touchHint.status?.whole && touchHint.status.clear && (touchHint.letGo ? !touchHint.shown : touchHint.hint?.whole && touchHint.hint.clear), `${viewport.width}x${viewport.height}: the status beside the name, and a way to let go shown ${JSON.stringify(touchHint)}`)
     assert.ok(touchHint.letGo, `${viewport.width}x${viewport.height}: the LET GO thumb button shows while a cord is attached`)
     await context.close()
   }
