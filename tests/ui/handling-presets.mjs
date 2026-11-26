@@ -21,6 +21,9 @@ for (const mode of ['desktop', 'phone']) {
     await page.goto(`${base}?autoplay=1&room=handling-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    // Daydream (the idle autopilot, 15 s by default) closes the panels; a slow phone emulation sits
+    // idle that long between steps, and World closed under the test (twice in five runs).
+    await page.evaluate(() => window.mira.params.set('daydream.seconds', 0, 'local'))
     const rail = page.locator('.world-inspector')
     if (!(await rail.isVisible())) {
       if (touch) await page.locator('.inspector-toggle').tap()
