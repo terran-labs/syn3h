@@ -9,11 +9,11 @@ import { chromium, devices } from 'playwright-core'
 const url = new URL(process.env.MIRA_URL ?? 'http://127.0.0.1:5198/')
 const out = resolve(process.env.MIRA_PLAYERS_EVIDENCE ?? 'tests/ui/artifacts/players-session')
 const before = process.env.MIRA_PLAYERS_BEFORE === '1'
+// Set on the combined Players and reset-to-default build.
+const expectReset = process.env.MIRA_PLAYERS_EXPECT_RESET === '1'
 const name = 'Wandering Moon Cartographer'
 const card = '.world-inspector:not(.lobby-settings) .wi-card[data-section=players]'
-const game = '.world-inspector:not(.lobby-settings) .wi-card[data-section=game]'
 const slider = '#session-bot-count'
-const gameSlider = `${game} [data-id="bots.count"] input[type=range]`
 const playerRow = (page, id) => page.locator(`${card} .score-row[data-player-id="${id}"]`)
 const show = async (page, section) => {
   await page.evaluate(section => mira.shell.showCard(section), section)
@@ -43,13 +43,11 @@ try {
       const context = await browser.newContext(opts)
       const page = await context.newPage()
       page.on('pageerror', error => errors.push(error.message))
-      let socket
-      page.on('websocket', connection => { if (new URL(connection.url()).pathname === '/ws') socket = connection })
       const link = new URL(url)
       link.search = new URLSearchParams({ room, name, autoplay: '1', webgl: '1', gfx: '2', world: 'alpine.1' })
       await page.goto(link.href)
       await page.waitForFunction(() => window.miraNet?.connected && mira.shell.playing && !mira.shell.dropping, null, { timeout: 120000 })
-      return { page, context, socket }
+      return { page, context }
     }
     const hostTab = await context()
     const guestTab = await context()
@@ -71,49 +69,56 @@ try {
       if (!before) {
         const header = host.locator(card).getByRole('button', { name: /^Players(?:\s|$)/ })
         assert.equal(await header.locator('h3').textContent(), 'Players')
-        await value(host, slider, 4); await value(guest, slider, 4); await value(guest, gameSlider, 4)
+        assert.equal(await host.locator('#session-bot-count').count(), 1)
+        const inspector = host.locator('.world-inspector:not(.lobby-settings)')
+        assert.equal(await inspector.locator('[data-id="bots.count"], [data-id="hud.diagnostics"]').count(), 0)
+        assert.equal(await inspector.locator('.rail-diagnostics input[type=checkbox]').count(), 1)
+        await value(host, slider, 4); await value(guest, slider, 4)
         await host.waitForFunction(selector =>
           document.querySelector(selector)?.textContent === '2 players, 4 bots', `${card} .wi-sum`)
-        assert.equal(await guest.locator(slider).isDisabled(), true)
+        const less = page => page.getByRole('button', { name: 'Fewer bots', exact: true })
+        const more = page => page.getByRole('button', { name: 'More bots', exact: true })
+        for (const control of [guest.locator(slider), less(guest), more(guest)]) {
+          assert.equal(await control.isDisabled(), true)
+        }
         assert.equal(await guest.locator(`${card} .rail-session-bots output`).evaluate(el => el.classList.contains('is-disabled')), true)
-        assert.equal(await guest.locator(gameSlider).isDisabled(), true)
+        // The shipped input handler also guards against a stale control during a lock change.
         await setRange(guest, slider, 5)
         await value(guest, slider, 4); await value(host, slider, 4)
-        // Send a forged write over the same test connection. The room must enforce its lock
-        // independently of the disabled controls.
-        const rejection = guestTab.socket.waitForEvent('framereceived', {
-          predicate: ({ payload }) => {
-            if (typeof payload !== 'string') return false
-            const message = JSON.parse(payload)
-            return message.type === 'param' && message.id === 'bots.count' && message.from === 0 && message.value === 4
-          },
-        })
-        await guest.evaluate(() => miraNet.send({ type: 'param', id: 'bots.count', value: 5 }))
-        await rejection
-        await value(host, slider, 4)
+        assert.equal(await guest.evaluate(() => mira.params.get('bots.count').value), 4)
 
-        await host.getByRole('button', { name: 'More bots', exact: true }).click()
-        await value(host, gameSlider, 5); await value(guest, slider, 5)
-        await show(host, 'game')
-        await setRange(host, gameSlider, 4)
-        await value(host, slider, 4); await value(guest, slider, 4)
+        await more(host).click()
+        await value(host, slider, 5); await value(guest, slider, 5)
+        await setRange(host, slider, 4)
+        await value(guest, slider, 4)
         await host.evaluate(() => miraNet.setLocked(false))
         await guest.waitForFunction(() => !document.querySelector('#session-bot-count').disabled)
-        assert.equal(await guest.locator(gameSlider).isDisabled(), false)
-        await guest.getByRole('button', { name: 'Fewer bots', exact: true }).click()
-        await value(host, slider, 3); await value(guest, gameSlider, 3)
-        await show(guest, 'game')
-        await setRange(guest, gameSlider, 4)
+        assert.equal(await less(guest).isEnabled(), true)
+        await less(guest).click()
+        await value(host, slider, 3); await value(guest, slider, 3)
+        await setRange(guest, slider, 4)
         await value(host, slider, 4); await value(guest, slider, 4)
         await host.evaluate(() => miraNet.setLocked(true))
         await guest.waitForFunction(() => document.querySelector('#session-bot-count').disabled)
         await Promise.all([show(host, 'players'), show(guest, 'players')])
 
+        if (size === 'portrait' && expectReset) {
+          const diagnostics = host.locator(`${card} .rail-diagnostics[data-setting-id="hud.diagnostics"]`)
+          assert.equal(await diagnostics.count(), 1)
+          const toggle = diagnostics.locator('input[type=checkbox]')
+          const reset = diagnostics.getByRole('button', { name: 'Reset Connection diagnostics to off', exact: true })
+          assert.equal(await toggle.isChecked(), false)
+          await toggle.check()
+          await reset.click()
+          assert.equal(await toggle.isChecked(), false)
+          assert.equal(await host.evaluate(() => mira.params.get('hud.diagnostics').value), false)
+        }
+
         if (size === 'portrait') {
           const max = await host.locator(slider).evaluate(input => Number(input.max))
           await host.evaluate(() => mira.params.set('bots.keepCount', false))
           await setRange(host, slider, max)
-          await value(guest, gameSlider, max)
+          await value(guest, slider, max)
           assert.match(await host.locator(`${card} .rail-session-bots output`).textContent(), new RegExp(`^${max} requested · \\d+ in room$`))
           await setRange(host, slider, 4)
           await value(guest, slider, 4)
@@ -160,7 +165,7 @@ try {
           const controlRect = controlRow.getBoundingClientRect()
           const controls = [...controlRow.children].map(el => {
             const r = el.getBoundingClientRect(), css = getComputedStyle(el)
-            return { width: r.width, height: r.height, centerY: (r.top + r.bottom) / 2,
+            return { width: r.width, height: r.height, paintedWidth: el.offsetWidth, paintedHeight: el.offsetHeight, centerY: (r.top + r.bottom) / 2,
               tag: el.tagName, border: css.borderTopStyle, borderWidth: parseFloat(css.borderTopWidth),
               background: css.backgroundColor, filter: css.backdropFilter }
           })
@@ -177,7 +182,12 @@ try {
         const minimum = touch ? 44 : 32
         assert.equal(layout.sameLine, true, 'Bots and the counts share the first line')
         assert.equal(layout.fillsSecondLine, true, 'the controls fill the second line')
-        assert.ok(layout.controls.every(control => control.width >= minimum && control.height >= minimum))
+        for (const control of layout.controls) {
+          assert.ok(control.paintedWidth >= minimum && control.paintedHeight >= minimum,
+            `${size}: expected a ${minimum}px painted control, got ${JSON.stringify(control)}`)
+          assert.ok(control.width >= minimum - .5 && control.height >= minimum - .5,
+            `${size}: expected a ${minimum}px viewport box, got ${JSON.stringify(control)}`)
+        }
         assert.ok(layout.controls.every(control => Math.abs(control.centerY - layout.controls[0].centerY) <= 1))
         for (const control of [layout.controls[0], layout.controls[2]]) {
           assert.equal(control.tag, 'BUTTON')

@@ -391,9 +391,9 @@ export class Shell implements System {
       <div class="rail-session-bots">
         <div class="rail-bot-heading"><label for="session-bot-count">Bots</label><output for="session-bot-count"></output></div>
         <div class="rail-bot-controls">
-          <button type="button" class="panel-action" data-step="-1" aria-label="Fewer bots">−</button>
+          <button type="button" class="rail-bot-step" data-step="-1" aria-label="Fewer bots">−</button>
           <input id="session-bot-count" type="range" aria-label="Requested bot count">
-          <button type="button" class="panel-action" data-step="1" aria-label="More bots">+</button>
+          <button type="button" class="rail-bot-step" data-step="1" aria-label="More bots">+</button>
         </div>
       </div>
       ${switchHtml('rail-diagnostics', 'Connection diagnostics')}
@@ -417,7 +417,7 @@ export class Shell implements System {
     this.sessionCard = this.inspector.addCard('players', 'Players', players, () => {
       const people = this.playerCount, bots = this.sessionBotCount
       return people || bots ? `${people} ${people === 1 ? 'player' : 'players'}, ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''
-    }, { after: 'game' })
+    }, { after: 'game', owns: () => [botCount.def.id, diagnostics.def.id] })
     // Performance follows World; its controls remain part of the searchable card stack.
     if (game.quality) game.quality.manualChange = (level, apply) => {
       if (!this.playing || this.transitioning) { apply(); return }

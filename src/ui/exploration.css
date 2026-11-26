@@ -108,20 +108,26 @@ html[data-cutout-side="right"] { --safe-left: 0px; }
   gap: 8px; align-items: center; width: 100%;
 }
 .mira-shell.exploration-ui.has-touch .rail-bot-controls { --bot-target: 44px; }
-.mira-shell.exploration-ui .rail-bot-controls input {
+.mira-shell.exploration-ui .rail-player-body .rail-bot-controls > input[type=range] {
   box-sizing: border-box; min-width: 0; width: 100%; height: var(--bot-target);
   margin: 0; touch-action: pan-y; accent-color: var(--s3-ink);
 }
-html .mira-shell.exploration-ui .rail-player-body .rail-bot-controls > button.panel-action:not([hidden]) {
-  box-sizing: border-box; width: var(--bot-target); height: var(--bot-target);
+/* These buttons paint the full target. The compact panel actions use a separate hit area. */
+.mira-shell.exploration-ui .rail-player-body .rail-bot-controls > .rail-bot-step {
+  appearance: none; display: inline-grid; place-items: center; box-sizing: border-box;
+  width: var(--bot-target); height: var(--bot-target);
   min-width: var(--bot-target); min-height: var(--bot-target);
   padding: 0; border: 1px solid var(--s3-line); border-radius: 999px;
-  background: rgb(255 255 255 / .10); font-size: 18px; line-height: 1;
+  background: rgb(255 255 255 / .10); color: white; font-size: 18px; line-height: 1;
+  box-shadow: none; text-shadow: none;
 }
-html .mira-shell.exploration-ui .rail-player-body .rail-bot-controls > button.panel-action:hover:not(:disabled) {
+.mira-shell.exploration-ui .rail-bot-controls > .rail-bot-step:hover:not(:disabled) {
   background: rgb(255 255 255 / .18);
 }
-html .mira-shell.exploration-ui .rail-player-body .rail-bot-controls > button.panel-action:disabled {
+.mira-shell.exploration-ui .rail-bot-controls > .rail-bot-step:focus-visible {
+  outline: 2px solid white; outline-offset: 1px;
+}
+.mira-shell.exploration-ui .rail-bot-controls > .rail-bot-step:disabled {
   opacity: .55; cursor: default;
 }
 .mira-shell.exploration-ui .rail-player-body .rail-diagnostics { order: 3; }
