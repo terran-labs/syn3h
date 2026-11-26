@@ -1,3 +1,4 @@
 # Every beta shipped to beta.mira.cc (ops/RELEASE.md), oldest first. Written by tools/release.sh --beta.
 # version	milestone tag	commit	Pacific time	frozen id	fingerprint (tools/frozen-fingerprint.mjs)
 v26.11.2501	m-planets-2501	56b51479	2026-11-25 16:29 PST	20261125-161352-56b51479	3dbbfe0e84e635cd81c408b629e98a4815ddaaa3a1f29f3268a924de6d9c5d5a
+v26.11.2502	m-welcome-2502	7dceeaff	2026-11-25 18:50 PST	20261125-184635-7dceeaff	a2277b3ef0e020ddb6135f73a56ca49632c22c7c14ddfefcf841d294d8b6f25e
