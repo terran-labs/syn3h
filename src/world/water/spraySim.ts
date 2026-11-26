@@ -659,11 +659,18 @@ export class SpraySim {
     if (!(b > 0)) return 0
     const R = ball, grow = Math.sqrt(b)
     // Drops it wants; the pool is shared out if it cannot hold them all (it can at Low and up).
-    const want = (200 + 90 + 110) * b
+    const want = (160 + 26 + 90 + 110) * b
     const share = Math.min(scale, this.cap.droplets / Math.max(1, want))
     const n = (count: number) => Math.round(count * share)
+    // Lip: a few big, dense sheets of water torn off the rim and thrown out and up, so the crown
+    // has mass that reads against a bright sky and sea, not only a scatter of drops.
+    for (let i = 0, c = n(26 * b); i < c; i++) {
+      const a = (i + this.random() * .6) / Math.max(1, c) * Math.PI * 2, r = R * (.95 + this.random() * .15)
+      const out = (2 + this.random() * 2.5) * grow * Math.min(2, .5 + R / 3), up = (5 + this.random() * 4) * grow
+      this.drop(x + Math.cos(a) * r, y + .15, z + Math.sin(a) * r, vx * .3 + Math.cos(a) * out, up, vz * .3 + Math.sin(a) * out, (.5 + this.random() * .4) * grow, y, 0, scale, true)
+    }
     // Crown: thrown out and up from the rim, landing two to three radii out.
-    for (let i = 0, c = n(200 * b); i < c; i++) {
+    for (let i = 0, c = n(160 * b); i < c; i++) {
       const a = i / Math.max(1, c) * Math.PI * 2 + this.random() * .15, r = R * (.85 + this.random() * .3)
       const out = (2.5 + this.random() * 4.5) * grow * Math.min(2, .5 + R / 3), up = (3.5 + this.random() * 6) * grow
       this.drop(x + Math.cos(a) * r, y + .1, z + Math.sin(a) * r, vx * .3 + Math.cos(a) * out, up, vz * .3 + Math.sin(a) * out, (.12 + this.random() * .22) * grow, y, 0, scale, true)
