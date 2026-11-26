@@ -72,7 +72,7 @@ try {
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'loading' && document.querySelector('.boot-status'))
     await page.waitForTimeout(1500)
     const seen = () => page.evaluate(() => {
-      const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: el.textContent.trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
+      const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: (el.dataset.numbers || el.textContent).trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
       return { wordmark: document.querySelector('.boot-veil svg[aria-label="Mira"], .boot-wordmark') !== null, point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.mira) }
     })
     const first = await seen()

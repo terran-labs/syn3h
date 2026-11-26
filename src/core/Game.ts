@@ -30,7 +30,7 @@ import { ViewFit } from './viewFit'
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, withDeadline, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
-import { QualityController, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
+import { QualityController, loadingProgress, reportLoading, vehicleShading, type AdjacentRenderPreset, type QualityLevel, type FrameMetrics } from './quality'
 import { freeRetired, type RetireRenderer } from './retire'
 import { climbShowroomStandIns, drawCoveredShowroomVariant } from '../vehicles/skins/showroom'
 import { PipelineCounter } from './performanceHistory'
@@ -274,6 +274,8 @@ export class Game {
    */
   markTerrainBuilt(): void {
     if (this.buildMark) this.buildMark = recordStartupPhase('build until terrain attached to quality', this.buildMark)
+    // The first world is built; the loading veil's next stage is the first frame.
+    if (loadingProgress.phase !== 'ready' && loadingProgress.phase !== 'terrain') reportLoading('terrain', 0.85)
   }
 
   /** Insert before an existing system, or append if the anchor is absent. */

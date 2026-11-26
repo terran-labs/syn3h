@@ -212,6 +212,15 @@
          that ends sooner shows only the point of light. Their space is held throughout. */
       html[data-boot-late] .boot-status, html[data-boot-late] .boot-still { opacity: 1; }
       @media (prefers-reduced-motion: reduce) { .boot-status, .boot-still { transition: none; } }
+      /* The progress bar (with the build's startup total, html[data-boot-bytes]): a hairline in the
+         pale metal of the lobby's name, in the progress line's place and held space, so nothing
+         moves when it appears. Its fill is --boot-bar, set every frame by the head's bootstrap (in
+         steps under reduced motion). ?bootpct=1 adds the percentage beside it. */
+      html[data-boot-bytes] .boot-still { display: flex; align-items: center; justify-content: center; gap: 10px; }
+      .boot-bar { display: block; width: min(220px, 56vw); height: 2px; border-radius: 1px; overflow: hidden; background: rgb(243 233 214 / 0.16); }
+      .boot-bar::after { content: ""; display: block; height: 100%; transform-origin: 0 50%; transform: scaleX(var(--boot-bar, 0)); background: linear-gradient(90deg, #cdbb94, #f3e9d6 70%, #fffaf0); box-shadow: 0 0 6px rgb(255 240 214 / 0.5); }
+      .boot-pct { display: none; min-width: 4ch; text-align: right; font-size: 13px; }
+      html[data-boot-percent] .boot-pct { display: inline; }
       /* The physics engine's download is being retried (src/core/physicsWasm.ts): the status
          line says so, and the veil stays up while it does, so its failsafe is off. After the last
          try the message replaces the numbers and a Try again button sits under it. It fades in; nothing slides. */
@@ -394,22 +403,63 @@
           // On unless ?intro=0. With reduced motion the veil is the same; only the reveal is plain.
           var intro = /[?&]intro=([0-2])/.exec(location.search);
           if (!intro || intro[1] !== "0") root.dataset.intro = intro ? intro[1] : "2";
-          // The veil's progress mark (.boot-mark). The number
-          // eases toward a target on every frame, starting now, so the
-          // mark moves from the first paint. The target creeps by itself
-          // so a slow connection never shows a frozen mark, and LoadingScreen
-          // raises it as things arrive.
-          var shown = 0, target = 0.3, running = true;
-          window.__boot = {
-            set: function(value) { if (value > target) target = value; },
-            value: function() { return shown; },
-            stop: function() { running = false; }
+          // The veil's progress: one number from 0 to 1, drawn by the mark (--boot-progress) and
+          // the bar (--boot-bar, index.html's body). It goes through named stages, each ending at
+          // its share of the bar; the shares are measured (the boot progress report of 25 November
+          // 2026, cold and cached, desktop and a throttled phone) and kept in this one table.
+          //   download   the startup files' bytes received, of the total the build counted
+          //              (window.__miraBootSet, tools/boot-bytes.mjs)
+          //   engine     the physics engine and the renderer started (phase "world")
+          //   world      the first world built (phase "terrain")
+          //   graphics   the first frame drawn (phase "ready")
+          //   ready      the veil lifts (LoadingScreen.finish sets 1)
+          // A later stage that takes long creeps toward its end but never reaches it, so a slow load
+          // never shows a frozen bar and never claims a stage it has not finished. The number only
+          // ever goes up, and stays just short of 1 until the veil lifts.
+          var ENDS = [0.6, 0.72, 0.88, 0.97], AT = { world: 1, terrain: 2, ready: 3 };
+          var set = window.__miraBootSet, total = set && set.bytes > 0 ? set.bytes : 0, files = total ? set.files : [];
+          // Bytes received of the startup set: the document, and each listed file's body as
+          // delivered (decoded), the largest seen per file, so a retried download is never counted
+          // twice. The physics engine also counts as it streams, on its way to the loader.
+          var received = function() {
+            var bytes = 0, best = {}, engine = window.__miraPhysicsUrl || "", streamed = window.__miraPhysicsBytes || 0;
+            try {
+              performance.getEntriesByType("navigation").forEach(function(e) { bytes = Math.max(bytes, e.decodedBodySize || e.encodedBodySize || 0); });
+              performance.getEntriesByType("resource").forEach(function(e) {
+                var path = e.name.split(/[?#]/)[0], name = path.slice(path.lastIndexOf("/") + 1), n = e.decodedBodySize || e.encodedBodySize || 0;
+                if (files.indexOf(name) >= 0 && !(n <= best[name])) best[name] = n;
+              });
+            } catch (error) {}
+            var engineName = engine.slice(engine.lastIndexOf("/") + 1);
+            if (engineName && files.indexOf(engineName) >= 0 && !(streamed <= best[engineName])) best[engineName] = streamed;
+            for (var k in best) bytes += best[k];
+            return bytes;
           };
-          (function tick() {
+          var shown = 0, target = 0, stage = 0, running = true, sampled = -1e9, still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+          if (total) root.dataset.bootBytes = "";
+          if (/[?&]bootpct=1/.test(location.search)) root.dataset.bootPercent = "";
+          window.__boot = {
+            // LoadingScreen.finish: 1, the veil is lifting.
+            set: function(value) { if (value > target) target = value; },
+            // A phase the game reports (core/quality.ts reportLoading): its stage is done.
+            stage: function(phase) { var at = AT[phase]; if (at + 1 > stage) { stage = at + 1; if (ENDS[at] > target) target = ENDS[at]; } },
+            value: function() { return shown; },
+            stop: function() { running = false; },
+            received: received,
+            total: total
+          };
+          (function tick(now) {
             if (!running) return;
-            if (target < 0.92) target += (0.92 - target) * 0.0006;
+            // The download's own fraction, read four times a second.
+            if (total && stage === 0 && !(now - sampled < 250)) { sampled = now || 0; var part = ENDS[0] * Math.min(1, received() / total); if (part > target) target = part; }
+            // Stages with nothing to measure creep; the download has its bytes (without a total, as
+            // on the dev server and in builds from before it, it creeps too).
+            var ceiling = (stage < ENDS.length ? ENDS[stage] : 1) - 0.015;
+            if (target < ceiling && !(total && stage === 0)) target += (ceiling - target) * 0.0006;
             shown += (target - shown) * 0.07;
             root.style.setProperty("--boot-progress", shown.toFixed(4));
+            // With reduced motion the bar moves in steps of a twentieth.
+            root.style.setProperty("--boot-bar", (still ? Math.floor(shown * 20) / 20 : shown).toFixed(4));
             requestAnimationFrame(tick);
           })();
         } catch (error) {}
@@ -480,7 +530,7 @@
             }
           } catch (error) {}
           var root = document.documentElement;
-          // Bytes received: every finished file's body (the document included), and the physics
+          // Without a startup total, bytes received: every finished file's body (the document included), and the physics
           // engine's file as it streams in, counted on its way to the loader (tools/rapier-wasm.mjs)
           // until it finishes and its own entry takes over. Bodies as delivered (decoded), the same
           // measure for both, so the count only ever goes up.
@@ -495,11 +545,22 @@
             if (!engineDone) bytes += window.__miraPhysicsBytes || 0;
             return bytes;
           };
+          // With the build's startup total (window.__miraBootSet) the line is the progress bar
+          // (the head's bootstrap moves it); the seconds and megabytes stay as its title, for
+          // anyone diagnosing a slow load. Without one (the dev server) it is the numbers, as before.
+          var boot = window.__boot, bar = !!(boot && boot.total), pct = null;
+          if (bar) {
+            w.textContent = "";
+            var track = document.createElement("span"); track.className = "boot-bar"; w.appendChild(track);
+            pct = document.createElement("span"); pct.className = "boot-pct"; w.appendChild(pct);
+          }
           var draw = function() {
             if (root.dataset.boot === "done") { clearInterval(tick); return; }
             // Seconds since the visit began (performance.now counts from the navigation).
             var now = performance.now();
-            w.textContent = Math.floor(now / 1000) + " s \u00b7 " + (received() / 1048576).toFixed(1) + " MB";
+            var numbers = Math.floor(now / 1000) + " s \u00b7 " + ((bar ? boot.received() : received()) / 1048576).toFixed(1) + " MB";
+            if (bar) { w.title = numbers; w.dataset.numbers = numbers; pct.textContent = Math.floor(boot.value() * 100) + "%"; }
+            else w.textContent = numbers;
             // The one trigger for both lines (the CSS above): three seconds into the visit.
             if (now >= 3000) root.dataset.bootLate = "";
           };
