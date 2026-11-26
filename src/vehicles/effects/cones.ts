@@ -24,6 +24,7 @@ import {
 import { GatedViewportDepthTexture, midPassCopyNode } from '../../core/midPassCopy'
 import { applyCurve } from '../../world/curve'
 import { defineParam } from '../../../shared/params'
+import { CORE_SHARE, lampPitch, type LampPose } from './lamps'
 
 type N = any // TSL node
 
@@ -47,30 +48,12 @@ export function beamFactorFor(kind: string): number {
   return kind === 'hovercraft' ? Number(hovercraftBeams.value) : kind === 'jet' ? Number(jetBeams.value) : 1
 }
 
-/** Cone length (m) and half angle (radians) of the buggy's visible beam. */
-export const CONE_LENGTH = 18, CONE_HALF_ANGLE = (12 * Math.PI) / 180
-/** The real beam's tip below the lamp at 22 m ahead: the cone follows it (effects/index.ts spot target). */
-export const CONE_DROP = Math.atan2(0.8, 22)
+/** A cone's reference length (m), for insideFade's default. Each cone's own runs to the ground (lamps.ts). */
+export const CONE_LENGTH = 18
 
-/**
- * A vehicle kind's beam in mist: its length (m), half angle and drop below the lamp's axis
- * (radians). Every kind draws into the one cone batch with the one material; a kind joins by
- * having a shape here (coneShapeFor), so any vehicle, a bot's included, reuses it.
- */
-export interface ConeShape { length: number; halfAngle: number; drop: number }
-export const CONE_SHAPES: Readonly<Record<'buggy' | 'hovercraft' | 'jet', ConeShape>> = {
-  buggy: { length: CONE_LENGTH, halfAngle: CONE_HALF_ANGLE, drop: CONE_DROP },
-  // The hovercraft's lamp (.23 m up) aims 1 m down at 20 m; it sits low over water, so a
-  // shorter, wider beam that meets the surface instead of tunnelling under it.
-  hovercraft: { length: 16, halfAngle: (14 * Math.PI) / 180, drop: Math.atan2(1.03, 20.15) },
-  // The jet's lamps hang under the nose and it is usually flying: a longer, narrower beam
-  // reads as a landing light reaching ahead rather than a puddle under the fuselage.
-  jet: { length: 28, halfAngle: (9 * Math.PI) / 180, drop: Math.atan2(1.15, 18.7) },
-}
-/** The cone shape for a vehicle kind, or null for a kind without cones. */
-export function coneShapeFor(kind: string): ConeShape | null {
-  if (kind.startsWith('buggy')) return CONE_SHAPES.buggy
-  return kind === 'hovercraft' || kind === 'jet' ? CONE_SHAPES[kind] : null
+/** Kinds that draw a beam in mist. Every kind shares the one batch and material. */
+export function hasCone(kind: string): boolean {
+  return kind.startsWith('buggy') || kind === 'hovercraft' || kind === 'jet' || kind === 'tank'
 }
 /**
  * Brightness of a cone in thick mist, per unit of lamp brightness, and the haze density (per
@@ -157,16 +140,19 @@ export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
 const tilt = new T.Matrix4(), shape = new T.Matrix4()
 /**
  * Write one vehicle's cones from its lamp points (even ones are the front headlights) at
- * `brightness` (the lamp's, before haze). Returns the next free index.
+ * `brightness` (the lamp's, before haze). Each is the lamp's bright core (lamps.ts): along the
+ * pose's axis, CORE_SHARE of its spread, `lengths[k]` metres long for the k-th front lamp (to
+ * where its axis meets the ground, or the reach). Returns the next free index.
  */
-export function writeVehicleCones(mesh: T.InstancedMesh, index: number, object: T.Object3D, points: readonly T.Object3D[], colour: T.Color, brightness: number, scratch: T.Matrix4, camera?: T.Vector3, cone: ConeShape = CONE_SHAPES.buggy): number {
-  tilt.makeRotationX(-cone.drop)
-  const radius = cone.length * Math.tan(cone.halfAngle)
-  shape.makeScale(radius, radius, cone.length)
-  for (let i = 0; i < points.length && index < MAX_CONES; i += 2, index++) {
+export function writeVehicleCones(mesh: T.InstancedMesh, index: number, object: T.Object3D, points: readonly T.Object3D[], colour: T.Color, brightness: number, scratch: T.Matrix4, camera: T.Vector3 | undefined, pose: LampPose, lengths: readonly number[]): number {
+  tilt.makeRotationX(-lampPitch(pose))
+  const slope = Math.tan(pose.spread * CORE_SHARE)
+  for (let i = 0, k = 0; i < points.length && index < MAX_CONES; i += 2, k++, index++) {
+    const length = Math.max(.1, lengths[k] ?? pose.reach), radius = length * slope
+    shape.makeScale(radius, radius, length)
     scratch.copy(points[i].matrixWorld).multiply(tilt).multiply(shape)
     let fade = 1
-    if (camera) fade = insideFade(scratch, camera, radius, cone.length)
+    if (camera) fade = insideFade(scratch, camera, radius, length)
     if (!object.visible || !(brightness * fade > 0)) scratch.makeScale(0, 0, 0)
     mesh.setMatrixAt(index, scratch)
     mesh.setColorAt(index, tmpColour.copy(colour).multiplyScalar(brightness * fade))

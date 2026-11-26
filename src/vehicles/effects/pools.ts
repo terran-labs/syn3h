@@ -24,17 +24,24 @@
  *     darker than under the moon and the pools nearly vanished.) No depth or colour copy is
  *     read, and the shadow pass is not involved.
  *
+ * Where the light falls is not drawn by hand: each pixel of the patch evaluates the same spot
+ * equation as the player's own lamps, from the vehicle's one lamp pose (lamps.ts): the lamp's
+ * place and axis, its spread with an even fall from the axis, a linear fall with distance to its
+ * reach, and the ground facing the lamp. So a pool is exactly where the beam in mist (cones.ts)
+ * lands, bright centre and soft skirt out to the full spread. A lamp too high for its lower
+ * edge to reach the ground throws no pool at all.
+ *
  * Strength per vehicle follows its lamps as the beams in mist do (cones.ts): the dusk-to-dawn
  * ramp of the real spot lights, the room's buggy headlight setting (light.buggyHeadlights) for
  * buggies, and each kind's beam factor (light.buggyBeams, light.hovercraftBeams, light.jetBeams),
  * all in the Game card's Vehicle looks. Then light.groundPools, each player's own: 0 is off,
- * and the quality level sets it (core/quality.ts PRESET_TABLE). The pool fades out as the lamps
- * rise off the ground, so a jet in flight casts none.
+ * and the quality level sets it (core/quality.ts PRESET_TABLE).
  */
 import * as T from 'three/webgpu'
-import { abs, attribute, exp, float, pow, smoothstep, vec3 } from 'three/tsl'
+import { attribute, clamp, dot, float, max, normalize, pow, positionGeometry, smoothstep, vec3 } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import { applyCurve } from '../../world/curve'
+import { groundHit, lampAxis, type LampPose } from './lamps'
 
 type N = any // TSL node
 
@@ -48,20 +55,21 @@ export const groundPools = defineParam({
   default: 1, min: 0, max: 2, step: 0.05,
 })
 
-// The patch in the vehicle's frame: from NEAR metres behind the lamps to FAR ahead, widening from
-// NEAR_W to FAR_W either side. ACROSS by ALONG vertices: enough to follow rolling ground.
-export const POOL_NEAR = -0.6, POOL_FAR = 20, POOL_NEAR_W = 1.5, POOL_FAR_W = 9
-const ACROSS = 7, ALONG = 12
+// The patch: from POOL_NEAR metres behind the lamps to the lamp's reach ahead, along the ground
+// under its axis, as wide as the spread there. ACROSS by ALONG vertices: enough to follow rolling
+// ground; the light itself is computed per pixel.
+export const POOL_NEAR = -0.6
+const ACROSS = 9, ALONG = 16
 const VERTS = ACROSS * ALONG, INDICES = (ACROSS - 1) * (ALONG - 1) * 6
 /** Metres above the ground the patch is laid, against flicker with the terrain's own surface. */
 const LIFT = 0.06
-/** The pool fades out as the lamps rise from FADE_LOW to FADE_HIGH metres above the ground. */
-const FADE_LOW = 3, FADE_HIGH = 12
 /** Pools beyond this distance from the camera are not drawn; they fade over the last FADE_FAR m. */
 export const POOL_RANGE = 220
 const FADE_FAR = 40
 /** Light added at the pool's brightest point at strength 1, times the ground's colour. Tuned by frames. */
 export const POOL_PEAK = 10
+/** The spot equation's value (spread fall times the ground facing the lamp over distance) that POOL_PEAK is for: 3 m ahead. */
+export const POOL_REFERENCE = .067
 /**
  * The lamp's own colour added in the hot centre, as a share of POOL_PEAK: where a real beam is
  * strong the lit ground saturates toward the beam's warm white; the edges keep the ground's
@@ -74,9 +82,9 @@ const BEAM = new T.Color(1, 0.9965517, 0.875)
 /** One vehicle's pool to draw this frame. */
 export interface PoolSource {
   readonly object: T.Object3D
-  /** Lamp centre in the vehicle's frame: height and how far ahead (negative z is ahead). */
-  readonly lampY: number
-  readonly lampZ: number
+  /** The vehicle's one lamp pose (lamps.ts), and the scale its lamp points are drawn at. */
+  readonly pose: LampPose
+  readonly size: number
   /** 0 to 1 and beyond: night ramp times the lamp's and the kind's factors times groundPools. */
   readonly strength: number
 }
@@ -84,7 +92,7 @@ export interface PoolSource {
 /** Linear colour of the ground (or water) at a point, written into `out`. */
 export type TintAt = (x: number, z: number, out: { r: number; g: number; b: number }) => void
 
-const local = new T.Vector3(), world = new T.Vector3(), lamp = new T.Vector3()
+const local = new T.Vector3(), world = new T.Vector3(), lamp = new T.Vector3(), axis = new T.Vector3(), lower = new T.Vector3(), along = new T.Vector3(), across = new T.Vector3(), q = new T.Quaternion()
 
 export class GroundPools {
   readonly mesh: T.Mesh
@@ -92,6 +100,8 @@ export class GroundPools {
   private readonly positions: Float32Array
   private readonly strengths: Float32Array
   private readonly tints: Float32Array
+  private readonly lamps: Float32Array
+  private readonly axes: Float32Array
   private readonly tint = { r: 0, g: 0, b: 0 }
   /** Pools drawn last frame, for checks. */
   drawn = 0
@@ -102,6 +112,9 @@ export class GroundPools {
     this.positions = new Float32Array(capacity * VERTS * 3)
     this.strengths = new Float32Array(capacity * VERTS)
     this.tints = new Float32Array(capacity * VERTS * 3)
+    // Per vertex, its pool's lamp: place and the cosine of its spread; axis and reach.
+    this.lamps = new Float32Array(capacity * VERTS * 4)
+    this.axes = new Float32Array(capacity * VERTS * 4)
     // Each vertex's place in its patch, fixed: x across (-1 to 1), y along (0 near, 1 far).
     const place = new Float32Array(capacity * VERTS * 2)
     const index = new Uint32Array(capacity * INDICES)
@@ -121,6 +134,8 @@ export class GroundPools {
     geometry.setAttribute('poolPlace', new T.BufferAttribute(place, 2))
     geometry.setAttribute('poolStrength', new T.BufferAttribute(this.strengths, 1).setUsage(T.DynamicDrawUsage))
     geometry.setAttribute('poolTint', new T.BufferAttribute(this.tints, 3).setUsage(T.DynamicDrawUsage))
+    geometry.setAttribute('poolLamp', new T.BufferAttribute(this.lamps, 4).setUsage(T.DynamicDrawUsage))
+    geometry.setAttribute('poolAxis', new T.BufferAttribute(this.axes, 4).setUsage(T.DynamicDrawUsage))
     geometry.setIndex(new T.BufferAttribute(index, 1))
     // Never culled by bounds: the positions move every frame.
     geometry.boundingSphere = new T.Sphere(new T.Vector3(), Infinity)
@@ -145,26 +160,38 @@ export class GroundPools {
       const o = s.object
       const distance = camera.distanceTo(o.position)
       if (distance > POOL_RANGE) continue
-      // The lamps' height above the ground: a pool needs its beam to reach the ground.
-      lamp.set(0, s.lampY, s.lampZ).applyQuaternion(o.quaternion).add(o.position)
-      const above = lamp.y - heightAt(lamp.x, lamp.z)
-      const strength = s.strength * (1 - T.MathUtils.smoothstep(above, FADE_LOW, FADE_HIGH))
-        * Math.min(1, (POOL_RANGE - distance) / FADE_FAR)
+      // The lamp's place and axis in the world, from its one pose.
+      const pose = s.pose
+      lamp.set(0, pose.y * s.size, pose.z * s.size).applyQuaternion(o.quaternion).add(o.position)
+      axis.copy(lampAxis(pose, axis)).applyQuaternion(o.quaternion).normalize()
+      // No pool unless the lower edge of the light reaches the ground within the reach.
+      local.set(1, 0, 0).applyQuaternion(o.quaternion)
+      lower.copy(axis).applyQuaternion(q.setFromAxisAngle(local, -pose.spread)).normalize()
+      if (groundHit(lamp, lower, pose.reach, heightAt) === null) continue
+      const strength = s.strength * Math.min(1, (POOL_RANGE - distance) / FADE_FAR)
       if (!(strength > 0.002)) continue
+      // The patch runs along the ground under the axis (or the vehicle's nose, if the axis is
+      // nearly straight down), as wide as the spread at each distance.
+      along.set(axis.x, 0, axis.z)
+      if (along.lengthSq() < .04) along.set(0, 0, -1).applyQuaternion(o.quaternion).setY(0)
+      along.normalize(); across.set(-along.z, 0, along.x)
+      const reach = pose.reach, spreadTan = Math.tan(pose.spread) * 1.15, halfLamps = Math.abs(pose.x * s.size)
       // One colour for the pool, from the ground 8 m ahead of the lamps.
-      world.set(0, 0, s.lampZ - 8).applyQuaternion(o.quaternion)
-      tintAt(o.position.x + world.x, o.position.z + world.z, this.tint)
+      tintAt(lamp.x + along.x * 8, lamp.z + along.z * 8, this.tint)
+      const cosSpread = Math.cos(pose.spread)
       for (let j = 0; j < ALONG; j++) {
-        const t = j / (ALONG - 1), z = s.lampZ - (POOL_NEAR + (POOL_FAR - POOL_NEAR) * t)
-        const half = POOL_NEAR_W + (POOL_FAR_W - POOL_NEAR_W) * t
+        const t = j / (ALONG - 1), d = POOL_NEAR + (reach - POOL_NEAR) * t
+        const half = halfLamps + Math.max(.5, d) * spreadTan
         for (let i = 0; i < ACROSS; i++) {
-          world.copy(local.set(((i / (ACROSS - 1)) * 2 - 1) * half, 0, z)).applyQuaternion(o.quaternion)
-          world.x += o.position.x; world.z += o.position.z
+          const u = ((i / (ACROSS - 1)) * 2 - 1) * half
+          world.set(lamp.x + along.x * d + across.x * u, 0, lamp.z + along.z * d + across.z * u)
           world.y = heightAt(world.x, world.z) + LIFT
           const v = n * VERTS + j * ACROSS + i
           this.positions[v * 3] = world.x; this.positions[v * 3 + 1] = world.y; this.positions[v * 3 + 2] = world.z
           this.strengths[v] = strength
           this.tints[v * 3] = this.tint.r; this.tints[v * 3 + 1] = this.tint.g; this.tints[v * 3 + 2] = this.tint.b
+          this.lamps[v * 4] = lamp.x; this.lamps[v * 4 + 1] = lamp.y; this.lamps[v * 4 + 2] = lamp.z; this.lamps[v * 4 + 3] = cosSpread
+          this.axes[v * 4] = axis.x; this.axes[v * 4 + 1] = axis.y; this.axes[v * 4 + 2] = axis.z; this.axes[v * 4 + 3] = reach
         }
       }
       n++
@@ -177,6 +204,8 @@ export class GroundPools {
     geometry.attributes.position.needsUpdate = true
     geometry.attributes.poolStrength.needsUpdate = true
     geometry.attributes.poolTint.needsUpdate = true
+    geometry.attributes.poolLamp.needsUpdate = true
+    geometry.attributes.poolAxis.needsUpdate = true
   }
 
   dispose(): void {
@@ -185,19 +214,23 @@ export class GroundPools {
 }
 
 /**
- * The pool's light: brightest just ahead of the lamps, falling off down the road, soft at the
- * sides, tinted by the ground's colour and added to what is there.
+ * The pool's light: the spot equation the player's own lamps use (lamps.ts poseSpot), evaluated
+ * at each pixel from its pool's lamp: an even fall from the axis to nothing at the spread
+ * (penumbra 1), a linear fall with distance (decay 1, with three.js's cutoff at the reach),
+ * times the ground facing the lamp. Tinted by the ground's colour and added.
  */
 function poolMaterial(): T.MeshBasicNodeMaterial {
   const material = new T.MeshBasicNodeMaterial()
-  const place = attribute('poolPlace', 'vec2') as N, strength = attribute('poolStrength', 'float') as N, tint = attribute('poolTint', 'vec3') as N
-  // Across: a soft bell, no edge. Along: up over the first three metres, then falling away down
-  // the road roughly as a beam spreads, to nothing at the far end.
-  const u = abs(place.x) as N
-  const across = pow(float(1).sub(u.mul(u)), 2.5) as N
-  const along = smoothstep(0, 0.14, place.y).mul(exp(place.y.mul(-3.6))).mul(float(1).sub(smoothstep(0.7, 1, place.y))) as N
-  // The ground's colour across the whole pool, and the lamp's warm white in its hot centre.
-  const shape = across.mul(along) as N
+  const strength = attribute('poolStrength', 'float') as N, tint = attribute('poolTint', 'vec3') as N
+  const lampA = attribute('poolLamp', 'vec4') as N, axisA = attribute('poolAxis', 'vec4') as N
+  // The patch's own vertices are world positions (the mesh is not moved), before the planet's curve.
+  const toLamp = lampA.xyz.sub(positionGeometry) as N, distance = toLamp.length() as N
+  const l = normalize(toLamp) as N
+  const spot = smoothstep(lampA.w, float(1), dot(l.negate(), axisA.xyz)) as N
+  const facing = max(l.y, float(0)) as N
+  const cutoff = pow(clamp(float(1).sub(pow(distance.div(axisA.w), 4)), 0, 1), 2) as N
+  // decay 1, as the player's own spots: a linear fall with distance.
+  const shape = clamp(spot.mul(facing).mul(cutoff).div(max(distance, float(.5))).div(POOL_REFERENCE), 0, 1.5) as N
   const lamp = vec3(BEAM.r, BEAM.g, BEAM.b) as N
   material.colorNode = lamp.mul(tint).mul(shape).add(lamp.mul(pow(shape, POOL_CORE_POWER).mul(POOL_CORE))).mul(strength.mul(POOL_PEAK)) as N
   material.transparent = true

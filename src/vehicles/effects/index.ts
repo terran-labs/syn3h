@@ -1,6 +1,7 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import {headlightScale} from './headlights'
-import {type ConeHaze,MAX_CONES,beamFactorFor,coneShapeFor,createConeBatch,createConeHaze,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {type ConeHaze,MAX_CONES,beamFactorFor,createConeBatch,createConeHaze,hasCone,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
+import {SPOT_MATCH,groundHit,lampAxis,lampPoseFor,poseSpot,type LampPose} from './lamps'
 import {GroundPools,groundPools,type PoolSource} from './pools'
 import {hazeNow} from '../../world/weather/fog'
 import {activeFogBanks} from '../../world/weather/fogBanks'
@@ -58,6 +59,7 @@ const RECENT=Math.ceil(MARK_END_FADE/.75)+1
 const temp=new T.Vector3(),normal=new T.Vector3(),side=new T.Vector3(),velocity=new T.Vector3()
 // Scratch for the per frame path, so a frame with nine vehicles allocates nothing here. Each is
 // written and read within one statement or one loop pass; nothing keeps a reference to them.
+const coneOrigin=new T.Vector3(),coneAxis=new T.Vector3(),coneQuat=new T.Quaternion()
 const wp=new T.Vector3(),at=new T.Vector3(),tip=new T.Vector3(),rawVelocity=new T.Vector3(),toCamera=new T.Vector3(),inverse=new T.Quaternion(),trailColor=new T.Color()
 /** terra.jet hover thrusters, local x and z. */
 const HOVER_THRUSTERS:readonly (readonly [number,number])[]=[[-1.544781,1.170159],[0,-1.735762],[1.455346,1.153567]]
@@ -268,8 +270,11 @@ class VehicleEffects {
     const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft'
     // The jet's points are at its design size; it is drawn at jet.length (jetgen/size.ts).
     const s=this.size=jet?(vehicle as {size?:number}).size??1:1
-    const width=(jet?1:hover?.6:.584)*s,front=(jet?3.2756:hover?2.03:1.775)*s,lampY=(jet?-.423:hover?.215:.036)*s
-    this.pool={object:vehicle.object,lampY,lampZ:-front,strength:0}
+    // Every view of the headlights reads this one pose (lamps.ts): the lamp glows, the real spot
+    // lights, the beam in mist and the ground pool.
+    const pose=lampPoseFor(vehicle.kind)
+    const width=pose.x*s,front=-pose.z*s,lampY=pose.y*s
+    this.pool={object:vehicle.object,pose,size:s,strength:0}
     for(const sign of [-1,1]){
       const head=new T.Object3D();head.position.set(sign*width,lampY,-front);this.root.add(head);this.lampPoints.push(head)
       const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,(hover?.35:.12)*s,(jet?2.7:1.7)*s);this.root.add(tail);this.lampPoints.push(tail)
@@ -285,8 +290,8 @@ class VehicleEffects {
       for(const [i,x] of (sharedSpots?[-width,width]:this.buggy?[-width,width]:[0]).entries()){
         const spot=sharedSpots?.[i]??new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
         spot.name=this.buggy?(x<0?'Left headlight':'Right headlight'):'Headlight'
-        spot.position.set(x,hover?.23:this.buggy?.036:.35,hover?-1.85:-front);spot.target.position.set(x,-.8,-22);spot.castShadow=false
-        this.spots.push(spot);this.headlightRig.add(spot,spot.target)
+        poseSpot(spot,pose,x,s);spot.castShadow=false
+        this.spots.push(spot);this.spotX.push(x);this.headlightRig.add(spot,spot.target)
       }
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
@@ -308,7 +313,10 @@ class VehicleEffects {
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   /** This vehicle's headlight cones (cones.ts) at `night` (the beam ramp times the cone setting). */
   /** This vehicle's lamps and their strength on the ground (pools.ts), reused each frame. */
-  private readonly pool:{object:T.Object3D;lampY:number;lampZ:number;strength:number}
+  private readonly pool:{object:T.Object3D;pose:LampPose;size:number;strength:number}
+  /** Each real spot's lamp x in the vehicle's frame, for re-posing it when the pose is retuned. */
+  private readonly spotX:number[]=[]
+  private readonly coneLengths=[0,0]
   /**
    * Other vehicles only: your own vehicle has real spot lights. Strength as the beam in mist
    * (writeCones): the buggy's headlight setting, the kind's beam factor, and `night`, which
@@ -317,18 +325,28 @@ class VehicleEffects {
   poolSource(night:number):PoolSource|null{
     if(this.local||this.vehicle.zorbed)return null
     this.pool.strength=night*(this.buggy?headlightScale().beam:1)*beamFactorFor(this.vehicle.kind)
+    this.pool.pose=lampPoseFor(this.vehicle.kind)
     return this.pool
   }
   writeCones(batch:T.InstancedMesh,index:number,night:number,camera:T.Vector3):number {
     // Each kind's beam has its own shape (cones.ts CONE_SHAPES). Every buggy draws one; a
     // hovercraft or jet always for the player's own vehicle, and for bots and other players from
     // High up (qualityLevel 3). Same batch and material: nothing is built when one appears.
-    const shape=coneShapeFor(this.vehicle.kind)
-    if(!shape||(!this.buggy&&!this.local&&Number(qualityLevel.value)<3))return index
+    if(!hasCone(this.vehicle.kind)||(!this.buggy&&!this.local&&Number(qualityLevel.value)<3))return index
     this.root.updateWorldMatrix(true,true)
+    // Each front lamp's cone runs along the pose's axis to where it meets the ground, or to the
+    // reach (where it has faded out) when it misses: a jet high up points at nothing it lights.
+    const pose=lampPoseFor(this.vehicle.kind),terrain=this.terrain
+    const surface=(x:number,z:number)=>Math.max(terrain.heightAt(x,z),terrain.liquidHeightAt?.(x,z)??-Infinity)
+    this.root.getWorldQuaternion(coneQuat)
+    for(let i=0,k=0;i<this.lampPoints.length;i+=2,k++){
+      this.lampPoints[i].getWorldPosition(coneOrigin)
+      lampAxis(pose,coneAxis).applyQuaternion(coneQuat).normalize()
+      this.coneLengths[k]=groundHit(coneOrigin,coneAxis,pose.reach,surface)??pose.reach
+    }
     // The beam follows its lamp (the buggy's headlight setting; others' lamps are 1) times the
     // kind's beam-only factor (cones.ts beamFactorFor). The lamps themselves are untouched.
-    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1)*beamFactorFor(this.vehicle.kind),this.lampMatrix,camera,shape)
+    return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1)*beamFactorFor(this.vehicle.kind),this.lampMatrix,camera,pose,this.coneLengths)
   }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
@@ -383,7 +401,10 @@ class VehicleEffects {
     if(this.headlightRig){
       const sunY=w.sunY()
       // The buggy's beam follows the headlight setting (headlights.ts); other kinds are unchanged.
-      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)
+      // Decay 0 within the reach (lamps.ts): SPOT_MATCH keeps the old brightness near the car.
+      // The jet's one spot carries what the buggy's two share: a third of its old figure lights its ground as the buggy's does.
+      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?600:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)*SPOT_MATCH
+      const pose=lampPoseFor(v.kind);this.spots.forEach((spot,i)=>poseSpot(spot,pose,this.spotX[i],this.size))
       this.headlightRig.beamIntensity=intensity
     }
     // A sealed zorb has no running engine plume or tyre contact. Keep lamps current above;
