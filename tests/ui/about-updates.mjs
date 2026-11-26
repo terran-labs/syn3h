@@ -1,6 +1,7 @@
 // A player on an older release is told a newer one is live, and can read its notes and reload.
 // Bugs caught: the lobby banner or the in-play chip never appearing for a newer live version;
-// What's new not opening the notes, or the newest release missing or not first; the page
+// What's new not opening the notes, the newest day not open or its newest release missing or not
+// first, a closed day not opening to its releases, the link to every release on GitHub missing; the page
 // reloading by itself; Dismiss not sticking; a pinned (?v=) page prompting; release notes
 // rendering markup or unsafe links. Where the notice sits and how big it is is not pinned.
 //
@@ -48,17 +49,39 @@ for (const mode of ['desktop', 'phone']) {
 
     // The version in the lower left (which opens Updates) carries a quiet mark while a newer version is out.
     assert.equal(await page.locator('.lobby-version.has-update').count(), 1, `${mode}: the version is marked`)
-    // What's new opens Updates: the newest release first, with its notes.
+    // What's new opens Updates: one entry per Pacific day (days.ts), the newest day open with its
+    // newest release open and that release's notes. Waits on the sheet itself, not a fixed delay:
+    // an opener may open it late (the version label waits out a five-tap gesture).
     await banner.getByRole('button', { name: 'What’s new' }).click()
-    const about = page.locator('.lobby-sheet-updates')
-    await about.locator('.update-release').first().waitFor({ state: 'visible', timeout: 15000 })
-    const first = about.locator('.update-release').first()
+    const about = page.locator('dialog.lobby-sheet-updates[open]')
+    await about.waitFor({ state: 'visible', timeout: 15000 })
+    // The days arrive with the feed. The dev server builds /releases.json on each request, reading
+    // git for each release's changes (tools/release-feed.mjs), seconds on a loaded machine: the
+    // wait is long so load alone cannot fail it (AGENTS.md, testing).
+    const days = about.locator('.update-day')
+    await days.first().waitFor({ state: 'visible', timeout: 60000 })
+    assert.equal(await days.first().locator('.update-day-toggle').getAttribute('aria-expanded'), 'true', `${mode}: the newest day starts open`)
+    const first = days.first().locator('.update-release').first()
+    await first.waitFor({ state: 'visible', timeout: 5000 })
     assert.equal(await first.getAttribute('data-version'), NEWEST)
     assert.ok(await first.locator('.update-notes li').count() >= 2, 'the player digest shows as bullets')
     assert.equal(await first.locator('.update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${NEWEST}`)
     assert.equal(await first.locator('.update-notes script, .update-notes [onerror]').count(), 0)
     const links = await first.locator('.update-notes a').evaluateAll(as => as.map(a => [a.target, a.rel, a.protocol]))
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
+    // A closed day opens to its own releases.
+    if (await days.count() > 1) {
+      const older = days.nth(1), toggle = older.locator('.update-day-toggle')
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'false', `${mode}: older days start closed`)
+      await toggle.click()
+      assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
+      await older.locator('.update-release').first().waitFor({ state: 'visible', timeout: 5000 })
+    }
+    // Every release on GitHub, one link, in a new tab.
+    const github = about.locator('a.updates-github')
+    assert.equal(await github.getAttribute('href'), 'https://github.com/terran-labs/syn3h/releases')
+    assert.equal(await github.getAttribute('target'), '_blank')
+    assert.match(await github.getAttribute('rel') ?? '', /noopener/)
     assert.equal(loads, 1, 'still the first load')
 
     // Closed, the banner is back; dismissed, it goes.
@@ -89,7 +112,8 @@ for (const mode of ['desktop', 'phone']) {
     assert.ok(await page.locator('.update-banner').isHidden(), 'no banner over the world')
     await chip.click()
     const guide = page.locator('.in-play-about')
-    await guide.locator('.update-release').first().waitFor({ state: 'visible', timeout: 15000 })
+    // A fresh page fetches the feed here, which the dev server builds from git (see the lobby above).
+    await guide.locator('.update-day').first().locator('.update-release').first().waitFor({ state: 'visible', timeout: 60000 })
     assert.equal(await guide.getByRole('tab', { name: 'Updates' }).getAttribute('aria-selected'), 'true')
     await page.keyboard.press('Escape')
     await guide.waitFor({ state: 'hidden' })
