@@ -513,6 +513,7 @@ async function main(): Promise<void> {
       },
       // null drops the override: the bot returns to its own nature.
       setBotTrait: (id, trait, value) => connection.setBotTraits(id, { [trait]: value }),
+      resetBotTraits: (id, traits) => { if (traits.length) connection.setBotTraits(id, Object.fromEntries(traits.map(t => [t, null]))) },
     })
     connection.requestBanishes()
     // One store for "Show my location": the net client's, which the room hears.

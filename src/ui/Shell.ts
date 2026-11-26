@@ -257,7 +257,7 @@ export class Shell implements System {
    * What the panel does that needs the room's server (main.ts fills these in once joined);
    * until then the moderation controls show as unavailable.
    */
-  private playerHooks: Partial<Pick<PlayerPanelActions, 'muteForAll' | 'moderation' | 'eject' | 'botTraits' | 'setBotTrait'>> = {}
+  private playerHooks: Partial<Pick<PlayerPanelActions, 'muteForAll' | 'moderation' | 'eject' | 'botTraits' | 'setBotTrait' | 'resetBotTraits'>> = {}
   private paramPanel?: ParamPanel
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
@@ -433,6 +433,7 @@ export class Shell implements System {
       eject: (id, stop) => this.playerHooks.eject?.(id, stop),
       botTraits: id => this.playerHooks.botTraits?.(id) ?? null,
       setBotTrait: (id, trait, value) => this.playerHooks.setBotTrait?.(id, trait, value),
+      resetBotTraits: (id, traits) => this.playerHooks.resetBotTraits?.(id, traits),
       sharesLocation: () => shareLocation.value,
       phone: () => matchMedia(PHONE_SIDEBAR).matches,
       changed: () => this.hudBoard.syncExpanded(),

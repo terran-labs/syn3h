@@ -75,6 +75,9 @@ html[data-glass-material] .mira-shell.exploration-ui .player-panel button.pp-tog
 .mira-shell .player-panel .pp-trait output { color: var(--s3-dim, #a9b0bd); font-variant-numeric: tabular-nums; font-size: 12px; }
 .mira-shell .player-panel .pp-trait input { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; height: 24px; accent-color: #fff; touch-action: pan-y; }
 .mira-shell .player-panel .pp-trait .pp-why { grid-column: 1 / -1; margin-top: 4px; }
+/* The nature notch on this panel's native slider, whose thumb is 16 px (the shared rule assumes 6). */
+:root .mira-shell .player-panel input[type=range].has-default.has-default { background-position: calc(7.5px + (100% - 16px) * var(--wi-default, 0)) 50%; }
+.mira-shell .player-panel .pp-traits-head button.pp-reset-all { min-height: 28px; }
 /* Phone: the panel stands where the sidebar is, as its one open card; controls at thumb size. */
 .mira-shell .player-panel.is-sheet { right: auto; }
 /* The sidebar it stands in for is hidden while the sheet is open, so nothing shows through. */

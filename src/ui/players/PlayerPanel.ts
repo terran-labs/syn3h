@@ -20,7 +20,7 @@
  */
 import './player-panel.css'
 import { CARD_CLOSE } from '../cardClose'
-import { resetButton, type ResetButton } from '../resetControl'
+import { resetAllButton, resetButton, type ResetAllButton, type ResetButton } from '../resetControl'
 import { vehicleIcon, vehicleGlyph, mutedIcon, slottedName } from './icons'
 import { deviceName, placeName } from './rowLabel'
 import { EjectDialog, type BanishStop } from './EjectDialog'
@@ -76,6 +76,8 @@ export interface PlayerPanelActions {
   botTraits(id: number): { values: BotTraits; overridden: readonly BotTrait[]; nature?: Partial<BotTraits> } | null
   /** Set a trait (0..1), or reset it to the bot's own nature with null. */
   setBotTrait(id: number, trait: BotTrait, value: number | null): void
+  /** Return several traits to the bot's nature at once. */
+  resetBotTraits(id: number, traits: readonly BotTrait[]): void
   /** Whether I share my place (the "Show my location" switch, Me), for my own panel's note. */
   sharesLocation(): boolean
   /** The phone layout is on: the panel takes the sidebar's place. */
@@ -91,6 +93,18 @@ export const HOVER_MS = 250
 /** The tooltip closes this long after the pointer leaves the row and the panel, ms. */
 export const LEAVE_MS = 300
 const MARGIN = 8
+
+/** The vertical band a desktop panel may occupy, px from the top of the viewport. */
+function band(sidebar: HTMLElement | null, shell: HTMLElement): { top: number; bottom: number } {
+  const topRow = sidebar?.querySelector('.wi-top')?.getBoundingClientRect()
+  const top = Math.max(MARGIN, topRow && topRow.height ? topRow.bottom + MARGIN : MARGIN)
+  let bottom = innerHeight - MARGIN
+  for (const item of shell.querySelectorAll<HTMLElement>('.bottom-stack > *')) {
+    const r = item.getBoundingClientRect()
+    if (r.height && !item.hidden && getComputedStyle(item).visibility !== 'hidden') bottom = Math.min(bottom, r.top - MARGIN)
+  }
+  return { top, bottom: Math.max(top + 120, bottom) }
+}
 
 export class PlayerPanel {
   readonly element = document.createElement('section')
@@ -114,6 +128,7 @@ export class PlayerPanel {
   private readonly body = document.createElement('div')
   private readonly arrow = document.createElement('span')
   private resets = new Map<BotTrait, ResetButton>()
+  private resetAll: ResetAllButton | null = null
 
   constructor(private readonly host: HTMLElement, private readonly sidebar: () => HTMLElement | null, private readonly actions: PlayerPanelActions) {
     const el = this.element
@@ -243,11 +258,14 @@ export class PlayerPanel {
       return
     }
     const row = this.anchor?.closest('.score-row')?.getBoundingClientRect()
+    // The band it may use: below the top HUD row (the sidebar's search row, level with the
+    // world's name) and above whatever the bottom stack is showing. It scrolls inside that.
+    const { top: low, bottom: high } = band(this.sidebar(), this.host)
     el.style.width = ''; el.style.left = ''
     el.style.right = `${Math.max(MARGIN, innerWidth - bar.left + GAP)}px`
-    el.style.maxHeight = `${innerHeight - 2 * MARGIN}px`
+    el.style.maxHeight = `${Math.max(120, high - low)}px`
     const height = el.offsetHeight
-    const top = Math.max(MARGIN, Math.min(Math.max(MARGIN, (row?.top ?? bar.top) - 10), innerHeight - MARGIN - height))
+    const top = Math.max(low, Math.min((row?.top ?? bar.top) - 10, high - height))
     el.style.top = `${top}px`
     // The pointer stays level with the row's middle, within the panel's rounded corners.
     const middle = row ? row.top + row.height / 2 - top : 24
@@ -267,7 +285,7 @@ export class PlayerPanel {
 
   private build(p: SessionPlayer, mod: Moderation, hasTraits: boolean): void {
     const el = this.body
-    el.replaceChildren(); this.resets.clear()
+    el.replaceChildren(); this.resets.clear(); this.resetAll = null
     this.element.setAttribute('aria-label', p.self ? 'What others see about you' : `About ${p.name}`)
 
     const head = document.createElement('header'); head.className = 'pp-head'
@@ -353,6 +371,15 @@ export class PlayerPanel {
     const section = document.createElement('div'); section.className = 'pp-traits'
     const head = document.createElement('div'); head.className = 'pp-traits-head'
     head.append(Object.assign(document.createElement('span'), { className: 'pp-line-title', textContent: 'Personality' }))
+    // The set's reset (resetControl.ts): present at none (disabled) so nothing jumps; asks once.
+    this.resetAll = resetAllButton({
+      label: () => 'Reset to its nature',
+      confirm: n => `Confirm: reset ${n === 1 ? '1 trait' : `${n} traits`}`,
+      run: () => this.actions.resetBotTraits(p.id, this.actions.botTraits(p.id)?.overridden ?? []),
+      tip: "Returns every trait you changed to this bot's own nature.",
+      className: 'pp-reset-all',
+    })
+    head.append(this.resetAll.element)
     section.append(head)
     if (!mod.ok) section.append(Object.assign(document.createElement('p'), { className: 'pp-why', textContent: moderationWords(mod.reason, 'traits') }))
     for (const trait of BOT_TRAITS) {
@@ -364,6 +391,8 @@ export class PlayerPanel {
       const reset = resetButton(() => this.actions.setBotTrait(p.id, trait.key, null), 'pp-reset')
       this.resets.set(trait.key, reset)
       const input = Object.assign(document.createElement('input'), { type: 'range', id, min: '0', max: '100', step: '1' })
+      // The bot's own value as a notch on the track (the shared default notch, reset-control.css).
+      input.classList.add('has-default')
       input.disabled = !mod.ok
       input.setAttribute('aria-describedby', `${id}-says`)
       input.addEventListener('pointerdown', () => { this.dragging = true; this.pinned = true })
@@ -412,8 +441,13 @@ export class PlayerPanel {
       if (!(this.dragging && document.activeElement === input) && input.value !== value) { input.value = value; out.value = value }
       if (!out.value) out.value = value
       const nature = traits.nature?.[trait.key]
+      if (nature !== undefined) input.style.setProperty('--wi-default', String(nature))
       reset?.set({ changed: traits.overridden.includes(trait.key), defaultText: nature === undefined ? 'its nature' : String(Math.round(nature * 100)), name: trait.label })
       if (reset) reset.element.disabled = !mod.ok
+    }
+    if (traits && this.resetAll) {
+      this.resetAll.count(traits.overridden.length)
+      if (!mod.ok) this.resetAll.element.disabled = true
     }
   }
 }

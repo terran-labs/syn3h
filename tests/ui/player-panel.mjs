@@ -57,6 +57,19 @@ async function noOverlap(page) {
   assert.deepEqual(hits, [], 'an explanation overlaps a control')
 }
 
+/** On desktop the panel stays below the top HUD row and above the bottom stack's notices. */
+async function insideBand(page, touch) {
+  if (touch) return
+  const r = await page.evaluate(() => {
+    const panel = document.querySelector('#player-panel').getBoundingClientRect()
+    const top = document.querySelector('.world-inspector:not(.lobby-settings) .wi-top').getBoundingClientRect().bottom
+    const notes = [...document.querySelectorAll('.bottom-stack > *')].map(el => el.getBoundingClientRect()).filter(b => b.height)
+    const bottom = Math.min(innerHeight, ...notes.map(b => b.top))
+    return { top: panel.top, bottom: panel.bottom, min: top, max: bottom }
+  })
+  assert.ok(r.top >= r.min && r.bottom <= r.max, `panel outside its band: ${JSON.stringify(r)}`)
+}
+
 /** Every name in the card starts at the same x, people and bots alike. */
 async function namesAligned(page) {
   const xs = await page.locator(`${card} .score-row.is-rich .mark-name`).evaluateAll(els => els.map(el => Math.round(el.getBoundingClientRect().left * 2) / 2))
@@ -176,8 +189,22 @@ try {
       const botId = await host.evaluate(() => [...miraNet.players.values()].find(p => p.bot).id)
       await row(host, botId).click()
       await host.locator('#player-panel .pp-trait').first().waitFor()
+      // Change Boldness: its reset arrow and the set's "Reset to its nature" come alive, the
+      // nature notch stays on the track, and the set reset returns it.
+      const bold = host.locator('#player-panel .pp-trait[data-trait=boldness]')
+      const before = Number(await bold.locator('input').inputValue())
+      await bold.locator('input').focus()
+      for (let i = 0; i < 15; i++) await host.keyboard.press(before > 50 ? 'ArrowLeft' : 'ArrowRight')
+      await bold.locator('.reset-control.is-live').waitFor({ timeout: 15000 })
+      assert.match(await bold.locator('.reset-control').getAttribute('aria-label'), /^Reset Boldness to \d+$/)
+      assert.equal(await host.locator('#player-panel .pp-reset-all').isDisabled(), false)
+      assert.ok(await bold.locator('input').evaluate(i => i.classList.contains('has-default') && i.style.getPropertyValue('--wi-default') !== ''), 'no nature notch')
       await noOverlap(host)
+      await insideBand(host, touch)
       await host.screenshot({ path: resolve(out, `${size}-host-bot.png`) })
+      await host.locator('#player-panel .pp-reset-all').click(); await host.locator('#player-panel .pp-reset-all').click()
+      await bold.locator('.reset-control:not(.is-live)').waitFor({ timeout: 15000 })
+      assert.equal(Number(await bold.locator('input').inputValue()), before, 'the set reset did not return Boldness to its nature')
       await host.keyboard.press('Escape')
 
       // The guest: the host's panel shows disabled moderation that cannot fire.
