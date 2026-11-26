@@ -240,9 +240,13 @@ body { --map-top: calc(var(--edge-touch-bottom) + 160px * .885); }
    enough (landscape phones and tablets); portrait phones stack it above the stick instead. */
 @media (min-width: 701px) and (min-height: 501px) {
   .mira-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(var(--edge-left) + 160px * .885 + 14px); }
+  /* Left-handed the minimap is in the lower right and the thumb grid on the left: the card sits
+     beside the map there, mirrored, clear of the thumbs by the same gap. */
+  html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .spawn-help { left: auto; right: calc(var(--edge-right) + 160px * .885 + 14px); }
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .mira-shell.exploration-ui.has-touch .spawn-help { transform: none; left: calc(var(--edge-left) + 96px * .885 + 14px); }
+  html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .spawn-help { left: auto; right: calc(var(--edge-right) + 96px * .885 + 14px); }
 }
 
 /* Diagnostics consume rail space; only their body scrolls. SVG reuses core history. */
