@@ -157,6 +157,7 @@ const NOT_FOR_PLAYERS = [
   /\b(tests?|checks?|checker|probe|harness|fixtures?|diagnostics?|trace|reports?|evidence|smoke|suite|typecheck|asserts?|measured|calibrat\w*|benchmark|ledger|notes|digest|README|documents?|rename\w*|Worker|R2|frozen|release\w*|betas?|deploy\w*|hosted|heavy|analytics|switch(es)?|pilot|trial|replay|sweep|rolls? back|rollback|keep-list|kept|CI|tested|auditing|measurements?|reference|alias(es)?|runbook|bytecode|prototype|summary line|attribution)\b/i,
   /\bwindow\.\w+/, // a page global, named for tools
   /^Updates feed\b/i, // the feed's own plumbing (one such subject also says a hidden word exists)
+  /\b(version label|gestures?|creator\w*)\b/i, // near the hidden sign-in: never point a player at it
   /\b(built|dist|plugins?|tracked|bundle\w*|chunks?|hash(ed)?|vite|wasm|webassembly|shim)\b|<hash>/i, // how the build works
 ]
 /** Whether a commit subject belongs in the players' Changes list. */
