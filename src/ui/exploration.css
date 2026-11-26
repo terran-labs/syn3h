@@ -132,11 +132,18 @@ html[data-cutout-side="right"] { --safe-left: 0px; }
 .mira-shell.exploration-ui .shell-minimap canvas.shell-minimap-marks { opacity: 1; -webkit-mask-image: none; mask-image: none; }
 .mira-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 11.5%; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .mira-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
-/* Quieter while the panels are up, but not so faint that the dark falloff under the text fades with it. */
-/* Full strength in play: the readouts must read at a glance on the brightest world (the owner,
-   22 November 2026). What should be quiet carries its own lower alpha (the faint track). */
-.mira-shell.exploration-ui.is-playing .focus-hud { opacity: 1; }
+/* The instruments (the crescents, the speed and altitude readouts, the world line, the reticle,
+   in every look) show only with the cursor captured (the owner, 25 November 2026: "show only
+   when the cursor is locked"). With it free they fade out (inspector.css's .55 s opacity
+   transition), and the panels show instead. .is-focus is the shell's driving view: the cursor
+   held by the canvas, or the Driving or Hidden interface chosen; losing the lock clears it.
+   Captured, they are at full strength: the readouts must read at a glance on the brightest
+   world (the owner, 22 November 2026); what should be quiet carries its own lower alpha.
+   Touch has no capture: there the instruments show in play, and hide while the panels are up
+   (below). */
 .mira-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
+/* :where keeps this rule's weight what it was, so the phone media rule below still dims it. */
+.mira-shell.exploration-ui.is-playing:where(.has-touch) .focus-hud { opacity: 1; }
 /* Touch draws the reticle only while TAG is held: see touch-stick.css. */
 .mira-shell.exploration-ui:not(.is-focus, .has-touch) .focus-hud [data-reticle] { display: none; }
 .mira-shell.exploration-ui.is-focus .shell-minimap { opacity: .92; }
@@ -145,7 +152,7 @@ html[data-cutout-side="right"] { --safe-left: 0px; }
 .touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(201 201 201 / .09) 69%,transparent 71%); border: 1px solid rgb(213 213 213 / .25); box-shadow: none; }
 .touch-controls .touch-knob { background: rgb(194 194 194 / .08); border: 1px solid rgb(213 213 213 / .42); box-shadow: 0 0 14px rgb(194 194 194 / .06); }
 .touch-controls button { border-radius: 50%; font-size: 12px; }
-@media (max-width: 700px) { .mira-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); right: var(--edge-right); width: min(340px, calc(100vw - 2 * var(--edge))); } .mira-shell.exploration-ui .shell-minimap { --map-size: 120px; bottom: 206px; } .mira-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .mira-shell.exploration-ui:not(.is-focus) .focus-hud { opacity: .65; } }
+@media (max-width: 700px) { .mira-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); right: var(--edge-right); width: min(340px, calc(100vw - 2 * var(--edge))); } .mira-shell.exploration-ui .shell-minimap { --map-size: 120px; bottom: 206px; } .mira-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .mira-shell.exploration-ui:not(.is-focus):where(.has-touch) .focus-hud { opacity: .65; } }
 @media (max-height: 500px) { .mira-shell.exploration-ui .world-inspector { top: var(--edge-top); bottom: var(--edge-bottom); height: calc(100dvh - var(--edge-top) - var(--edge-bottom)); gap: 3px; } .mira-shell.exploration-ui .wi-cards { gap: 3px; } .mira-shell.exploration-ui .wi-top { padding-block: 3px; gap: 2px; } .mira-shell.exploration-ui .wi-card { flex-basis: 28px; min-height: 28px; } .mira-shell.exploration-ui .world-inspector .wi-head { flex-basis: 27px; min-height: 27px; padding-block: 5px; } .mira-shell.exploration-ui .shell-minimap { --map-size: 96px; bottom: 156px; } .mira-shell.exploration-ui .spawn-help { left: 180px; bottom: var(--edge-bottom); } }
 @media (prefers-reduced-motion: reduce) { .mira-shell.exploration-ui *, .touch-controls * { transition-duration: 0s !important; } }
 .mira-shell.exploration-ui .wi-top #mira-build-notice { position: static !important; inset: auto !important; width: 100% !important; padding: 4px 6px !important; min-height: 24px; font: 11px/1.3 'Barlow',sans-serif !important; border: 1px solid var(--s3-line-quiet) !important; border-radius: 2px !important; background: rgb(57 57 57 / .2) !important; box-shadow: none !important; }

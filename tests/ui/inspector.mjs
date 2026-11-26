@@ -1,8 +1,8 @@
 /**
  * The focus display in play. Bugs caught: the panels staying up while the player drives with
  * the cursor captured, the aiming display missing in one of its three looks, the aiming
- * display staying over a menu while input is suspended, and the panels not coming back when
- * the cursor is let go.
+ * display staying over a menu while input is suspended, the panels not coming back when the
+ * cursor is let go, and the instruments showing with the cursor free (they show only captured).
  *
  *   MIRA_URL=http://127.0.0.1:5173/ /Users/vtn/dev/Syn3h/tools/heavy.sh node tests/ui/inspector.mjs
  *
@@ -27,6 +27,9 @@ try {
   // show exactly when it is free.
   assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), await page.evaluate(() => !!document.pointerLockElement))
   if (await page.evaluate(() => !!document.pointerLockElement)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden) }
+  // With the cursor free the instruments are gone (the owner, 25 November 2026: they show only
+  // when the cursor is locked); the display fades, so this waits for it.
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.focus-hud')).opacity === '0', null, { timeout: 5000 })
   // Capture the cursor: the cards fade away and the focus display fades in, in three looks.
   await page.mouse.click(500, 420)
   await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 })
@@ -50,6 +53,8 @@ try {
   await page.evaluate(() => document.exitPointerLock())
   await page.waitForFunction(() => !document.querySelector('.mira-shell').classList.contains('is-focus'))
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.world-inspector')).opacity === '1')
+  // and losing the lock takes the instruments away.
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.focus-hud')).opacity === '0', null, { timeout: 5000 })
   console.log(JSON.stringify({ ok: true, errors }))
 } finally { await browser.close() }
 if (errors.length) { console.log(errors); process.exitCode = 1 }

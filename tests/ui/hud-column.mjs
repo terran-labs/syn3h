@@ -8,7 +8,8 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 //    1440x900 and 1280x800, both cursor modes. The drum is three rows and the same height in
 //    both modes. With the cursor free the Wings, Zorb and Chat rows show with their keys;
 //    captured, only the drum shows (the rows and the gear's detail fade out, in place).
-// 2. Nothing in the column covers the speed or height readouts (at a three-digit speed) or the reticle.
+// 2. The speed and height readouts and the reticle show only with the cursor captured, at full
+//    strength, and nothing in the column covers them then (at a three-digit speed).
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
@@ -52,7 +53,7 @@ const measure = (page) => page.evaluate(() => {
     accessories: box('.hud-accessories'), chat: box('.hud-chat'),
     // The detail beside the gear and the meter (status and bar) under its name.
     detail: [detail, document.querySelector('.gear-selector .gs-meter')].filter(Boolean).flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
-    readouts: [...document.querySelectorAll('.focus-hud .fh-read')].filter((e) => getComputedStyle(e).opacity !== '0').flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
+    readouts: [...document.querySelectorAll('.focus-hud .fh-read')].filter((e) => getComputedStyle(document.querySelector('.focus-hud')).opacity !== '0' && getComputedStyle(e).opacity !== '0').flatMap((e) => ink(e)).map((r) => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom })),
     w: innerWidth, h: innerHeight,
   }
 })
@@ -91,6 +92,10 @@ try {
     for (const mode of ['free', 'focus']) {
       if (mode === 'focus') { await page.mouse.click(w / 2, h * .3); await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 }) }
       await waitForPanelMotion(page)
+      // The instruments show exactly while the cursor is captured (the owner, 25 November 2026),
+      // at full strength; with it free they are gone. Waited for: the display fades.
+      await page.waitForFunction(on => getComputedStyle(document.querySelector('.focus-hud')).opacity === (on ? '1' : '0'), mode === 'focus', { timeout: 5000 })
+        .catch(() => assert.fail(`${w}x${h} ${mode}: the instruments are ${mode === 'focus' ? 'not at full strength while captured' : 'still showing with the cursor free'}`))
       const m = await measure(page), at = `${w}x${h} ${mode}`
       // 1. One edge distance, one left edge, in order.
       const ring = m.minimap.left + (m.minimap.right - m.minimap.left) * .115
@@ -137,6 +142,8 @@ try {
       for (const n of [1, 12, 0]) {
         await page.evaluate(async (n) => { const { chatLink } = await import('/src/ui/chat/chatLink.ts'); chatLink.setUnread(n, false) }, n)
         await page.waitForTimeout(250)
+        // As for the gears above: measured once the drum has stopped moving, not mid-turn.
+        await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
         assert.deepEqual(await keyX(), still, `an unread count of ${n} moves no key`)
         onLines(await lines(page), `${w}x${h} unread ${n}`)
       }
