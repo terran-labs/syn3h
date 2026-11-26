@@ -57,7 +57,8 @@ export function archivedVersions(dir = archiveDir()) {
 
 /**
  * A release's own files: no source maps, no upload ignore list, no nested frozen versions, and
- * no Updates feed ($1 so does /releases-older.json; see
+ * no Updates feed (/releases.json describes the live site for every page, pinned or not, and
+ * so does /releases-older.json; see
  * src/ui/updates/feed.ts), so a pinned page and the frozen check never ask for an old one.
  */
 function copyBuild(from, to) {
