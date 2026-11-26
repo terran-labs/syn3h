@@ -51,12 +51,15 @@ export function tipOutline(w: number, h: number, side: TipSide, at: number): str
 /**
  * Where the plate goes for an element at `box`: under it, else over it, else beside it (left,
  * then right), nudged along to stay on screen. `side` is the plate's edge that faces the element.
+ * `prefer: 'left'` tries beside it on the left first: a setting's reset (resetControl.ts), whose
+ * plate would otherwise land on the next control down, sets it with data-tip-place="left".
  */
-export function placeTip(box: { left: number; top: number; right: number; bottom: number }, w: number, h: number, view: { width: number; height: number }): { x: number; y: number; side: TipSide; at: number } {
+export function placeTip(box: { left: number; top: number; right: number; bottom: number }, w: number, h: number, view: { width: number; height: number }, prefer: 'below' | 'left' = 'below'): { x: number; y: number; side: TipSide; at: number } {
   const cx = (box.left + box.right) / 2, cy = (box.top + box.bottom) / 2, off = GAP + TAIL_DEPTH
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v))
   const alongX = () => clamp(cx - w / 2, MARGIN, view.width - w - MARGIN)
   const alongY = () => clamp(cy - h / 2, MARGIN, view.height - h - MARGIN)
+  if (prefer === 'left' && box.left - off - w >= MARGIN) { const y = alongY(); return { x: box.left - off - w, y, side: 'right', at: cy - y } }
   if (box.bottom + off + h <= view.height - MARGIN) { const x = alongX(); return { x, y: box.bottom + off, side: 'top', at: cx - x } }
   if (box.top - off - h >= MARGIN) { const x = alongX(); return { x, y: box.top - off - h, side: 'bottom', at: cx - x } }
   if (box.left - off - w >= MARGIN) { const y = alongY(); return { x: box.left - off - w, y, side: 'right', at: cy - y } }
@@ -77,7 +80,7 @@ export function installTooltips(signal: AbortSignal): void {
   const place = (el: HTMLElement) => {
     words.textContent = el.dataset.tip ?? ''
     const box = el.getBoundingClientRect(), w = tip.offsetWidth, h = tip.offsetHeight
-    const at = placeTip(box, w, h, { width: innerWidth, height: innerHeight })
+    const at = placeTip(box, w, h, { width: innerWidth, height: innerHeight }, el.dataset.tipPlace === 'left' ? 'left' : 'below')
     outline.setAttribute('d', tipOutline(w, h, at.side, at.at))
     tip.dataset.side = at.side
     tip.style.translate = `${Math.round(at.x)}px ${Math.round(at.y)}px`

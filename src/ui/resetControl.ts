@@ -38,6 +38,8 @@ export function resetButton(run: () => void, className = ''): ResetButton {
   element.type = 'button'
   element.className = `reset-control${className ? ' ' + className : ''}`
   element.innerHTML = `${RESET_GLYPH}<span class="reset-default" aria-hidden="true"></span>`
+  // Its plate goes to the left, over its own row, never onto the next control down.
+  element.dataset.tipPlace = 'left'
   const text = element.querySelector<HTMLElement>('.reset-default')!
   let changed = false, last = ''
   element.addEventListener('click', event => {

@@ -109,7 +109,18 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     assert.equal(await reset.getAttribute('aria-label'), 'Reset Sky reflection to 0.42')
     const target = await reset.boundingBox()
     if (touch) assert.ok(target.width >= 44 - .5 && target.height >= 44 - .5, `the reset is a 44 px target (${target.width} × ${target.height})`)
-    if (!touch) { await reset.hover(); await page.waitForTimeout(500) } else await row.locator('.wi-label').tap()
+    if (!touch) {
+      // The plate names the default and covers no other control: not the next one down.
+      await reset.hover(); await page.waitForFunction(() => document.querySelector('.ui-tip.is-shown'))
+      await page.waitForTimeout(250)
+      const covered = await page.evaluate(() => {
+        const plate = document.querySelector('.ui-tip.is-shown'), p = plate.getBoundingClientRect(), own = document.querySelector('.wi-row[data-id="paint.gloss"]')
+        const hit = el => { const b = el.getBoundingClientRect(); return b.width > 0 && b.height > 0 && b.left < p.right && b.right > p.left && b.top < p.bottom && b.bottom > p.top }
+        return { text: plate.textContent, covered: [...document.querySelectorAll('button, input, select, summary')].filter(el => !own.contains(el) && !el.closest('[hidden], [inert]') && hit(el)).map(el => el.getAttribute('aria-label') || el.textContent.trim()) }
+      })
+      assert.equal(covered.text, 'Reset to 0.42')
+      assert.deepEqual(covered.covered, [], 'the reset’s plate covers no other control')
+    } else await row.locator('.wi-label').tap()
     await page.screenshot({ path: `${shots}/${mode}-sky-reflection.png` })
     await (touch ? reset.tap() : reset.click())
     assert.equal(await page.evaluate(() => mira.params.get('paint.gloss').value), 0.42)
