@@ -1,11 +1,5 @@
-/* About's tabs and the Updates list, in the lobby About's look (theme-halo.css tokens). */
-.mira-shell.exploration-ui .about-tabs { display: flex; gap: 8px; margin: 0 0 20px; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
-/* Tabs are pills like every control: the chosen one wears the shared outline (card-chrome.css), nothing more. */
-.mira-shell.exploration-ui .about-tabs { padding-bottom: 8px; }
-.mira-shell.exploration-ui .about-tabs [role="tab"] { min-height: 44px; margin: 0; padding: 8px 18px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none; color: var(--s3-dim); font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; cursor: pointer; outline: 1px solid transparent; outline-offset: -1px; }
-.mira-shell.exploration-ui .about-tabs [role="tab"]:is(:hover, [aria-selected="true"]) { outline: var(--control-hover-outline); outline-offset: -1px; }
-.mira-shell.exploration-ui .about-tabs [role="tab"][aria-selected="true"] { color: var(--s3-accent-2); }
-.mira-shell.exploration-ui .about-tabs [role="tab"]:focus-visible { outline: 2px solid white; outline-offset: 1px; }
+/* The in-play guide's two views and the Updates list, in the lobby About's look (theme-halo.css tokens). */
+.mira-shell.exploration-ui .about-updates-title { margin: 0 0 20px; }
 .mira-shell.exploration-ui .about-pane[hidden] { display: none; }
 
 .mira-shell.exploration-ui .about-updates .updates-status { color: var(--s3-dim); }
@@ -121,7 +115,6 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
 
 /* A phone in landscape: the in-play guide's tabs sit closer to its header. */
 @media (max-height: 550px) {
-  html body .mira-shell.exploration-ui .about-tabs { margin-bottom: 10px; }
 }
 
 /* .update-badge.is-beta: a beta inside a production release, quieter than New. */

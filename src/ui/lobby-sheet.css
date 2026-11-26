@@ -40,6 +40,10 @@
   .mira-shell.exploration-ui .lobby-sheet-updates .updates-github-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 
+/* Welcome has no visible title: it opens on its first line, "Welcome to Mira, ..." (the owner,
+   25 November 2026), which keeps clear of the X beside it. The title stays for screen readers. */
+.mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-title { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mira-shell .lobby-sheet-about .welcome-body .welcome-lede { padding-right: 56px; }
 /* Close is the shared bare X (.card-close, card-chrome.css). A tap outside and Escape close as well. */
 /* In a sheet it stands in the column's upper right, level with the title (the body's top padding). */
 .mira-shell.exploration-ui .lobby-sheet .lobby-sheet-close { position: absolute; right: 8px; top: 30px; }

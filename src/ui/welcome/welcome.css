@@ -18,10 +18,15 @@
 }
 .welcome-body > * { margin: 0 0 16px; max-width: 100%; }
 .welcome-body > :last-child { margin-bottom: 0; }
-.welcome-body h3 {
-  margin: 40px 0 14px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1;
-  font: 600 14px/1.2 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; color: var(--w-ink);
+/* Section headings: no rules between sections, space and a larger condensed heading instead (the
+   owner, 25 November 2026: "larger, more interesting, accented text"). The interface's display
+   face (Barlow Condensed, as "Join this world") in the heading accent. */
+.mira-shell .welcome-body h3, .welcome-body h3 {
+  margin: 56px 0 16px; padding: 0; border: 0;
+  font: 600 30px/1.05 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; text-transform: uppercase; color: var(--s3-accent-2, #f7f7f7);
+  text-wrap: balance;
 }
+@container welcome (max-width: 520px) { .mira-shell .welcome-body h3, .welcome-body h3 { margin-top: 44px; font-size: 25px; } }
 .welcome-body p { max-width: 62ch; }
 .welcome-body strong { color: var(--w-ink); font-weight: 500; }
 .welcome-body em { font-style: normal; color: var(--w-ink); }
@@ -169,7 +174,8 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 .welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }
 .welcome-cards { display: grid; gap: 10px; }
 @container welcome (min-width: 560px) { .welcome-cards { grid-template-columns: repeat(3, 1fr); } }
-.welcome-cards li, .welcome-modes > div { padding: 14px 16px; border: 1px solid var(--w-quiet); border-radius: 12px; }
+/* One calm surface: the cards are a faint fill, no outline. */
+.welcome-cards li, .welcome-modes > div { padding: 14px 16px; border: 0; border-radius: 12px; background: rgb(255 255 255 / .04); }
 .welcome-cards strong, .welcome-modes dt { display: block; margin-bottom: 4px; font: 500 12px/1.3 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--w-ink); }
 .welcome-cards span { display: block; font-size: 14.5px; line-height: 1.5; }
 .welcome-modes { margin: 0 0 12px; display: grid; gap: 10px; }
@@ -178,7 +184,7 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 
 .welcome-gear { display: grid; gap: 4px; }
 @container welcome (min-width: 560px) { .welcome-gear { grid-template-columns: 1fr 1fr; column-gap: 20px; } }
-.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 10px 0; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.welcome-gear li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; padding: 8px 0; }
 .welcome-gear svg { width: 26px; height: 26px; margin-top: 1px; fill: none; stroke: var(--w-ink); stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 .welcome-gear strong { display: block; font-weight: 500; }
 .welcome-gear span { display: block; font-size: 14px; line-height: 1.45; }
@@ -191,7 +197,7 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 .welcome-wasd { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; flex: none; }
 .welcome-wasd kbd { display: grid; place-items: center; height: 30px; margin: 0; padding: 0; min-width: 0; border-radius: 9px; font-size: 12.5px; }
 .welcome-keys { display: grid; gap: 2px; }
-.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 5px 0; font-size: 14px; line-height: 1.4; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 4px 0; font-size: 14px; line-height: 1.4; }
 .welcome-keys li > span { white-space: nowrap; color: var(--w-ink); font-size: 13px; }
 .welcome-keys li > span i { font-style: normal; color: var(--w-soft); font-size: 11px; margin: 0 2px; }
 .welcome-keys kbd:first-child { margin-left: 0; }
@@ -213,7 +219,7 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 .welcome-settings li::before { content: ""; position: absolute; left: 0; top: .72em; width: 6px; height: 1px; background: var(--w-line); }
 
 /* The outside links and the licences, carried over from About. */
-.welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 36px; padding-top: 18px; border-top: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .welcome-body .about-links, .welcome-body .about-links { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 44px; padding: 0; border: 0; }
 .welcome-body .about-links a { color: var(--w-ink); font-size: 14px; text-decoration: none; border-bottom: 1px solid var(--w-line); }
 .welcome-body .about-links a:hover, .welcome-body .about-links a:focus-visible { border-bottom-color: var(--w-ink); }
 /* Credits and licences: one card that opens in place, its contents inside its own border, the
@@ -239,3 +245,12 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 /* What the game keeps, last, in the credits' small type (the owner, 25 November 2026: "simple.
    Nothing ominous"). No heading or box; room for a second sentence later. */
 .mira-shell .welcome-body.welcome-body p.welcome-privacy, .welcome-body p.welcome-privacy { margin-top: 20px; max-width: 62ch; font-size: 13.5px; line-height: 1.5; color: var(--w-soft); }
+
+/* The newsletter: one warm line and a pill that opens Terran Labs' signup in a new tab. No field. */
+.mira-shell .welcome-body.welcome-body p.welcome-newsletter, .welcome-body p.welcome-newsletter { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-top: 48px; max-width: none; color: var(--w-ink); font-size: 16px; }
+.welcome-body .welcome-newsletter-link {
+  display: inline-flex; align-items: center; min-height: 44px; box-sizing: border-box; padding: 0 20px; border: 1px solid var(--w-line); border-radius: 999px;
+  color: var(--w-ink); font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-decoration: none;
+}
+.welcome-body .welcome-newsletter-link:is(:hover, :focus-visible) { border-color: var(--w-ink); background: rgb(255 255 255 / .06); }
+.welcome-body .welcome-newsletter-link:focus-visible { outline: 2px solid var(--w-ink); outline-offset: 2px; }

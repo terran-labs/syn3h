@@ -114,7 +114,8 @@ for (const mode of ['desktop', 'phone']) {
     const guide = page.locator('.in-play-about')
     // A fresh page fetches the feed here, which the dev server builds from git (see the lobby above).
     await guide.locator('.update-day').first().locator('.update-release').first().waitFor({ state: 'visible', timeout: 60000 })
-    assert.equal(await guide.getByRole('tab', { name: 'Updates' }).getAttribute('aria-selected'), 'true')
+    assert.equal(await guide.getAttribute('aria-label'), 'Updates', 'the guide opens on Updates, named for it')
+    assert.equal(await guide.getByRole('tab').count(), 0, 'no tabs')
     await page.keyboard.press('Escape')
     await guide.waitFor({ state: 'hidden' })
     console.log('in play ok')

@@ -19,6 +19,7 @@
  * here in HTML, CSS and SVG.
  */
 import { aboutLinksHtml, licencesHtml } from '../data/credits'
+import { NEWSLETTER_URL } from '../newsletter'
 import { ACCORDION_ARROW } from '../accordionArrow'
 import { frozenResourceURL } from '../../core/frozenResources'
 import { GEAR_DESCRIPTIONS, GEAR_LABELS } from '../../weapons/Gear'
@@ -102,12 +103,12 @@ const touchDiagram = `<svg class="welcome-touch" viewBox="0 0 844 390" role="img
 /** The page. Every top-level element is one row (see the contract above). */
 function html(): string {
   return `
-<p class="welcome-lede">Mira is a sci-fi wonderland of tiny worlds to explore with your friends.</p>
+<p class="welcome-lede">Welcome to Mira, a sci-fi wonderland of tiny worlds to explore with your friends.</p>
 ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)}
 <h3>Three machines</h3>
 <ul class="welcome-cards">
   <li><strong>Buggy</strong><span>Grips rough ground and climbs anything sensible. At a crest, ${k('Space')} unfolds force-field wings and the drop becomes a glide.</span></li>
-  <li><strong>Jet</strong><span>Lifts off on its own thrust, hovers or flies, and climbs until the whole planet curls up beneath you.</span></li>
+  <li><strong>Jet</strong><span>Lifts off on its own thrust and climbs until the whole planet curls up beneath you. ${k('Space')} switches it between hover and cruise.</span></li>
   <li><strong>Hovercraft</strong><span>Rides a cushion of air over sand, water and lava alike. The shortest way across a lagoon.</span></li>
 </ul>
 <p>Switch machines from the panels whenever you like. On any of them, ${k('X')} closes a Zorb ball around you: roll it, bounce it, shove your friends with it.</p>
@@ -128,7 +129,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
     <div class="welcome-drive"><div class="welcome-wasd"><span></span>${k('W', 'W, forward')}<span></span>${k('A', 'A, left')}${k('S', 'S, back')}${k('D', 'D, right')}</div><p>Drive and steer. The arrow keys work too.</p></div>
     <ul class="welcome-keys">
       <li><span>${k('Shift')}</span>brake</li>
-      <li><span>${k('Space')}</span>wings, or hover and flight in the jet</li>
+      <li><span>${k('Space')}</span>wings; in the jet, switch between hover and cruise</li>
       <li><span>${k('E')}${k('Q')}</span>jet: climb, descend</li>
       <li><span>${k('L')}<i>or</i>${k('click', 'Mouse click')}</span>use gear</li>
       <li><span>${k('1')}<i>to</i>${k('5')}</span>choose gear</li>
@@ -151,6 +152,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
       <li><span>Right half</span>drag to look round</li>
       <li><span>Gear rack</span>tap a gear to choose it</li>
       <li><span><b class="welcome-pill">TAG</b></span>use it: hold, and drag to aim</li>
+      <li><span><b class="welcome-pill">WINGS</b></span>wings; in the jet it reads <b class="welcome-pill">MODE</b> and switches between hover and cruise</li>
       <li><span><b class="welcome-pill">FLIP</b></span>on your side or roof: back onto your wheels</li>
       <li><span><b class="welcome-pill">Panels</b></span>vehicle, game mode, world and chat</li>
     </ul>
@@ -168,6 +170,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
 <h3>Made, not shipped</h3>
 <p>Almost nothing you see or hear is a file. The terrain grows from a seed and wraps around a small planet. The sky is computed from how light scatters. The vehicles are built in code, the engines are synthesised, and the music is composed while you play.</p>
 <p class="welcome-close">Land somewhere unfamiliar, learn what your machine can do, and find your own reasons to stay.</p>
+<p class="welcome-newsletter">Want news about Mira? <a class="welcome-newsletter-link" href="${NEWSLETTER_URL}" target="_blank" rel="noopener noreferrer">Join the newsletter</a></p>
 ${aboutLinksHtml}
 ${licencesHtml}
 <p class="welcome-privacy">Mira keeps anonymous counts of things like which worlds and vehicles get played and what kind of device and graphics they run on, and crash reports, so we can make it better. No accounts, no ads, nothing sold.</p>

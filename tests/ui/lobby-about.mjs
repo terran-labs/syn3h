@@ -88,7 +88,7 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   await icon.click()
   const about=page.locator('.lobby-sheet-about')
   await about.locator('.welcome-body > h3').first().waitFor({state:'visible'})
-  assert.equal((await about.locator('h2').first().textContent()).trim(),'Welcome','the sheet is titled Welcome')
+  assert.equal((await about.locator('h2').first().textContent()).trim(),'Welcome to Mira','the sheet is named Welcome to Mira')
   // The panel's own motion (the buttons beside it keep their slow gear turn).
   await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
   const geometry=await about.locator('.lobby-sheet-panel').evaluate(el=>{const r=el.getBoundingClientRect();return {rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},viewportWidth:innerWidth,viewportHeight:innerHeight,scrollWidth:document.documentElement.scrollWidth}})
@@ -101,6 +101,10 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   assert.equal(await about.locator('.panel-back').count(),0,'no Back button')
   assert.deepEqual(await about.locator('button').evaluateAll(bs=>bs.filter(b=>/close/i.test(b.getAttribute('aria-label')??'')).length),1,'one close control')
   assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('lobby-sheet-close')),true,'focus starts on the X')
+  // The newsletter: Terran Labs' signup in a new tab, nothing collected here. Bug caught: a link that
+  // replaces the game, leaks the referrer or opens the wrong page.
+  assert.deepEqual(await about.locator('.welcome-newsletter-link').evaluate(a=>({href:a.href,target:a.target,rel:a.rel})),{href:'https://terranlabs.com/mira/newsletter',target:'_blank',rel:'noopener noreferrer'},'the newsletter link opens the signup in a new tab')
+  assert.equal(await about.locator('.welcome-body input').count(),0,'no field in the guide')
   // The licences, wherever the guide keeps them, point at the pinned copies.
   for(const href of await about.locator('a[href*="/brand/licenses/"]').evaluateAll(as=>as.map(a=>a.getAttribute('href')))) assert.match(href,/\/brand\/licenses\//)
   await page.screenshot({path:`${out}/${mode}-about-top.png`})
@@ -273,7 +277,9 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
     const seen=el=>{const b=el.getBoundingClientRect();const l=Math.max(b.left,clip.l),t=Math.max(b.top,clip.t),rt=Math.min(b.right,clip.r),bt=Math.min(b.bottom,clip.b);return rt-l>1&&bt-t>1?{l,t,r:rt,b:bt}:null}
     const hit=(a,b)=>a&&b&&a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1
     const box=sel=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();return b.width?{l:b.left,t:b.top,r:b.right,b:b.bottom}:null}
-    const keep={logo:box('.shell-logo'),close:box('.lobby-sheet-about .lobby-sheet-close'),buttons:box('.lobby-sheet-about .lobby-gear-dock')??box('.lobby-gear-dock')}
+    // The name as drawn (in space, Galaxy.wordmarkScreenBox), not the HTML logo's box, which is much larger than the mark.
+    const drawn=window.mira?.shell?.galaxy?.wordmarkScreenBox?.(),mark=drawn&&drawn.width?{l:drawn.x,t:drawn.y,r:drawn.x+drawn.width,b:drawn.y+drawn.height}:box('.shell-logo')
+    const keep={logo:mark,close:box('.lobby-sheet-about .lobby-sheet-close'),buttons:box('.lobby-sheet-about .lobby-gear-dock')??box('.lobby-gear-dock')}
     const parts=[...r.querySelectorAll('.welcome-ring-arrow, .welcome-ring-dot, .welcome-ring-caption, .welcome-ring-card')].filter(el=>getComputedStyle(el).display!=='none'&&Number(getComputedStyle(el).opacity)>0.01)
     for(const el of parts){
      const b=el.getBoundingClientRect(), what=el.className
