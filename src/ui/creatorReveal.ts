@@ -49,8 +49,11 @@ export class RevealTaps {
 export function bindVersionLabel(label: EventTarget, openUpdates: () => void, signal: AbortSignal, now: () => number = () => performance.now()): void {
   const taps = new RevealTaps()
   let pending: ReturnType<typeof setTimeout> | undefined
-  label.addEventListener('click', () => {
+  label.addEventListener('click', (event) => {
     clearTimeout(pending)
+    // Enter or Space (a click with detail 0) opens Updates at once and is never part of the
+    // gesture: a held timer cost the keyboard its focus ring on the sheet's X.
+    if ((event as MouseEvent).detail === 0) { pending = undefined; openUpdates(); return }
     if (taps.tap(now())) { pending = undefined; revealCreatorKey(); return }
     pending = setTimeout(() => { pending = undefined; openUpdates() }, SINGLE_CLICK_MS)
   }, { signal })
