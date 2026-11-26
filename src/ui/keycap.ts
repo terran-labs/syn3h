@@ -12,8 +12,8 @@
 
 import './keycap.css'
 
-/** Words in a shortcut that are not keys: joins, and mouse and gamepad words. */
-const PLAIN = new Set(['or', 'and', 'to', '/', 'then', 'click', 'Click', 'clicks', 'mouse', 'Mouse', 'left', 'Left', 'right', 'Right', 'wheel', 'Wheel', 'down', 'up', 'hold', 'Hold', 'Number', 'number', 'keys', 'arrows', 'Arrows', 'Gamepad', 'D-pad', 'LB', 'RB'])
+/** Keys with a name, as the interface writes them. Any other key is a single character. */
+const NAMED = new Set(['Space', 'Shift', 'Esc', 'Enter', 'Tab', 'Ctrl', 'Alt', 'Backspace', 'Delete'])
 
 /** One key as a cap. */
 export function keycap(key: string): HTMLElement {
@@ -28,9 +28,13 @@ export function keycapHtml(key: string): string {
   return `<kbd class="keycap">${escape(key)}</kbd>`
 }
 
-/** True when a word of a shortcut is a key (a cap) and not a join or a mouse word. */
+/**
+ * True when a word of a shortcut is a key (a cap): a named key, or one character that is not a
+ * join ("/") or a lower-case letter. Joins ("or", "to"), mouse words ("click", "wheel") and
+ * gamepad buttons stay text.
+ */
 export function isKey(word: string): boolean {
-  return !PLAIN.has(word)
+  return NAMED.has(word) || (word.length === 1 && word !== '/' && !/[a-z\s]/.test(word))
 }
 
 /** The parts of a shortcut: keys to draw as caps, and plain words between them. */

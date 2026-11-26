@@ -1,4 +1,5 @@
 import type { VehicleKind } from '../vehicles'
+import { keycap, shortcut } from './keycap'
 
 export function vehicleHelp(kind: VehicleKind): string[] {
   // Lift-off first: on the ground W only tips the nose, and the throttle is what flies.
@@ -62,6 +63,13 @@ export function helpParts(line: string): Array<{ keys?: string; text: string }> 
     return at > 0 && namesKeys(part.slice(0, at)) ? { keys: part.slice(0, at), text: part.slice(at + 2) } : { text: part }
   })
 }
+/**
+ * A plain part of a help line with the keys it names drawn as caps: a lone capital letter
+ * ("Hold E to lift off", "in flight E / Q"), never A or I, which are words.
+ */
+export function inlineKeys(text: string): Node[] {
+  return text.split(/\b([B-HJ-Z])\b/).map((piece, i) => i % 2 ? keycap(piece) : document.createTextNode(piece)).filter((n) => n.textContent)
+}
 export function renderHelp(element: HTMLElement, kind: VehicleKind, touch = false, quick = false, gear = false): void {
   element.replaceChildren()
   const lines = quick ? quickHelp(kind, touch, gear) : touch ? [touchHelp(kind), ...(gear ? gearTouchHelp : [])] : [...vehicleHelp(kind), ...(gear ? gearHelp : []), chatHelp, ...cameraHelp]
@@ -78,7 +86,7 @@ export function fillHelpLine(element: HTMLElement, text: string): void {
   element.replaceChildren()
   helpParts(text).forEach((part, i) => {
     if (i) element.append(' · ')
-    if (part.keys) { const key = document.createElement('kbd'); key.textContent = part.keys; element.append(key, ' ') }
-    element.append(part.text)
+    if (part.keys) element.append(...shortcut(part.keys), ' ')
+    element.append(...inlineKeys(part.text))
   })
 }

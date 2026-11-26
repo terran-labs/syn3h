@@ -15,7 +15,7 @@
  * README.md beside this file.
  */
 import './gear.css'
-import { isKey, keycap } from '../keycap'
+import { isKey, keycap, shortcut } from '../keycap'
 
 export interface GearAction {
   readonly id: string
@@ -361,9 +361,8 @@ export class GearSelector {
       button.tabIndex = -1
       const label = document.createElement('span')
       label.className = 'gs-label'
-      const number = document.createElement('kbd')
-      number.className = 'gs-index'
-      number.textContent = String(index + 1)
+      const number = keycap(String(index + 1))
+      number.classList.add('gs-index')
       const text = document.createElement('span')
       text.className = 'gs-text'
       text.textContent = this.labelOf(source, id)
@@ -375,10 +374,7 @@ export class GearSelector {
     this.drum.replaceChildren(...this.items.map(i => i.button))
     // The number range, its numbers drawn as key glyphs like every other key in the column.
     const range = keyHint(list.length)
-    this.keyHintEl.replaceChildren(...range.split(/(\d+)/).filter(Boolean).map((s) => {
-      if (!/^\d+$/.test(s)) return document.createTextNode(s)
-      const key = document.createElement('kbd'); key.textContent = s; return key
-    }))
+    this.keyHintEl.replaceChildren(...shortcut(range))
     this.keyHintEl.hidden = !range
     this.current = ''
     this.moveTo(source, source.current, true)
@@ -598,9 +594,7 @@ export class GearSelector {
       keys.className = 'gs-keys'
       h.keys.forEach((k, i) => {
         if (i) { const or = document.createElement('span'); or.className = 'gs-or'; or.textContent = '/'; keys.append(or) }
-        const cap = document.createElement('kbd')
-        cap.textContent = k
-        keys.append(cap)
+        keys.append(...shortcut(k))
       })
       const label = document.createElement('span')
       label.className = 'gs-act'

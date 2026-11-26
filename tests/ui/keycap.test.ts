@@ -16,6 +16,9 @@ describe('shortcut', () => {
     expect(keys('Wheel or + / −')).toEqual(['+', '−'])
     expect(keys('Right click')).toEqual([])
     expect(keys('Space')).toEqual(['Space'])
+    expect(keys('Let go of click')).toEqual([])
+    expect(keys('Hold click')).toEqual([])
+    expect(keys('LB')).toEqual([])
   })
   it('keeps every word, in order, so nothing is lost from the line', () => {
     for (const text of ['L or left mouse', 'W / S or arrows', 'Number keys 1 to 9', 'Esc']) {
