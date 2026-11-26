@@ -86,10 +86,21 @@ export const BAR_LINE: number = (() => {
  */
 export const wordmarkSize = defineParam({ id: 'lobby.logo.size', label: 'Size of the name', group: 'Lobby logo', scope: 'client', default: 1, min: 0.5, max: 1.8, step: 0.01 })
 /** How high the name's middle stands above the plane, in its own heights. */
+/**
+ * How the name follows the view as it is turned (the owner, 25 November 2026: "more like it's on
+ * a powerful spring than ... a hard edge that it immediately slams left and right in"). It trails
+ * the view on a stiff, slightly underdamped spring, and how far it can trail is a soft limit
+ * (a tanh), approached with rising resistance, never hit.
+ */
+export const logoSpring = defineParam({ id: 'lobby.logo.spring', label: 'Name follow: spring stiffness (radians per second)', group: 'Lobby logo', scope: 'client', default: 14, min: 4, max: 40, step: 0.5 })
+export const logoDamping = defineParam({ id: 'lobby.logo.damping', label: 'Name follow: damping ratio (1 no overshoot)', group: 'Lobby logo', scope: 'client', default: 0.85, min: 0.5, max: 1.2, step: 0.01 })
+export const logoLag = defineParam({ id: 'lobby.logo.lag', label: 'Name follow: most it trails a turn (radians, soft)', group: 'Lobby logo', scope: 'client', default: 0.18, min: 0.02, max: 0.5, step: 0.01 })
+/** The name never goes below the orbits' plane: it fades out over this many CSS px instead. */
+export const logoPlaneFade = defineParam({ id: 'lobby.logo.planeFade', label: 'Name below the plane: fade band (px)', group: 'Lobby logo', scope: 'client', default: 14, min: 2, max: 60, step: 1 })
 export const wordmarkRise = defineParam({ id: 'lobby.logo.rise', label: 'Height of the name above the plane', group: 'Lobby logo', scope: 'client', default: 0.6, min: 0.2, max: 0.9, step: 0.01 })
 /** Where the wordmark stands for a placement, seen from `view` (the rig, not the live camera). */
-export function placeWordmark(mode: number, view: View, box: ScreenBox, system = 10): Placement {
-  if (mode >= 4) return placeInSystem(mode, view, system)
+export function placeWordmark(mode: number, view: View, box: ScreenBox, system = 10, below = false): Placement {
+  if (mode >= 4) return placeInSystem(mode, view, system, below)
   const sunZ = Math.max(0.5, -dot(view.eye, view.forward))
   let z = sunZ, unit = box.unit
   const x = box.x, y = box.y
@@ -106,7 +117,7 @@ const FLAT: Shape = { kind: 0, radius: 0, bearing: 0, size: 1, offset: 0, flip: 
  * (`system`, world units) and set on its far side as seen from the rig, so the planets and
  * their orbit lines pass in front.
  */
-function placeInSystem(mode: number, view: View, system: number): Placement {
+function placeInSystem(mode: number, view: View, system: number, below = false): Placement {
   // Far is away from the camera, along the plane; side is the camera's right, on the plane.
   const flat = Math.hypot(view.eye[0], view.eye[2]) || 1
   const far: Vec3 = [-view.eye[0] / flat, 0, -view.eye[2] / flat], side: Vec3 = [-far[2], 0, far[0]]
@@ -117,7 +128,10 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
   // Which side of the plane the name stands on: the camera's. Seen from below, it floats down
   // below the planets. It glides through the plane over a band of the camera's elevation, so
   // there is no pop, and hovering near edge-on moves it only a little, never flips it.
-  const level = planeSide(view)
+  // Seen from below the plane the name no longer hangs below it: it stays at the plane and fades
+  // out there (Galaxy, the plane test; the owner, 25 November 2026). `below` gives where it would
+  // have gone, for that test.
+  const level = below ? planeSide(view) : Math.max(0, planeSide(view))
   const panel = (centre: Vec3, size: number): Placement => ({ centre, right: scale(sideways, size), up: scale(up, size), sunDistance: Math.hypot(...centre), shape: FLAT })
   if (mode === 4) {
     // Rays, far: a distant structure well behind the sun, its foot a little off the plane.
@@ -208,22 +222,51 @@ export function poseView(pose: Pose, tan: number): View {
 export class WordmarkRig {
   pose: Pose | null = null
   private static readonly SECONDS = 0.9
-  private static readonly LAG = 0.18
-  private static readonly TILT_LAG = 0.1
-  /** Steps toward `goal`; returns true while it is still moving. `instant` (reduced motion, a first frame) jumps there. */
+  /** The trailing angles' speeds, radians per second (yaw, pitch). */
+  private speed = [0, 0]
+  /** The trailing angles before the soft limit (yaw, pitch): the spring's own state. */
+  private trail = [0, 0]
+  /**
+   * Steps toward `goal`; returns true while it is still moving. `instant` (reduced motion, a first
+   * frame) jumps there. Yaw and pitch trail the view on a damped spring (logoSpring, logoDamping);
+   * what shows is the trail through a soft limit, lag·tanh(trail/lag), so a fast turn eases into
+   * the limit instead of pinning there and snapping across when it reverses. It comes to an exact
+   * rest, so an idle lobby stops drawing.
+   */
   step(goal: Pose, dt: number, instant: boolean): boolean {
-    if (!this.pose || instant) { this.pose = { ...goal, target: [...goal.target] }; return false }
+    if (!this.pose || instant) { this.pose = { ...goal, target: [...goal.target] }; this.speed = [0, 0]; this.trail = [0, 0]; return false }
     const p = this.pose, k = 1 - Math.exp(-Math.max(0, dt) / WordmarkRig.SECONDS)
-    let yaw = goal.yaw - p.yaw; yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw))
-    yaw = Math.max(-WordmarkRig.LAG, Math.min(WordmarkRig.LAG, yaw * (1 - k)))
-    p.yaw = goal.yaw - yaw
-    p.pitch = goal.pitch - Math.max(-WordmarkRig.TILT_LAG, Math.min(WordmarkRig.TILT_LAG, (goal.pitch - p.pitch) * (1 - k))); p.reach += (goal.reach - p.reach) * k
+    const omega = logoSpring.value, zeta = logoDamping.value, lags = [logoLag.value, logoLag.value * 0.55]
+    // How far the goal moved since the last step: the trail takes it on, then springs back to 0.
+    let turn = goal.yaw - (p.yaw + softTrail(this.trail[0]!, lags[0]!)); turn = Math.atan2(Math.sin(turn), Math.cos(turn))
+    const moved = [turn, goal.pitch - (p.pitch + softTrail(this.trail[1]!, lags[1]!))]
+    // Semi-implicit steps of at most 1/240 s: stable for any stiffness in the registry's range.
+    const steps = Math.max(1, Math.ceil(Math.max(0, dt) * 240)), h = Math.max(0, dt) / steps
+    for (let a = 0; a < 2; a++) {
+      // Re-express the goal's move as trail: what shows stays put this instant, then springs.
+      const shownBefore = softTrail(this.trail[a]!, lags[a]!), shownNow = shownBefore + moved[a]!
+      this.trail[a] = hardTrail(shownNow, lags[a]!)
+      for (let i = 0; i < steps; i++) {
+        this.speed[a]! += (-omega * omega * this.trail[a]! - 2 * zeta * omega * this.speed[a]!) * h
+        this.trail[a]! += this.speed[a]! * h
+      }
+    }
+    p.yaw = goal.yaw; p.pitch = goal.pitch
+    p.reach += (goal.reach - p.reach) * k
     p.target = [p.target[0] + (goal.target[0] - p.target[0]) * k, p.target[1] + (goal.target[1] - p.target[1]) * k, p.target[2] + (goal.target[2] - p.target[2]) * k]
-    const settled = Math.abs(yaw) < 1e-4 && Math.abs(goal.pitch - p.pitch) < 1e-4 && Math.abs(goal.reach - p.reach) < 1e-4 * goal.reach && Math.hypot(...add(goal.target, p.target, -1)) < 1e-4 * goal.reach
+    const still = this.trail.every((t, a) => Math.abs(t) < 1e-4 && Math.abs(this.speed[a]!) < 1e-3)
+    const settled = still && Math.abs(goal.reach - p.reach) < 1e-4 * goal.reach && Math.hypot(...add(goal.target, p.target, -1)) < 1e-4 * goal.reach
+    if (still) { this.trail = [0, 0]; this.speed = [0, 0] }
     if (settled) this.pose = { ...goal, target: [...goal.target] }
+    // What is drawn: the goal less the trail, through the soft limit.
+    else { p.yaw = goal.yaw - softTrail(this.trail[0]!, lags[0]!); p.pitch = goal.pitch - softTrail(this.trail[1]!, lags[1]!) }
     return !settled
   }
 }
+/** The trail as shown: soft-limited to ±lag. */
+export const softTrail = (trail: number, lag: number) => lag * Math.tanh(trail / lag)
+/** The trail that shows as `shown` (softTrail's inverse), kept just inside the limit. */
+const hardTrail = (shown: number, lag: number) => lag * Math.atanh(Math.max(-0.999, Math.min(0.999, shown / lag)))
 
 /**
  * GLSL for the galaxy's fragment shader, before main: the field, the wordmark's uniforms, and

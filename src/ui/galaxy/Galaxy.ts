@@ -15,7 +15,7 @@ import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { metalUniforms } from '../brand/wordmarkMetal'
-import { liftPlacement, placementOf, placeWordmark, poseView, raisePlacement, surfacePoint, type Placement, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
+import { liftPlacement, placementOf, placeWordmark, poseView, raisePlacement, surfacePoint, logoPlaneFade, type Placement, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { recordStartupLobbyFrame, startupTiming } from '../../core/diagnostics'
@@ -24,7 +24,7 @@ function noteWordmarkFallback(reason: string): void { if (!startupTiming.wordmar
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { insideDisc, type LabelPlace, type ScreenDisc } from './labels'
 import { IdlePulse, idleAfter, idlePeak } from './idlePulse'
-import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime } from './cameraRest'
+import { lobbyZoom, lobbyZoomPortrait, nightSide, returnDelay, returnOmega, returnTime, pitchReturn } from './cameraRest'
 import { orbitGapTaper, orbitInnerRadius, orbitMinGap } from './orbitSpacing'
 import { introMode, LEAVING_SECONDS, openingCue, SPIRAL_TURN, leavingMark, openingState, RETURN_MARK_FROM, RETURN_SECONDS, RETURN_VIEW_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState, wordmarkFade } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
@@ -418,6 +418,23 @@ export function restStep(pitch: number, idle: number, dt: number, rest: { after:
   if (idle < rest.after || pitch === rest.pitch) return pitch
   const next = rest.pitch + (pitch - rest.pitch) * Math.exp(-Math.max(0, dt) / rest.ease)
   return Math.abs(next - rest.pitch) < (rest.snap ?? 2e-4) ? rest.pitch : next
+}
+/**
+ * The tilt's aim drawn back to `rest` with time constant `tau` seconds (exact at any frame rate),
+ * its coast fading at the same rate, landing exactly so the lobby can idle. The view follows the
+ * aim on its usual spring (swingStep).
+ */
+export function pitchHome(axis: SwingAxis, dt: number, rest: number, tau: number): SwingAxis {
+  if (axis.aim === rest && axis.aimSpeed === 0) return axis
+  const fade = Math.exp(-Math.max(0, dt) / tau)
+  let aim = rest + (axis.aim - rest) * fade, aimSpeed = axis.aimSpeed * fade
+  if (Math.abs(aim - rest) < SWING.rest) { aim = rest; if (Math.abs(aimSpeed) < SWING.still) aimSpeed = 0 }
+  return { ...axis, aim, aimSpeed }
+}
+/** How much of the name shows, 1 to 0, as its lower edge goes `depth` px below the plane's line, over `band` px. */
+export function planeShown(depth: number, band: number): number {
+  const t = Math.min(1, Math.max(0, 0.5 - depth / Math.max(1e-6, band)))
+  return t * t * (3 - 2 * t)
 }
 /** Nothing left moving on this axis. */
 export const swingResting = (axis: SwingAxis) => axis.aimSpeed === 0 && axis.viewSpeed === 0 && axis.view === axis.aim
@@ -1891,6 +1908,9 @@ export class Galaxy {
     const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
     const markView = poseView(this.markRig.pose!, VIEW_TAN)
     const placement = this.aimLift(liftPlacement(placeWordmark(mode, markView, screen, system), lift), markView, lift)
+    // Where it would have gone seen from below the plane: it stays at the plane and fades instead.
+    const below = mode >= 4 ? this.aimLift(liftPlacement(placeWordmark(mode, markView, screen, system, true), lift), markView, lift) : null
+    const planeShown = below ? this.abovePlane(below, markView) : 1
     this.markFrame = { mode, screen, system }
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
@@ -1901,7 +1921,7 @@ export class Galaxy {
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
     // changed, the context restored) the same curve runs from the first frame here.
     const opacity = this.opening || (this.returnTo && !this.returnTo.framing) || this.returning !== null ? 1 : wordmarkFade((now - this.markStart) / 1000)
-    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
+    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity: opacity * planeShown, moving: rigMoving || opacity < 1 || this.liftShown !== liftGoal }
   }
   /** For checks: the in-space wordmark's opacity as last drawn (0 when hidden). */
   markShown = 0
@@ -1938,6 +1958,25 @@ export class Galaxy {
       step = next - d; d = next; y = top(raisePlacement(p, d))
     }
     return raisePlacement(p, Math.max(0, d) * lift)
+  }
+  /**
+   * 1 while the name's lower edge is above the orbits' plane on screen, 0 once it is below, over a
+   * band of logoPlaneFade px: each point of the lower edge against its own foot on the plane
+   * (y = 0 under it), projected the same way, so the test follows the scene as it is drawn.
+   */
+  private abovePlane(p: Placement, v: ReturnType<typeof poseView>): number {
+    const edge = this.projectLine(p, v, -0.5, 6)
+    let depth = -Infinity
+    for (let i = 0; i <= 6; i++) {
+      const w = surfacePoint(p, (i / 6 - 0.5) * ASPECT, -0.5), foot = this.projectPoint([w[0], 0, w[2]], v)
+      depth = Math.max(depth, edge[i]![1] - foot[1])
+    }
+    return planeShown(depth, logoPlaneFade.value)
+  }
+  private projectPoint(w: Vec, v: ReturnType<typeof poseView>): [number, number] {
+    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
+    const d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))
+    return [width * this.framing[0] + dot(d, v.right) / (z * v.tan) * short / 2, height * (1 - this.framing[1]) - dot(d, v.up) / (z * v.tan) * short / 2]
   }
   /** A line across the name (`along` from -0.5 bottom to 0.5 top) on screen, CSS px of the host. */
   private projectLine(p: Placement, v: ReturnType<typeof poseView>, along: number, steps: number): [number, number][] {
@@ -2061,6 +2100,13 @@ export class Galaxy {
         this.resting = !done
       } else this.restSpeed = { pitch: 0, zoom: 0 }
     } else this.restSpeed = { pitch: 0, zoom: 0 }
+    // Let go of the whole system and the tilt returns to the resting one at once, on the spin-down's
+    // own time (pitchReturn times SWING.coast), so a diagonal flick's turn and tilt settle together.
+    // Never while a finger is down, round a chosen world, behind a sheet or under reduced motion.
+    if (!this.reduced.matches && !held && this.pointers.size === 0 && this.chosen < 0 && !this.flight && this.opening === null && this.backdrop === 1) {
+      // Past a tilt limit too (a drag stretches it there): the limit's own spring and this pull the same way, toward rest.
+      this.swingPitch = pitchHome(this.swingPitch, dt, REST.pitch, pitchReturn.value * SWING.coast)
+    }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
       const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
