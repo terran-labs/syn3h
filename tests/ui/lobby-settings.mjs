@@ -77,12 +77,16 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     const glass = panel.locator('.wi-card[data-section=glass]'), style0 = await page.evaluate(() => window.mira.params.get('hud.glass').value)
     await tap(glass.locator('.wi-head'))
     await glass.locator('.wi-row[data-id="hud.glass"]').waitFor({ state: 'visible' })
-    await page.evaluate(() => window.mira.params.set('hud.glass', 0)); await page.waitForTimeout(400)
+    await page.evaluate(() => window.mira.params.set('hud.glass', 0))
     const fold = glass.locator('details.lobby-liquid')
-    assert.ok(await fold.isVisible(), `${mode}: Liquid glass is there at Liquid`)
-    assert.equal(await fold.evaluate((d) => d.open), false, `${mode}: Liquid glass starts closed`)
-    // Liquid's code (and most of its settings) loads once Liquid is chosen; then the fold opens.
+    // Registering the lazy settings can rebuild the fold. Check the live locator afterwards.
     await page.waitForFunction(() => window.mira.params.get('glass.thickness'), null, { timeout: 20000 })
+    try {
+      await fold.waitFor({ state: 'visible', timeout: 20000 })
+    } catch (cause) {
+      throw new Error(`${mode}: Liquid settings registered, but the Liquid glass fold did not appear within 20 seconds`, { cause })
+    }
+    assert.equal(await fold.evaluate((d) => d.open), false, `${mode}: Liquid glass starts closed`)
     await tap(fold.locator('summary'))
     const liquidIds = await page.evaluate(() => window.mira.params.all().filter((p) => ['Glass', 'Clear lens'].includes(p.def.group)).map((p) => p.def.id).sort())
     assert.ok(liquidIds.length > 0, `${mode}: the Glass and Clear lens settings are registered`)
