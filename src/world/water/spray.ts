@@ -26,7 +26,9 @@ export const waterWakeRipple=defineParam({id:'water.wakeRipple',label:'Wake ripp
 export const waterWakeRippleWidth=defineParam({id:'water.wakeRippleWidth',label:'Wake ripple width',group:'Water',scope:'client',default:2.5,min:.5,max:6,step:.1})
 /** A vehicle leaving the water going up (spraySim.ts exitSplash): its size, the Zorb breach's factor on it, and how much each metre it was under adds. */
 export const waterSplashExit=defineParam({id:'water.splash.exit',label:'Exit splash size',group:'Water',scope:'client',default:1,min:0,max:3,step:.05})
-export const waterSplashZorbBreach=defineParam({id:'water.splash.zorbBreach',label:'Zorb breach size',group:'Water',scope:'client',default:2.5,min:1,max:5,step:.1})
+export const waterSplashZorbBreach=defineParam({id:'water.splash.zorbBreach',label:'Zorb breach size',group:'Water',scope:'client',default:1,min:0,max:3,step:.05})
+/** How deep (m) a Zorb's top must have gone for its breach to be full size: shallower is smaller. */
+export const waterSplashZorbBreachDepth=defineParam({id:'water.splash.zorbBreachDepth',label:'Zorb breach full-size depth (m)',group:'Water',scope:'client',default:8,min:1,max:30,step:.5})
 export const waterSplashDepthGain=defineParam({id:'water.splash.depthGain',label:'Exit splash gain per metre deep',group:'Water',scope:'client',default:.08,min:0,max:.3,step:.01})
 
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
@@ -320,7 +322,7 @@ export class Spray {
     if (!waterSpray.value) return
     if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
     this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value; this.sim!.foamWidth = waterWakeFoamWidth.value; this.sim!.foamLife = waterWakeFoamLife.value
-    this.sim!.exitScale = waterSplashExit.value; this.sim!.zorbBreach = waterSplashZorbBreach.value; this.sim!.depthGain = waterSplashDepthGain.value
+    this.sim!.exitScale = waterSplashExit.value; this.sim!.zorbBreach = waterSplashZorbBreach.value; this.sim!.zorbBreachDepth = waterSplashZorbBreachDepth.value; this.sim!.depthGain = waterSplashDepthGain.value
     const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1), shape, touchdown)
     if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)

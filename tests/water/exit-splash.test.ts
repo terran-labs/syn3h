@@ -156,3 +156,24 @@ describe('exit splash, as the game sends it', () => {
     expect(sim.entries).toBe(0)
   })
 })
+
+describe('the Zorb breach', () => {
+  /** Droplets alive just after a Zorb of radius 2.5 breaches from `deep` metres at `rise` m/s. */
+  const breach = (deep: number, rise: number, tier = 2) => {
+    const sim = new SpraySim(sprayCapacity(tier), flat)
+    const up = line(-deep - 5, 6, (deep + 11) / rise)
+    sent(sim, up, { ball: 2.5 })
+    return sim
+  }
+  it('is bigger from deeper', () => {
+    expect(breach(8, 10).dropletCount).toBeGreaterThan(breach(2.5, 10).dropletCount * 1.5)
+  })
+  for (const tier of [0, 1, 2]) it(`stays within the pool and finite at tier ${tier}`, () => {
+    const sim = breach(20, 14, tier), cap = sprayCapacity(tier)
+    expect(sim.exits).toBe(1)
+    expect(sim.dropletCount).toBeLessThanOrEqual(cap.droplets)
+    const a = new Float32Array(cap.droplets * 4), b = new Float32Array(cap.droplets * 4), n = sim.packDroplets(a, b)
+    for (let i = 0; i < n * 4; i++) expect(Number.isFinite(a[i]) && Number.isFinite(b[i])).toBe(true)
+  })
+})
+
