@@ -227,6 +227,12 @@ export class GearSelector {
     if (this.touch) root.dataset.touch = ''
 
     this.drum.className = 'gs-drum'
+    if (this.touch) {
+      addEventListener('resize', () => this.placeActions(), { signal: this.abort.signal })
+      const watch = new MutationObserver(() => this.placeActions())
+      watch.observe(document.documentElement, { attributes: true, attributeFilter: ['style', 'data-touch-hand'] })
+      this.abort.signal.addEventListener('abort', () => watch.disconnect())
+    }
     // The selected name's size settles at the end of its row's scale transition: place what the
     // gear holds after it again then (placeHeld).
     this.drum.addEventListener('transitionend', (e) => {
@@ -638,6 +644,24 @@ export class GearSelector {
     this.actionButtons = next
     this.actionsElement.replaceChildren(...next.map(b => b.button))
     this.actionsElement.hidden = next.length === 0
+    this.placeActions()
+  }
+
+  /**
+   * The extra gear buttons (the Grapple's LET OUT and LET GO, while a cord is out) stand in the
+   * next column out from the shell's thumb grid. On an upright phone with three columns (the
+   * jet) that column reaches the minimap in the lower corner, where the owner keeps the map (17
+   * November 2026). There, and wherever else it would touch the map, they stand instead as one
+   * row above the grid beside the Panels control (gear.css, .gear-actions.is-above), clear of
+   * the map and of every other button. Measured on every change of buttons, size, hand or grid.
+   */
+  private placeActions(): void {
+    const actions = this.actionsElement
+    actions.classList.remove('is-above')
+    const map = document.querySelector('.shell-minimap')?.getBoundingClientRect()
+    if (actions.hidden || !map?.width) return
+    const near = (r: DOMRect) => r.left < map.right + 2 && r.right > map.left - 2 && r.top < map.bottom + 2 && r.bottom > map.top - 2
+    actions.classList.toggle('is-above', [...actions.children].some(b => near(b.getBoundingClientRect())))
   }
 
   private actionButton(action: GearAction): ActionButton {
