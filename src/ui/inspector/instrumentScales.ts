@@ -35,13 +35,29 @@ export const BUGGY_TOP_PER_SPEED = 101.8 / 30
 /**
  * The jet's top speed from its flight drag and thrust (Jet.ts, jet.drag's note): at sea level full
  * thrust, `jet.flightThrust` times weight, balances drag at 19.4 / (drag x 1.225 x 50) m/s for the
- * default thrust of 2, and in proportion to thrust. The handling report measured today's jet at
- * 400 m/s (its drag gives no practical limit), so that is the most it reads; the jet-flight retune
- * (about 110 m/s at full throttle) brings the formula well under it.
+ * default thrust of 2, and in proportion to thrust. Capped at SPEED_CAP: today's jet (its drag
+ * gives no practical limit) reaches it; the jet-flight retune (about 110 m/s at full throttle)
+ * brings the formula well under it.
  */
-export const JET_MEASURED_TOP = 400
 export function jetTopSpeed(drag = value('jet.drag', 0.0029), thrust = value('jet.flightThrust', 2)): number {
-  return Math.min(JET_MEASURED_TOP, (thrust / 2) * 19.4 / (drag * 1.225 * 50))
+  return Math.min(SPEED_CAP, (thrust / 2) * 19.4 / (drag * 1.225 * 50))
+}
+/**
+ * The fastest the handling report measures anything going: the jet on today's drag and the
+ * hovercraft without its glide assistance both stop at 400 m/s (25 November 2026), a cap in the
+ * physics rather than either vehicle's.
+ */
+export const SPEED_CAP = 400
+/** The hovercraft's body mass (the handling report, 25 November 2026). */
+export const HOVER_MASS = 50
+/**
+ * The hovercraft's glide top speed: constant thrust against linear drag settles at hover.thrust /
+ * (mass x hover.drag) (Hovercraft.ts). The handling report measures 32.0 m/s on the Default preset
+ * (320 / (50 x 0.2) = 32). Without glide assistance (hover.assist 0) there is no glide drag and it
+ * runs to SPEED_CAP.
+ */
+export function hoverTopSpeed(thrust = value('hover.thrust', 320), drag = value('hover.drag', 0.2), assist = Number(params.get('hover.assist')?.value ?? 1)): number {
+  return assist > 0 ? Math.min(SPEED_CAP, thrust / (HOVER_MASS * drag)) : SPEED_CAP
 }
 
 /** Top speed in m/s of the vehicle being driven. */
@@ -49,13 +65,21 @@ export function topSpeed(kind: VehicleKind | string): number {
   switch (kind) {
     case 'buggy': case 'buggy-syn3h': case 'buggy-classic': return BUGGY_TOP_PER_SPEED * value('buggy.speed', 30)
     case 'jet': return jetTopSpeed()
+    case 'hovercraft': return hoverTopSpeed()
     // The tank's speed parameter is its target ground speed in m/s (Tank.ts).
     case 'tank': return value('tank.speed', 25)
-    // The hovercraft's glide speed comes from thrust against drag with no single parameter, and
-    // the handling report does not measure it yet: the old scale until it does.
     default: return FALLBACK_TOP_SPEED
   }
 }
 
 /** The speed, in m/s, at which the speed crescent reads full for this vehicle. */
 export const speedFullScale = (kind: VehicleKind | string): number => SPEED_HEADROOM * topSpeed(kind)
+
+/** The height, in metres, at which the altitude crescent reads full: today one scale for all. */
+export const HEIGHT_FULL_SCALE = 600
+/**
+ * The altitude crescent's full scale for this vehicle. A stub: every vehicle reads 600 m above the
+ * sea, as before. Waiting on the owner: height above the ground, full at a per-vehicle range (a big
+ * jump for ground vehicles, the cruising band for the jet), would be decided here.
+ */
+export const heightFullScale = (_kind: VehicleKind | string): number => HEIGHT_FULL_SCALE

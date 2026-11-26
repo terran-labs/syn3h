@@ -7,7 +7,7 @@
 import { afterEach, expect, it } from 'vitest'
 import { params } from '../../shared/params'
 import '../../src/vehicles/buggyParams'
-import { SPEED_HEADROOM, jetTopSpeed, speedFullScale, topSpeed, JET_MEASURED_TOP } from '../../src/ui/inspector/instrumentScales'
+import { SPEED_HEADROOM, SPEED_CAP, hoverTopSpeed, jetTopSpeed, speedFullScale, topSpeed } from '../../src/ui/inspector/instrumentScales'
 
 const restore: [string, unknown][] = []
 const set = (id: string, v: number) => { restore.push([id, params.get(id)?.value]); params.set(id, v) }
@@ -30,5 +30,12 @@ it('reads the jet from its drag and thrust: more drag, slower; more thrust, fast
   const base = jetTopSpeed(0.003, 2)
   expect(jetTopSpeed(0.006, 2)).toBeCloseTo(base / 2, 6)
   expect(jetTopSpeed(0.003, 3)).toBeCloseTo(base * 1.5, 6)
-  expect(jetTopSpeed(0.0001, 2)).toBe(JET_MEASURED_TOP)
+  expect(jetTopSpeed(0.0001, 2)).toBe(SPEED_CAP)
+})
+
+it('reads the hovercraft from its thrust and glide drag, and the cap without glide assistance', () => {
+  const base = hoverTopSpeed(300, 0.2, 1)
+  expect(hoverTopSpeed(300, 0.4, 1)).toBeCloseTo(base / 2, 6)
+  expect(hoverTopSpeed(450, 0.2, 1)).toBeCloseTo(base * 1.5, 6)
+  expect(hoverTopSpeed(300, 0.2, 0)).toBe(SPEED_CAP)
 })
