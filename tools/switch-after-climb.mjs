@@ -27,7 +27,20 @@ try {
     await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
     await page.evaluate(() => window.syn3h.shell.play())
     await page.waitForFunction(() => window.syn3h.game.tick > 120 && window.syn3h.shell.playing && !window.syn3h.shell.transitioning, null, { timeout: 120000 })
-    await page.evaluate(() => { const s = window.syn3h; s.params.set('bots.count', 0); s.game.quality.setAuto(false) })
+    await page.evaluate(() => {
+      const s = window.syn3h; s.params.set('bots.count', 0); s.game.quality.setAuto(false)
+      // Each pipeline created while recording, with its material, object and the chain above it.
+      const b = s.game.renderer.backend, make = b.createRenderPipeline
+      window.__builds = null
+      b.createRenderPipeline = function (renderObject, ...rest) {
+        if (window.__builds) {
+          const m = renderObject?.material, o = renderObject?.object, chain = []
+          for (let p = o; p && chain.length < 6; p = p.parent) chain.push(p.name || p.type)
+          window.__builds.push(`${m?.type ?? '?'}${m?.name ? ` "${m.name}"` : ''} | ${o?.type ?? '?'}${o?.name ? ` "${o.name}"` : ''} | ${chain.join(' < ')}`)
+        }
+        return make.call(this, renderObject, ...rest)
+      }
+    })
     for (const level of [3, 4]) {
       const t0 = Date.now()
       await page.evaluate(level => window.syn3h.game.quality.setLevel(level), level)
@@ -38,10 +51,12 @@ try {
       for (const kind of ['jet', 'hovercraft', 'buggy']) {
         const r = await page.evaluate(async (kind) => {
           const s = window.syn3h, game = s.game, made = game.pipelineCounter.created
+          window.__builds = []
           const t = performance.now(); s.swapVehicle(kind); const swapMs = performance.now() - t
           const end = performance.now() + 2000
           while (performance.now() < end) await new Promise(r => requestAnimationFrame(r))
-          return { to: s.player.kind, swapMs: +swapMs.toFixed(1), pipelines: game.pipelineCounter.created - made }
+          const built = window.__builds; window.__builds = null
+          return { to: s.player.kind, swapMs: +swapMs.toFixed(1), pipelines: game.pipelineCounter.created - made, built }
         }, kind)
         switches.push(r)
       }
