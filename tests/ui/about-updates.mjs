@@ -112,6 +112,23 @@ for (const mode of ['desktop', 'phone']) {
     const scrolled = await header()
     assert.ok(scrolled.dy <= 2 && scrolled.x === atRest.x && scrolled.title === atRest.title, `${mode}: the header and its X stay put while the list scrolls`)
     await page.locator('dialog.lobby-sheet-updates .about-updates').evaluate(list => { list.scrollTop = 0 })
+    // "A newer version is out" is an action in the still header, never half-scrolled under the title.
+    const note = await page.locator('dialog.lobby-sheet-updates').evaluate(root => {
+      const n = root.querySelector('.updates-pinned'), list = root.querySelector('.about-updates')
+      return n && { inList: list.contains(n), inHeader: !!n.closest('.updates-notice') }
+    })
+    if (note) assert.deepEqual(note, { inList: false, inHeader: true }, `${mode}: the update note stands in the still header`)
+    // Each release keeps its version, time and GitHub mark on one line; a pill may take a second
+    // line under the version, never a third.
+    const rows = await page.locator('dialog.lobby-sheet-updates .update-release').evaluateAll(lis => lis.filter(li => li.getClientRects().length && li.getBoundingClientRect().height).map(li => {
+      const mid = el => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2 }
+      const line = li.querySelector('.update-release-line'), v = li.querySelector('.update-version'), t = li.querySelector('.update-time'), m = li.querySelector(':scope > .update-full')
+      // Lines: the children's centres, sorted, counting a new line at each gap over 8 px.
+      const mids = [...line.children].filter(c => c.getClientRects().length).map(mid).sort((x, y) => x - y)
+      const lines = mids.reduce((n, y, i) => n + (i && y - mids[i - 1] > 8 ? 1 : 0), mids.length ? 1 : 0)
+      return { v: v.textContent, time: t ? Math.abs(mid(t) - mid(v)) : 0, mark: Math.abs(mid(m) - mid(v)), lines }
+    }))
+    for (const row of rows) assert.ok(row.time <= 3 && row.mark <= 3 && row.lines <= 2, `${mode}: ${row.v} keeps its time and mark on its line, in at most two lines (${JSON.stringify(row)})`)
 
     // The owner's polish (26 November 2026). No borders anywhere in the sheet: spacing and the
     // rail part the days, not boxes (focus rings are outlines, not borders).

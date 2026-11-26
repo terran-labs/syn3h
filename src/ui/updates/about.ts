@@ -19,11 +19,11 @@ let uid = 0
  */
 export function aboutHtml(): string {
   return `<div class="about-pane" data-about-pane="about"></div>
-    <div class="about-pane" data-about-pane="updates" hidden><h2 class="about-updates-title">Updates</h2>${githubReleasesHtml()}<div class="about-updates" aria-live="polite"></div></div>`
+    <div class="about-pane" data-about-pane="updates" hidden><h2 class="about-updates-title">Updates</h2>${githubReleasesHtml()}<div class="updates-notice"></div><div class="about-updates" aria-live="polite"></div></div>`
 }
 
 /** The lobby's Updates sheet body: the release list, filled by fillUpdates when it opens. */
-export const updatesSheetHtml = (): string => `${githubReleasesHtml()}<div class="about-updates" aria-live="polite"></div>`
+export const updatesSheetHtml = (): string => `${githubReleasesHtml()}<div class="updates-notice"></div><div class="about-updates" aria-live="polite"></div>`
 
 export type AboutTab = 'about' | 'updates'
 
@@ -169,20 +169,25 @@ export async function fillUpdates(host: HTMLElement): Promise<void> {
   host.dataset.state = 'ready'
   const running = runningVersion(), pinned = pinnedVersion()
   const nodes: Node[] = []
+  // The pinned or newer-version note is an action: it stands in the still header above the list
+  // (.updates-notice), so it never half-scrolls under the title.
+  const notice = host.previousElementSibling?.classList.contains('updates-notice') ? host.previousElementSibling as HTMLElement : null
+  const notes: Node[] = notice ? [] : nodes
   // Root-relative on purpose: on beta.mira.cc "the latest" is the newest beta, never production.
   if (pinned) {
     const note = text('p', `You are playing pinned version v${pinned}, kept exactly as it was released. `, 'updates-pinned')
     const latest = document.createElement('a'); latest.href = '/'; latest.textContent = 'Play the latest version'
-    note.append(latest); nodes.push(note)
+    note.append(latest); notes.push(note)
   } else if (running && releases.some(r => isNewer(r.version, running))) {
     const note = text('p', 'A newer version is out. ', 'updates-pinned')
     const reload = houseButton('Reload to update', 'updates-reload')
     reload.addEventListener('click', () => location.reload())
-    note.append(reload); nodes.push(note)
+    note.append(reload); notes.push(note)
   }
   const plan = planUpdates(releases, running)
   if (plan.empty) nodes.push(text('p', plan.empty, 'updates-status'))
   else nodes.push(dayList(releases, older, running))
+  if (notice) notice.replaceChildren(...notes)
   host.replaceChildren(...nodes)
 }
 

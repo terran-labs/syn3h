@@ -4,8 +4,11 @@
 
 .mira-shell.exploration-ui .about-updates .updates-status { color: var(--s3-dim); }
 .mira-shell.exploration-ui .about-updates :is(.updates-retry, .updates-reload) { min-height: 44px; margin: 4px 0; padding: 8px 20px; color: var(--s3-accent-2); font: 500 14px/1.2 'Barlow', sans-serif; letter-spacing: .03em; cursor: pointer; }
-.mira-shell.exploration-ui .about-updates .updates-pinned { margin: 0 0 16px; }
-.mira-shell.exploration-ui .about-updates .updates-pinned a { color: var(--s3-accent-2); text-underline-offset: 4px; }
+.mira-shell.exploration-ui :is(.about-updates, .updates-notice) .updates-pinned { margin: 0 0 12px; }
+.mira-shell.exploration-ui .updates-notice .updates-reload { min-height: 44px; margin: 4px 0; padding: 8px 20px; color: var(--s3-accent-2); font: 500 14px/1.2 'Barlow', sans-serif; letter-spacing: .03em; cursor: pointer; }
+.mira-shell.exploration-ui .updates-notice:empty { display: none; }
+.mira-shell.exploration-ui .lobby-sheet-updates .updates-notice { flex: none; }
+.mira-shell.exploration-ui :is(.about-updates, .updates-notice) .updates-pinned a { color: var(--s3-accent-2); text-underline-offset: 4px; }
 /* Updates, one entry per Pacific day (days.ts), each opening to that day's releases, each of
    those opening to its bullets (and, when the feed carries them, its betas and changes). A thin
    rail runs down the left with a node per day, so the history reads as a timeline: the day the
@@ -163,6 +166,11 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
   .mira-shell.exploration-ui .update-release .update-notes { padding-left: 34px; }
   .mira-shell.exploration-ui .update-day-date { font-size: 24px; }
   .mira-shell.exploration-ui .update-day-line > .update-day-count { gap: 6px; min-height: calc(1.1em * 24 / 12); letter-spacing: .1em; }
+  /* A release keeps its version and time on one line, the time just left of its GitHub mark; its
+     pills go on the line below, under the version, as a day's pill goes under its date. */
+  .mira-shell.exploration-ui .update-release-line > .update-badge { order: 3; }
+  .mira-shell.exploration-ui .update-release-line > .update-version + .update-badge { margin-left: 28px; }
+  .mira-shell.exploration-ui .update-release-line:has(> .update-badge)::after { content: ''; order: 2; flex-basis: 100%; }
   /* The count keeps the date's line; a pill goes on the line below it. */
   .mira-shell.exploration-ui .update-day-line { align-items: flex-start; }
   .mira-shell.exploration-ui .update-day-line > .update-badge { order: 3; }
