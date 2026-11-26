@@ -32,7 +32,9 @@
 .mira-shell.exploration-ui.exploration-ui :is(.update-day-toggle, .update-release-toggle):hover { border: 0; background: rgb(205 205 205 / .05); box-shadow: none; }
 .mira-shell.exploration-ui.exploration-ui :is(.update-day-toggle, .update-release-toggle):focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 0; }
 .mira-shell.exploration-ui :is(.update-day-line, .update-release-line) { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; min-width: 0; }
-.mira-shell.exploration-ui .update-day-date { font: 600 26px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; text-transform: uppercase; color: var(--s3-accent-2); }
+/* The count and arrow stand level with the date's line. */
+.mira-shell.exploration-ui .update-day-line > .update-day-count { flex: 0 0 auto; min-height: calc(1.1em * 26 / 12); }
+.mira-shell.exploration-ui .update-day-date { white-space: nowrap; font: 600 26px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; text-transform: uppercase; color: var(--s3-accent-2); }
 .mira-shell.exploration-ui .update-day-count { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; color: var(--s3-dim); font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; }
 .mira-shell.exploration-ui .update-day-line .accordion-arrow { color: var(--s3-dim); }
 .mira-shell.exploration-ui .update-day-summary { color: var(--s3-ink); font-size: 16px; line-height: 1.45; }
@@ -135,4 +137,10 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
   .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 22px; }
   .mira-shell.exploration-ui .update-release .update-notes { padding-left: 34px; }
   .mira-shell.exploration-ui .update-day-date { font-size: 24px; }
+  .mira-shell.exploration-ui .update-day-line > .update-day-count { gap: 6px; min-height: calc(1.1em * 24 / 12); letter-spacing: .1em; }
+  /* The count keeps the date's line; a pill goes on the line below it. */
+  .mira-shell.exploration-ui .update-day-line { align-items: flex-start; }
+  .mira-shell.exploration-ui .update-day-line > .update-badge { order: 3; }
+  .mira-shell.exploration-ui .update-day-line:has(> .update-badge)::after { content: ''; order: 2; flex-basis: 100%; }
+  .mira-shell.exploration-ui.exploration-ui .update-day-toggle { padding: 12px; }
 }
