@@ -658,8 +658,10 @@ export class GearSelector {
   private placeActions(): void {
     const actions = this.actionsElement
     actions.classList.remove('is-above')
-    const map = document.querySelector('.shell-minimap')?.getBoundingClientRect()
-    if (actions.hidden || !map?.width) return
+    const box = document.querySelector('.shell-minimap')?.getBoundingClientRect()
+    if (actions.hidden || !box?.width) return
+    // The map's drawn ring: its box keeps an 11.5% clear margin each side (exploration.css --map-ring).
+    const i = box.width * .115, map = { left: box.left + i, right: box.right - i, top: box.top + i, bottom: box.bottom - i }
     const near = (r: DOMRect) => r.left < map.right + 2 && r.right > map.left - 2 && r.top < map.bottom + 2 && r.bottom > map.top - 2
     actions.classList.toggle('is-above', [...actions.children].some(b => near(b.getBoundingClientRect())))
   }

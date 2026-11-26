@@ -2,7 +2,7 @@
  * The thumb grid rule, run in the page (page.evaluate(thumbGrid)): every visible thumb button,
  * the shell's and the gear's, is one size, their centres lie on at most two rows, the
  * columns are evenly spaced, and none comes within 2 px of another, the Panels tab, the chat
- * button, the minimap or the tips and controls card. The gear's extra buttons, where their column
+ * button, the minimap's ring or the tips box. The gear's extra buttons, where their column
  * would reach the minimap, stand as one row above the grid (.gear-actions.is-above): they are
  * left out of the rows and columns, and held to every clearance. Returns what is wrong, or an
  * empty list. See src/ui/touch-stick.css and src/ui/gear/gear.css.
@@ -30,9 +30,13 @@ export function thumbGrid() {
   // where the owner put it, 17 November 2026, and the buttons move instead).
   const near = (r, o, gap) => r.left < o.right + gap && r.right > o.left - gap && r.top < o.bottom + gap && r.bottom > o.top - gap
   rects.forEach((a, i) => rects.slice(i + 1).forEach((b) => { if (near(a.r, b.r, 0)) problems.push(`${a.name} overlaps ${b.name}`) }))
-  for (const selector of ['.hud-navigation', '.chat-toggle', '.shell-minimap', '.spawn-help']) {
+  // The minimap by its drawn ring (its box has an 11.5% clear margin each side, exploration.css
+  // --map-ring); the tips box (.spawn-help.is-tips) where it is on screen.
+  for (const selector of ['.hud-navigation', '.chat-toggle', '.shell-minimap', '.spawn-help.is-tips']) {
     for (const el of document.querySelectorAll(selector)) {
-      const o = el.getBoundingClientRect(), st = getComputedStyle(el)
+      const box = el.getBoundingClientRect(), st = getComputedStyle(el)
+      const inset = selector === '.shell-minimap' ? box.width * .115 : 0
+      const o = { left: box.left + inset, right: box.right - inset, top: box.top + inset, bottom: box.bottom - inset, width: box.width, height: box.height }
       if (!o.width || !o.height || st.display === 'none' || st.visibility === 'hidden' || el.hidden) continue
       for (const { name, r } of rects) if (near(r, o, 2)) problems.push(`${name} within 2 px of ${selector}`)
     }
