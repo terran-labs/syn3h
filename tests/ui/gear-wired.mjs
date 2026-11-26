@@ -35,10 +35,12 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden && document.querySelector('.gear-selector').dataset.mode === 'locked')
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
-    assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), true, 'Zorb control shows while driving')
-    // Driving: no gear hints (the owner, 17 November 2026).
-    // Zorb's key shows while driving too, to the right of its name (the owner, 18 November 2026).
-    assert.match(await page.locator('.hud-accessories [data-id=zorb]').innerText(), /^\s*ZORB\s*X\s*$/i)
+    // Driving: only the weapon switcher shows (the owner, 25 November 2026: "Hide all of this text
+    // when the cursor is locked"): the rows below it and the gear's hints fade out over .2 s, in
+    // place (hud-column.css), so wait for the fade to end before asking what is seen.
+    await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running')
+      && getComputedStyle(document.querySelector('.hud-accessories')).visibility === 'hidden', null, { timeout: 10000 })
+    assert.equal(await page.locator('.hud-accessories [data-id=zorb]').isVisible(), false, 'no Zorb row while driving')
     assert.equal(await page.locator('.gear-selector .gs-keyhint').isVisible(), false, 'no number-key hint while driving')
     assert.equal(await page.locator('.gear-selector .gs-hints').isVisible(), false, 'no gear hints while driving')
     assert.equal(await page.locator('.hud-accessories [data-id=zorb]').getAttribute('aria-pressed'), 'false')
