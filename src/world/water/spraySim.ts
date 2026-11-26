@@ -59,6 +59,17 @@ const CENTRE = 2
 const HEAD_FADE = 1.5
 /** Metres over which a piece of soft trail fades in from where it began and out to where it ended. */
 const SOFT_END = 2.5
+/**
+ * A skip (src/vehicles/skip.ts) counts as touching down again, for its splash here and its sound
+ * (src/audio), only when it lands: falling at least as fast as after a drop of this many metres
+ * under the world's gravity (about 1 m/s at 9.81 m/s²). Planing can restart while a hull is still
+ * in the water (wading in shallows, settling after falling back in) with no landing at all; a
+ * real skip comes down from a hop. Derived from gravity so a low-gravity world's gentler landings
+ * still count.
+ */
+export const SKIP_TOUCHDOWN_DROP = .05
+/** The falling speed (m/s) of a touchdown under gravity `g` (m/s²). */
+export function touchdownFall(g: number): number { return Math.sqrt(2 * Math.max(0, Number.isFinite(g) ? g : GRAVITY) * SKIP_TOUCHDOWN_DROP) }
 /** A ball off the water for less than this (s) is skimming, not skipping: its trail stays joined. */
 const SKIM_GAP = .12
 
@@ -158,6 +169,8 @@ export class SpraySim {
   readonly armKind: Uint8Array
   /** Multiplies every soft trail's and ring's strength and width (water.wakeStrength, water.wakeWidth). */
   wakeStrength = 1
+  /** The world's gravity, m/s² (world.gravity): for telling a skip's landing from planing restarting. */
+  gravity = GRAVITY
   wakeWidth = 1
   /**
    * The foam trail behind a moving craft (not its rings): width and how long it lasts, each a
@@ -319,7 +332,8 @@ export class SpraySim {
     // A fast hull touching down flat (a jet skimming, a Zorb skipping) splashes too: a skip.
     // `touchdown`: a skip landing again (src/vehicles/skip.ts), which may not have dried the hull's
     // whole envelope in a low hop but is an entry all the same.
-    const entering = touchdown || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15)))
+    // A skip touching down only when it lands: planing restarting in the water is no splash.
+    const entering = (touchdown && vy < -touchdownFall(this.gravity)) || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15)))
     s.seen = this.time; s.speed = speed
     // A trail joins points laid while the ball stayed on the water; a skimming ball that lifts
     // for a moment (under SKIM_GAP) is still on it, a skip is not.
