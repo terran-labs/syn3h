@@ -90,6 +90,9 @@ try {
     }
 
     await draft.fill('One line.')
+    // On a phone the panels grow in from 94% scale as they open: measure once that has settled,
+    // or every box reads 6% small (44 px read as 41.36).
+    await page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations({ subtree: true }).some(a => a.playState === 'running'), null, { timeout: 15000 })
     const one = await layout()
     assert.ok(!one.multiline && Math.abs(one.top - one.sendTop) < 1, `${tag}: Send sits beside one line`)
     assert.deepEqual(one.inset, [touch ? 20 : 18, touch ? 20 : 18])
