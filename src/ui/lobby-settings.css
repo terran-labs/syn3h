@@ -42,15 +42,12 @@
   box-sizing: border-box; padding: 0 12px; border-radius: var(--glass-control-radius, 24px);
   color: rgb(236 236 236 / .84); text-decoration: none; white-space: nowrap;
   font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .04em; text-transform: none;
-  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8));
+  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); transition: color .18s;
 }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-community a.lobby-community-text { grid-area: 2 / 2; padding-inline-start: 2px; }
 .lobby-version-dock .lobby-community svg {
   width: 20px; height: 20px; flex: none; fill: currentColor;
 }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-community a:is(:hover, :focus-visible) { color: #fff; }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-community a:hover { outline: var(--control-hover-outline); outline-offset: -4px; }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-community a:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -4px; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version {
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px 0 2px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
@@ -60,9 +57,20 @@
   text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s;
 }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus, :focus-visible, :active, :visited) { color: #fff; text-decoration: none; background: none; }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
+/* The dock's links (the version, GitHub, Discord, terranlabs.com) share one treatment (the owner,
+   26 November 2026: the version's hover "far heavier than the quiet links beside it"). Hover and a
+   press only brighten the text and the chevron to white; no outline, pill, halo or fill. Hover only
+   where there is a pointer that hovers, so a tap leaves nothing behind. Keyboard focus alone gets
+   one faint thin ring close round the text (never an underline: the owner removed it). */
+.mira-shell.exploration-ui .lobby-version-dock :is(.lobby-version, .lobby-community a):is(:hover, :focus, :focus-visible, :active, :visited) {
+  text-decoration: none; background: none; box-shadow: none; outline: none; filter: none;
+}
+@media (hover: hover) { .mira-shell.exploration-ui .lobby-version-dock :is(.lobby-version, .lobby-community a):hover { color: #fff; } }
+.mira-shell.exploration-ui .lobby-version-dock :is(.lobby-version, .lobby-community a):is(:active, :focus-visible) { color: #fff; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version::after { transition: opacity .18s; }
+@media (hover: hover) { .mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover::after { opacity: 1; } }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:active, :focus-visible)::after { opacity: 1; }
+.mira-shell.exploration-ui .lobby-version-dock :is(.lobby-version, .lobby-community a):focus-visible { outline: 1px solid rgb(244 244 244 / .5); outline-offset: -9px; border-radius: 8px; }
 /* Put the update dot after the version so the two text starts stay aligned. */
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version.has-update::before {
   content: ''; order: 1; flex: none;
