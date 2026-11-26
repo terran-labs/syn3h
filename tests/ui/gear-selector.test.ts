@@ -72,13 +72,16 @@ describe('the release hint beside the status', () => {
   const fling: GearAction = { id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start() {} }
   const held = (a: GearAction, status?: string): GearControls => ({ gear: 'bungee', name: 'Grapple', description: '', state: 'ground', status, actions: [a] })
   it('shows the key from the action while the gear holds something, and nothing otherwise', () => {
-    expect(releaseHint(held(release, 'Cord 13 m'), false)).toEqual({ key: 'G', text: 'let go' })
+    expect(releaseHint(held(release, 'Cord 13 m'), false)).toEqual({ key: 'G', text: 'or double-click to let go' })
     expect(releaseHint(held(release), false)).toBeNull()
     expect(releaseHint(undefined, false)).toBeNull()
     expect(releaseHint(held(action('launch'), 'Cord 13 m'), false)).toBeNull()
   })
-  it('names the gesture on touch, with no key', () => {
+  it('on touch says nothing while a thumb button lets go, and names the gesture if none does', () => {
+    const withButton: GearControls = { ...held(release, 'Cord 13 m'), actions: [action('reelIn'), release] }
+    expect(releaseHint(withButton, true)).toBeNull()
     expect(releaseHint(held(release, 'Cord 13 m'), true)).toEqual({ text: 'double-tap to let go' })
+    expect(releaseHint(held(fling, 'Holding Bot 3'), true)).toBeNull()
   })
   it('says how to let go of a grab that is let go of with the mouse', () => {
     expect(releaseHint(held(fling, 'Holding Bot 3'), false)).toEqual({ text: 'let go to fling' })

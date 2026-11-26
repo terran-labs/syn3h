@@ -86,15 +86,25 @@
 .gear-selector .gs-meter {
   position: absolute; left: var(--gs-meter-left, 18px); top: calc(50% + 12px); z-index: 1;
   display: flex; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none; text-shadow: var(--gs-under);
+  /* The row's room: the drum clips anything past its edge. */
+  max-width: calc(100% - var(--gs-meter-left, 18px) - var(--gs-name-x, 0px));
 }
+.gear-selector .gs-meter > :is(.gs-status, .gs-release) { flex: none; }
+/* Touch rows are narrow: the release hint takes its own line under the status. */
+.gear-selector[data-touch] .gs-meter { flex-wrap: wrap; row-gap: 3px; }
+.gear-selector[data-touch] .gs-meter > .gs-release { flex-basis: 100%; margin-left: 0; font-size: 10px; letter-spacing: .08em; }
 .gear-selector .gs-meter.is-arriving { animation: gs-meter-in .22s cubic-bezier(.2,.8,.2,1) both; }
 .gear-selector .gs-meter.is-leaving { animation: gs-meter-out .22s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes gs-meter-in { from { opacity: 0; } }
 @keyframes gs-meter-out { to { opacity: 0; } }
 .gear-selector .gs-meter > * { margin: 0; }
-/* The release hint beside the status (GearSelector releaseHint): its key as a keycap and the
-   action, quieter than the status, coming in with the bar's .15 s fade. */
-.gear-selector .gs-release { margin-left: 4px; color: var(--s3-dim); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; animation: gs-release-in .15s ease; }
+/* What the gear holds and how to let go (GearSelector releaseHint), on a desktop the first line
+   of the detail beside the selected name: the status bright, the way to let go quieter, its key
+   a keycap, coming in with the bar's .15 s fade. On touch the status stays under the name. */
+.gear-selector .gs-held { margin: 6px 0 4px; white-space: nowrap; font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+.gear-selector .gs-held-status { color: var(--s3-accent-2); }
+.gear-selector[data-touch] .gs-held { display: none; }
+.gear-selector .gs-release { margin-left: 10px; color: var(--s3-dim); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; animation: gs-release-in .15s ease; }
 @keyframes gs-release-in { from { opacity: 0; } }
 .gear-selector .gs-status { color: var(--s3-accent-2); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
 /* The charge bar (Plasma Thunder's charge, Grapple's cord tension, Yoink's hold): only the
@@ -103,7 +113,7 @@
    which point they receive the white fill with the glow of the area that's filled, not the
    entire potential width"). Idle (empty) it paints nothing but keeps its place, so the status
    beside it never moves; it fades in and out over .15 s. */
-.gear-selector .gs-level { width: 64px; height: 2px; flex: none; overflow: visible; transition: opacity .15s ease; }
+.gear-selector .gs-level { flex: 0 1 64px; min-width: 24px; height: 2px; overflow: visible; transition: opacity .15s ease; }
 .gear-selector .gs-level.is-idle { opacity: 0; }
 .gear-selector .gs-level i { display: block; width: 100%; height: 100%; border-radius: 1px; background: var(--s3-accent-2); box-shadow: var(--gs-glow); transform-origin: 0 50%; transition: transform .2s linear; }
 .gear-selector .gs-hints { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 5px; }

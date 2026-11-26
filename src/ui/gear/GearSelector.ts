@@ -101,11 +101,18 @@ export function releaseHint(own: GearControls | undefined, touch: boolean): { ke
   if (!action) return null
   const label = action.label.toLowerCase()
   if (touch) {
+    // Touch: a thumb button that lets go (TouchControls, touchActions) says it already. Yoink's
+    // fling is the TAG thumb itself letting go, which the thumb is doing: nothing to add.
+    if (action.id !== 'release' || touchActions(own).includes(action)) return null
     const gesture = action.keys.find(k => /\btap\b/i.test(k))
-    return { text: gesture ? `${gesture.toLowerCase().replace(/\s+/g, '-')} to ${label}` : label === 'let go' ? label : `let go to ${label}` }
+    return { text: gesture ? `${gesture.toLowerCase().replace(/\s+/g, '-')} to ${label}` : label }
   }
+  // A keyboard: the key as a cap, then any other real input in words. A double tap of the tag
+  // control is a double-click (or a double press of L) here.
   const key = action.keys.find(k => !k.includes(' ') && isKey(k))
-  return key ? { key, text: label } : { text: label === 'let go' ? label : `let go to ${label}` }
+  const other = action.keys.find(k => /\btap\b/i.test(k)) ? 'double-click' : undefined
+  if (key) return { key, text: other ? `or ${other} to ${label}` : label }
+  return { text: label === 'let go' ? label : `let go to ${label}` }
 }
 
 /** A live level, quantised so a slowly creeping value does not write the DOM every frame. */
@@ -168,7 +175,10 @@ export class GearSelector {
   private readonly statusEl = document.createElement('p')
   private readonly levelEl = document.createElement('div')
   /** The way out of what the gear holds (a cord, a grabbed vehicle), beside its status. */
-  private readonly releaseEl = document.createElement('p')
+  private readonly releaseEl = document.createElement('span')
+  /** Desktop: what the gear holds and how to let go, the first line of the detail beside the name. */
+  private readonly heldEl = document.createElement('p')
+  private readonly heldStatusEl = document.createElement('span')
   private releaseShown = ''
   private readonly levelFill = document.createElement('i')
   private readonly hintsEl = document.createElement('ul')
@@ -241,8 +251,18 @@ export class GearSelector {
     this.meter.setAttribute('aria-hidden', 'true')
     this.releaseEl.className = 'gs-release'
     this.releaseEl.hidden = true
-    this.meter.append(this.levelEl, this.statusEl, this.releaseEl)
-    this.detail.append(this.descEl, this.hintsEl, this.keyHintEl)
+    this.heldEl.className = 'gs-held'
+    this.heldEl.hidden = true
+    this.heldStatusEl.className = 'gs-held-status'
+    this.heldEl.append(this.heldStatusEl)
+    // Where the way to let go goes: beside the name on a desktop, under the status on touch
+    // (only when no thumb button lets go, releaseHint).
+    if (this.touch) this.meter.append(this.releaseEl); else this.heldEl.append(this.releaseEl)
+    // Under the name: the bar (and on touch the status, the bar after it, so it never moves the
+    // words when it appears). On a desktop the status and the way to let go sit beside the name
+    // instead, the detail's first line (gear.css, hud-column.css): clear of the rows below.
+    this.meter.prepend(this.statusEl, this.levelEl)
+    this.detail.append(this.heldEl, this.descEl, this.hintsEl, this.keyHintEl)
 
     root.append(spine, window_, this.drum, this.detail)
     parent.append(root)
@@ -500,6 +520,7 @@ export class GearSelector {
     const status = own?.status ?? ''
     if (status !== this.status) {
       this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status
+      this.heldStatusEl.textContent = status; this.heldEl.hidden = !status; this.fitDetail()
       const row = this.meter.parentElement
       if (row && row !== this.element) { if (status) row.setAttribute('aria-description', status); else row.removeAttribute('aria-description') }
     }

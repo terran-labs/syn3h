@@ -101,9 +101,13 @@
 :root .mira-shell.exploration-ui .gear-selector .gs-text { letter-spacing: var(--col-track); }
 :root .mira-shell.exploration-ui .gear-selector .gs-keyhint,
 :root .mira-shell.exploration-ui .gear-selector :is(.gs-status, .gs-release) { font: var(--col-type); letter-spacing: var(--col-track); }
+:root .mira-shell.exploration-ui .gear-selector[data-touch] .gs-release { font-size: 10px; letter-spacing: .08em; }
 /* With the cursor free the detail beside the drum already lists the way to let go (its hints):
    shown there, not twice. The meter's hint is for the captured cursor, and for touch. */
-:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=free] .gs-release { visibility: hidden; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=free] .gs-release { display: none; }
+/* On a desktop the status is said beside the name (.gs-held), not under it. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-meter .gs-status { display: none; }
+:root .mira-shell.exploration-ui .gear-selector .gs-held { font: var(--col-type); letter-spacing: var(--col-track); }
 :root .mira-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-dim); }
 /* For the owner to compare on the preview, off by default (set on .mira-shell):
    data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
@@ -227,8 +231,8 @@
    selected gear (what it does, what to press) fade out, and back in when the cursor is free.
    They keep their layout while faded, so nothing moves. A sunk buggy's Zorb cue (Shell.cueZorb)
    keeps its rows: the cue is how that player learns the way out. Touch never captures. */
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat, .gear-selector .gs-detail) { transition: opacity .2s ease, visibility 0s; }
-:root .mira-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories:not(:has(.is-cued)), .hud-chat, .gear-selector .gs-detail) {
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat, .gear-selector .gs-detail > :not(.gs-held)) { transition: opacity .2s ease, visibility 0s; }
+:root .mira-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories:not(:has(.is-cued)), .hud-chat, .gear-selector .gs-detail > :not(.gs-held)) {
   opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s;
 }
 /* The detail keeps its lines laid out under the fade (gear.css drops them while captured). */

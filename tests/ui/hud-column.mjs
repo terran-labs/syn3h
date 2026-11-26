@@ -12,9 +12,10 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
-// 9. While a Grapple cord is attached the meter carries the way to let go, its key as a keycap,
-//    shown with the cursor captured (inside the column) and not twice with it free; with no
-//    cord it is absent (the owner, 25 November 2026).
+// 9. While a Grapple cord is attached its status and the way to let go are shown whole, clear
+//    of every gear name, the world name and the description: on a desktop beside the selected
+//    name (the hint, its key a keycap, with the cursor captured; with it free the hints say it),
+//    on touch the status under the name with the LET GO thumb button (the owner, 25 November 2026).
 // 8. One name column: every visible gear name starts at the same x, the selected one's larger
 //    type included, and the charge bar (the meter) starts at the selected name's left edge, in
 //    both cursor modes and on phones (the owner, 25 November 2026).
@@ -105,6 +106,30 @@ const oneColumn = (m, at) => {
   assert.ok(Math.max(...m.lefts) - Math.min(...m.lefts) <= 1, `${at}: the gear names share one left edge ${JSON.stringify(m)}`)
   if (m.meter !== null) assert.ok(Math.abs(m.meter - m.selected) <= 1, `${at}: the meter starts under the selected name ${JSON.stringify(m)}`)
 }
+/**
+ * What the gear holds and how to let go: on a desktop the line beside the selected name
+ * (.gs-held, its hint .gs-release), on touch the status under the name. Each drawn whole (in the
+ * window, and inside the drum where it sits in a row), overlapping no gear name, the world name
+ * or the description.
+ */
+const releaseHint = (page) => page.evaluate(() => {
+  const box = (e) => e && !e.hidden && e.checkVisibility({ visibilityProperty: true, opacityProperty: true }) ? e.getBoundingClientRect() : null
+  const touch = document.querySelector('.mira-shell').classList.contains('has-touch')
+  const meter = document.querySelector('.gear-selector .gs-meter:not(.is-leaving)')
+  const status = box(touch ? meter?.querySelector('.gs-status') : document.querySelector('.gear-selector .gs-held'))
+  const hint = box(document.querySelector('.gear-selector .gs-release'))
+  const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
+  const others = [...document.querySelectorAll('.gear-selector .gs-drum .gs-text, .focus-hud .fh-top, .gear-selector .gs-desc')].map(box).filter(Boolean)
+  const overlaps = (r) => others.some((o) => r.left < o.right - 1 && r.right > o.left + 1 && r.top < o.bottom - 1 && r.bottom > o.top + 1)
+  const whole = (r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && (!touch || (r.left >= drum.left && r.right <= drum.right && r.top >= drum.top && r.bottom <= drum.bottom))
+  const letGo = [...document.querySelectorAll('.gear-actions button[data-action=release]')].some((b) => b.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
+  return {
+    status: status && { whole: whole(status), clear: !overlaps(status) },
+    shown: !!hint, hint: hint && { whole: whole(hint), clear: !overlaps(hint) },
+    key: hint ? document.querySelector('.gear-selector .gs-release kbd.keycap')?.textContent ?? null : null,
+    text: hint ? document.querySelector('.gear-selector .gs-release').textContent : '', letGo,
+  }
+})
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
 try {
@@ -130,7 +155,7 @@ try {
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
       assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys are laid out ${JSON.stringify(m.keys)}`)
       await page.waitForTimeout(400)
-      const shown = await page.evaluate(() => ['.hud-accessories', '.hud-chat', '.gear-selector .gs-detail', '.gear-selector .gs-drum'].map((s) => document.querySelector(s).checkVisibility({ opacityProperty: true, visibilityProperty: true })))
+      const shown = await page.evaluate(() => ['.hud-accessories', '.hud-chat', '.gear-selector .gs-detail .gs-keyhint', '.gear-selector .gs-drum'].map((s) => document.querySelector(s).checkVisibility({ opacityProperty: true, visibilityProperty: true })))
       assert.deepEqual(shown, mode === 'free' ? [true, true, true, true] : [false, false, false, true], `${at}: rows, detail and drum shown ${JSON.stringify(shown)}`)
       onLines(await lines(page), at)
       await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
@@ -188,26 +213,21 @@ try {
       await bar(-1)
       // 9. A cord launched straight down (Bungee.launch's direction is for automated checks).
       await page.evaluate(() => window.miraNet.gear.select('bungee'))
-      const release = () => page.evaluate(() => {
-        const e = document.querySelector('.gear-selector .gs-meter:not(.is-leaving) .gs-release'), col = document.querySelector('.gear-selector').getBoundingClientRect()
-        if (!e || e.hidden) return { shown: false }
-        const r = e.getBoundingClientRect()
-        return { shown: e.checkVisibility({ visibilityProperty: true, opacityProperty: true }), key: e.querySelector('kbd.keycap')?.textContent ?? null, text: e.textContent, inside: r.left >= col.left && r.right <= innerWidth / 2 && r.top >= col.top && r.bottom <= col.bottom + 40 }
-      })
-      assert.deepEqual(await release(), { shown: false }, 'no release hint without a cord')
+      assert.equal((await releaseHint(page)).shown, false, 'no release hint without a cord')
       await page.waitForFunction(() => window.miraNet.bungee.launch([0, -1, 0]), null, { timeout: 20000, polling: 250 })
       await page.waitForFunction(() => window.miraNet.bungee.attached && window.miraNet.gear.controls().status, null, { timeout: 20000 })
       await page.waitForTimeout(300)
-      assert.equal((await release()).shown, false, 'cursor free: the detail lists the way to let go, so the meter does not repeat it')
+      const free = await releaseHint(page)
+      assert.ok(free.status?.whole && free.status.clear && !free.shown, `cursor free: the status beside the name, the way to let go said once, by the hints ${JSON.stringify(free)}`)
       await page.mouse.click(w / 2, h * .3)
       await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 })
       await page.waitForTimeout(400)
-      const locked = await release()
-      assert.ok(locked.shown && locked.inside && locked.key && /let go/i.test(locked.text), `captured with a cord: the release hint shows in the column ${JSON.stringify(locked)}`)
+      const locked = await releaseHint(page)
+      assert.ok(locked.status?.whole && locked.status.clear && locked.hint?.whole && locked.hint.clear && locked.key && /double-click to let go/i.test(locked.text), `captured with a cord: status and release hint whole and clear ${JSON.stringify(locked)}`)
       await page.keyboard.press(`Key${locked.key}`)
       await page.waitForFunction(() => !window.miraNet.bungee.attached, null, { timeout: 5000 })
       await page.waitForTimeout(200)
-      assert.equal((await release()).shown, false, 'the hint goes with the cord')
+      assert.equal((await releaseHint(page)).shown, false, 'the hint goes with the cord')
       await page.keyboard.press('Escape'); await page.waitForTimeout(300)
       await page.keyboard.press('1')
       await page.waitForTimeout(50)
@@ -260,6 +280,15 @@ try {
     // past the rows as the drum scrolls, so only the centre is checked).
     onLines(await lines(page), `${viewport.width}x${viewport.height}`, false)
     oneColumn(await names(page), `${viewport.width}x${viewport.height}`)
+    // 9. On touch the release hint names the gesture, and it and the status are drawn whole.
+    await page.evaluate(() => window.miraNet.gear.select('bungee'))
+    await page.waitForFunction(() => window.miraNet.bungee.attached || window.miraNet.bungee.launch([0, -1, 0]), null, { timeout: 20000, polling: 250 })
+    await page.waitForFunction(() => window.miraNet.bungee.attached && window.miraNet.gear.controls().status, null, { timeout: 20000 })
+    await page.waitForTimeout(400)
+    const touchHint = await releaseHint(page)
+    // A visible LET GO thumb button says how to let go; without one the hint must show.
+    assert.ok(touchHint.status?.whole && touchHint.status.clear && (touchHint.letGo ? !touchHint.shown : touchHint.hint?.whole && touchHint.hint.clear), `${viewport.width}x${viewport.height}: the status under the name, and a way to let go shown ${JSON.stringify(touchHint)}`)
+    assert.ok(touchHint.letGo, `${viewport.width}x${viewport.height}: the LET GO thumb button shows while a cord is attached`)
     await context.close()
   }
   assert.deepEqual(errors, [], 'no page errors')
