@@ -69,4 +69,18 @@ describe('the in-play sidebar cards', () => {
     for (const junk of [null, 'you', 7, {}, [1, null, ''], undefined]) expect(() => migrateOpenCards(junk)).not.toThrow()
     expect(migrateOpenCards([1, null, '', 'performance'])).toEqual(['performance'])
   })
+  it('never show one heading twice in a card, the quality level\'s rows included', async () => {
+    // Bug: Settings showed "Light" twice, the level's four rows and the registry's two.
+    await registerAll()
+    const { PRESET_IDS } = await import('../../src/core/quality')
+    for (const spec of SECTIONS) expect(new Set(spec.parts.map(p => p.title)).size, spec.id).toBe(spec.parts.length)
+    const settings = SECTIONS.find(s => s.id === 'performance')!
+    const levelGroups = new Set(PRESET_IDS.map(id => params.get(id)?.def.group).filter((g): g is string => !!g))
+    // A level group whose name is also a Settings section heading must be held by that section
+    // (PerformancePanel.fill puts its rows there), or the heading would show twice.
+    for (const group of levelGroups) {
+      const sameTitle = settings.parts.find(p => p.title === group)
+      if (sameTitle) expect(sameTitle.groups ?? [], group).toContain(group)
+    }
+  })
 })

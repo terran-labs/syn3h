@@ -558,6 +558,21 @@ export class Inspector {
     this.moving.get(extra.card)?.cancel(); this.moving.delete(extra.card)
     this.extras.delete(id); extra.card.remove(); this.build()
   }
+  /**
+   * The fold that shows a definition group in a card's registry sections: the section itself,
+   * or its fold for that group where a section holds several. Null where the card has none.
+   * Settings puts the quality level's own rows for a group there (PerformancePanel.fill), so
+   * no heading shows twice in one card.
+   */
+  sectionFold(cardId: string, group: string): HTMLDetailsElement | null {
+    const part = this.tree.find(section => section.id === cardId)?.parts.find(p => p.groups.some(g => g.name === group))
+    const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${CSS.escape(cardId)}"]`)
+    if (!part || !card) return null
+    const fold = [...card.querySelectorAll<HTMLDetailsElement>('details.wi-group:not(.wi-subgroup)')].find(d => d.dataset.group === part.title)
+    if (!fold) return null
+    const title = part.titles[group] ?? group
+    return [...fold.querySelectorAll<HTMLDetailsElement>(':scope > details.wi-subgroup')].find(d => d.dataset.group === title) ?? fold
+  }
   /** Rebuild now, for an extra card whose owned properties changed. */
   rebuild(): void { this.build() }
   /** Open one card (leaving the others as they are), easing as a header click does. */
