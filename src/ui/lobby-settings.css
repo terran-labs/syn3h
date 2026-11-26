@@ -55,11 +55,12 @@
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px 0 2px; border: 0; border-radius: var(--glass-control-radius, 24px); background: none; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
   font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .1em; text-transform: none; color: rgb(236 236 236 / .84);
-  text-decoration: underline; text-decoration-color: rgb(236 236 236 / .4); text-decoration-thickness: 1px; text-underline-offset: 4px;
-  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s, text-decoration-color .18s;
+  /* No underline in any state (the owner, 26 November 2026); the focus ring below marks keyboard focus. */
+  text-decoration: none;
+  text-shadow: var(--hud-under, 0 1px 3px rgb(0 8 14 / .8)); cursor: pointer; white-space: nowrap; transition: color .18s;
 }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version::after { content: '\203A'; text-decoration: none; display: inline-block; font-size: 15px; line-height: 1; opacity: .8; transform: translateY(-1px); }
-.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus-visible) { color: #fff; text-decoration-color: rgb(255 255 255 / .85); background: none; }
+.mira-shell.exploration-ui .lobby-version-dock .lobby-version:is(:hover, :focus, :focus-visible, :active, :visited) { color: #fff; text-decoration: none; background: none; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:hover { outline: var(--control-hover-outline); outline-offset: -6px; }
 .mira-shell.exploration-ui .lobby-version-dock .lobby-version:focus-visible { outline: 1.5px solid rgb(244 244 244 / .9); outline-offset: -6px; }
 /* Put the update dot after the version so the two text starts stay aligned. */
