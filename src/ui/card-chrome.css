@@ -129,6 +129,35 @@ html .mira-shell.has-touch .world-inspector .wi-row.tint-row > .tint-default::af
 }
 :root .mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-left: 42px; }
 
+/* ---- The search field's clear button (Shell.ts CLEAR_ICON): the magnifier mirrored ---- */
+/* The browser's own cancel control goes in every engine; ours replaces it. Firefox draws none
+   for a search field. Separate rules, so an engine that rejects one selector keeps the other. */
+.mira-shell .world-inspector input.wi-search::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; display: none; }
+.mira-shell .world-inspector input.wi-search::-webkit-search-decoration { -webkit-appearance: none; appearance: none; }
+/* The text stops where the cross starts, as it starts after the magnifier. */
+:root .mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search.wi-search[type=search] { padding-right: 42px; }
+/* A zero-width anchor at the field's end: a flex item right after the field whose negative
+   margin cancels the row's gap, so the row lays out exactly as without it. The button hangs
+   leftward from it, over the field's end, and showing or hiding it moves nothing. */
+.mira-shell.exploration-ui .world-inspector .rail-command > .rail-search-end { position: relative; z-index: 1; flex: 0 0 0; width: 0; min-width: 0; margin: 0 0 0 -7px; pointer-events: none; }
+.mira-shell.exploration-ui .world-inspector .rail-search-end > .rail-search-clear { position: absolute; inset: 0 0 0 auto; }
+/* The row's gap is 3 px on short screens (theme-halo.css), and the anchor follows it. */
+@media (max-height: 500px) { .mira-shell.exploration-ui .world-inspector .rail-command > .rail-search-end { margin-left: -3px; } }
+/* The button is the tap target (36 px wide, the field's height; wider on touch, still inside
+   the field's end), the cross is drawn exactly as the magnifier: 18 px, 1.6 stroke, its colour,
+   15 px in from the edge. */
+.mira-shell.exploration-ui .world-inspector .rail-search-end > .rail-search-clear {
+  display: grid; place-items: center; box-sizing: border-box; width: 36px; height: 100%; margin: 0 6px 0 0; padding: 0;
+  border: 0; border-radius: var(--halo-r, 999px); background: none; box-shadow: none; color: var(--s3-dim); cursor: pointer; pointer-events: auto;
+  -webkit-tap-highlight-color: transparent;
+}
+.mira-shell.exploration-ui.has-touch .world-inspector .rail-search-end > .rail-search-clear { width: 44px; margin-right: 2px; }
+@media (pointer: coarse) { .mira-shell.exploration-ui .world-inspector .rail-search-end > .rail-search-clear { width: 44px; margin-right: 2px; } }
+.mira-shell.exploration-ui .world-inspector .rail-search-clear > svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+/* Only while the field has text: the placeholder showing means it is empty, however it got so. */
+.mira-shell.exploration-ui .world-inspector .rail-command > input.wi-search:placeholder-shown ~ .rail-search-end > .rail-search-clear { display: none; }
+.mira-shell.exploration-ui .world-inspector .rail-search-clear:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: -4px; }
+
 /* ---- The shared tooltip: moved to src/ui/tooltip.css (cards-round-3), which tooltip.ts loads. ---- */
 
 /* ---- Action rows (cards-round-3, ui/cards-round-3, 22 November 2026) ----
@@ -152,3 +181,14 @@ details[open] > summary .accordion-arrow, [aria-expanded="true"] .accordion-arro
   fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
 }
 @media (prefers-reduced-motion: reduce) { .accordion-arrow { transition: none; } }
+
+/* ---- Figures that change in place (the owner, 25 November 2026: the World header's name
+   "shouldn't skip left and right as the time changes") ---- */
+/* Tabular figures: every digit one width, in the same Barlow (all five bundled cuts carry the
+   tnum feature), so a ticking clock, count or timer never moves the text beside it. The card
+   headers' values (the World clock, player, bot and unread counts), the Performance card's
+   level, resolution and diagnostics, and the game-mode timers and scores. The focus readouts
+   (speed, altitude, clock) and the counter box already had fixed-width figures. */
+.mira-shell .world-inspector .wi-sum,
+.mira-shell .world-inspector :is(.wi-level-of, .wi-res-size, .performance-history, .performance-long-frames, .performance-diagnostics dl),
+.mira-shell :is(.match-hud, .match-announcement, .race-hud) { font-variant-numeric: tabular-nums; }

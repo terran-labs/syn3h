@@ -188,6 +188,8 @@ export const PLAY_ICON = 'M9 6.4v11.2l8.6-5.6Z'
 export const LEAVE_WORLD_ICON = 'M9.52 16.57a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M9.53 16.31C7.46 13.84 9.56 10.28 16.54 4.43M12.54 4.43L16.54 4.43L15.84 8.37'
 /** The search field's magnifier, drawn at the start of the field. */
 const SEARCH_ICON = 'M10.5 16.5a6 6 0 1 0 0-12 6 6 0 0 0 0 12ZM15 15l4.8 4.8'
+/** The search field's clear cross: the magnifier's size and stroke, mirrored at the field's end. */
+const CLEAR_ICON = 'M7 7l10 10M17 7 7 17'
 /** How long PAUSED and its resume line stay before fading, with nothing moving (ms). */
 const PAUSE_WHISPER_MS = 2500
 /** The pause screen's three buttons, drawn in the rail icons' line (24 px box, stroked). */
@@ -454,6 +456,15 @@ export class Shell implements System {
     const search = railTop.querySelector<HTMLInputElement>('.wi-search')!; search.classList.add('wi-glass'); command.prepend(search)
     // The magnifier stands over the start of the field; the text starts after it (card-chrome.css).
     search.insertAdjacentHTML('afterend', `<svg class="rail-search-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${SEARCH_ICON}"/></svg>`)
+    // Our own clear button replaces the browser's (a blue cross in the system accent, different in
+    // every engine; card-chrome.css hides it). It shows only while the field has text (CSS reads
+    // :placeholder-shown, so a clear from code or Escape hides it too). The wrapper keeps the
+    // button out of the rail's `.rail-command > button` styles and glass. A click clears, tells
+    // the inspector (an input event, as typing does) and leaves focus in the field.
+    search.nextElementSibling!.insertAdjacentHTML('afterend', `<span class="rail-search-end"><button type="button" class="rail-search-clear" aria-label="Clear search"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="${CLEAR_ICON}"/></svg></button></span>`)
+    const clear = command.querySelector<HTMLButtonElement>('.rail-search-clear')!
+    clear.addEventListener('pointerdown', event => event.preventDefault(), { signal })
+    clear.addEventListener('click', () => { search.value = ''; search.dispatchEvent(new Event('input', { bubbles: true })); search.focus() }, { signal })
     // Under the stack, only what docks there now and then: the update chip and a slow-frames
     // recommendation (PerformancePanel). Empty, it takes no space.
     const foot = document.createElement('div'); foot.className = 'rail-foot'
