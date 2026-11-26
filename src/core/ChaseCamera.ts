@@ -63,6 +63,8 @@ export interface CameraVehicle extends Vehicle {
   ridePosition?: THREE.Object3D
   ridePos?: THREE.Object3D
 }
+/** Metres between the old target and a new one within which a new target is a vehicle switch, not a teleport. */
+export const HANDOVER_METRES = 8
 /**
  * How near and far the chase and orbit cameras may be brought, by vehicle (camera.distance, on
  * top of the vehicle's own camOffset): the jet flies, so it may be watched from further off.
@@ -175,6 +177,8 @@ export class ChaseCamera implements System {
   private readonly aheadDesired = new THREE.Vector3()
   /** Share of the full arm length in use, 1 unless something forced the camera in. */
   private arm = 1
+  /** The vehicle's own clearance behind the pivot (camOffset, or a zorb ball's radius), eased so a switch never cuts the framing. */
+  private offset = NaN
   private readonly nose = new THREE.Vector3()
   private yaw = 0
   private pitch = 0
@@ -380,7 +384,13 @@ export class ChaseCamera implements System {
     dt = clamp(dt, 0, 0.25); this.elapsed += dt
     const camera = this.game.camera, vehicle = this.vehicle?.object === target ? this.vehicle : null
     const displacement = target.position.distanceTo(this.previousPosition)
-    const reset = target !== this.previousTarget || displacement > 50 || (!vehicle && dt > 0 && displacement / dt > 200)
+    // A new target where the last one was is the same player in another vehicle (a switch puts
+    // the new one exactly there, swap.ts swapPlacement): a handover. The view carries on as it
+    // was, orbit and all (the owner, 25 November 2026: "The camera should instead just continue
+    // to smoothly orbit. There should be no hitch."). A new target anywhere else, or the same one
+    // far away (a respawn), is a teleport and starts again behind it.
+    const handover = target !== this.previousTarget && this.previousTarget !== null && displacement <= HANDOVER_METRES
+    const reset = (target !== this.previousTarget && !handover) || displacement > 50 || (!vehicle && dt > 0 && displacement / dt > 200)
     this.velocity.copy(vehicle?.body.linvel() ?? this.direction.copy(target.position).sub(this.previousPosition).multiplyScalar(dt > 0 ? 1 / dt : 0))
     if (reset) {
       this.direction.set(0, 0, -1).applyQuaternion(target.quaternion)
@@ -402,8 +412,9 @@ export class ChaseCamera implements System {
     this.distance = THREE.MathUtils.lerp(this.distance, clamp(camDistance.value, near, far), ease(dt, camDistanceSmoothing.value))
     this.pivot.copy(target.position)
     // A zorb ball is a larger clearance: keep the camera outside it (src/vehicles/zorb.ts).
-    const offset = Math.max(vehicle?.camOffset ?? camOffset.value, vehicle?.zorb?.radius ?? 0)
-    let distance = offset + this.distance * (1 + (camSpeedDistance.value ? this.speed * camSpeedMultiplier.value : 0))
+    const wantedOffset = Math.max(vehicle?.camOffset ?? camOffset.value, vehicle?.zorb?.radius ?? 0)
+    this.offset = reset || !Number.isFinite(this.offset) ? wantedOffset : THREE.MathUtils.lerp(this.offset, wantedOffset, ease(dt, camDistanceSmoothing.value))
+    let distance = this.offset + this.distance * (1 + (camSpeedDistance.value ? this.speed * camSpeedMultiplier.value : 0))
     if (first) {
       const ride = vehicle?.ridePosition ?? vehicle?.ridePos
       if (ride) ride.getWorldPosition(this.pivot)
