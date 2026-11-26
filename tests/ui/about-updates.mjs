@@ -202,7 +202,12 @@ for (const mode of ['desktop', 'phone']) {
     const more = sheet.locator('.updates-more-button')
     assert.ok(await sheet.locator('.updates-days > li').last().locator('.updates-more-button').count() === 1, `${mode}: Show more is the last entry`)
     const before = await sheet.locator('.update-day').count()
-    for (let i = 0; i < 40 && await more.count(); i++) { await more.click(); await page.waitForTimeout(150) }
+    // Press until the end line shows. The last press replaces the button once the older days are
+    // in, so a press may find it already gone: that is the end arriving, not a failure.
+    for (let i = 0; i < 40 && !(await sheet.locator('.updates-end').count()); i++) {
+      if (await more.count()) await more.click({ timeout: 5000 }).catch(() => {})
+      await page.waitForTimeout(200)
+    }
     assert.equal(olderRequests, 1, `${mode}: the older file is fetched once`)
     assert.ok(await sheet.locator('.update-day').count() > before, `${mode}: Show more reveals older days`)
     await sheet.locator('.updates-end').waitFor({ state: 'visible', timeout: 10000 })
