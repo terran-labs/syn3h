@@ -16,7 +16,7 @@ import { currentTerrainSettings } from '../../src/world/terrain/settings'
 import { setWaterClock } from '../../src/world/water/seaWaves'
 import { setWeatherClock } from '../../src/world/weather/wind'
 import type { TerrainData } from '../../src/world/terrain/generate'
-import { zorbRadius, zorbSize, zorbSkimAt, ZORB_DEFAULT_CAM_OFFSET, type SkimForce } from '../../src/vehicles/zorb'
+import { zorbRadius, zorbSize, zorbSkimAt, ZORB_DEFAULT_CAM_OFFSET, type ZorbSkim } from '../../src/vehicles/zorb'
 
 /** The terrain's public liquid methods plus the private parts the two build paths use. */
 type Shell = Pick<ProceduralTerrain, 'size' | 'liquidKindAt' | 'liquidHeightAt' | 'liquidVerticalSpeedAt' | 'liquidFlowAt'> & {
@@ -51,13 +51,13 @@ function shell(data: TerrainData, seed: number): Shell {
 
 /** Heights, rise and skim force at points of open liquid, including either side of the seam. */
 function sample(t: Shell) {
-  const r = zorbRadius(zorbSize.value, ZORB_DEFAULT_CAM_OFFSET), size = t.size, out: SkimForce = { x: 0, y: 0, z: 0, share: 0, depth: 0 }
+  const r = zorbRadius(zorbSize.value, ZORB_DEFAULT_CAM_OFFSET), size = t.size, out: ZorbSkim = { x: 0, y: 0, z: 0, share: 0, depth: 0 }
   const rows: number[][] = []
   for (let x = 0; x < size && rows.length < 40; x += size / 23) for (const z of [7, size / 3, size - 3]) {
     const kind = t.liquidKindAt(x, z)
     if (!kind) continue
     const surface = t.liquidHeightAt(x, z)
-    const f = zorbSkimAt(t, kind, { x, y: surface + r - 0.2, z }, r, surface, { x: 25, y: -2, z: 5 }, 9.81, out)
+    const f = zorbSkimAt(t, kind, { x, y: surface + r - 0.2, z }, r, surface, { x: 25, y: -2, z: 5 }, 9.81, 30, out)
     rows.push([x, z, surface, t.liquidVerticalSpeedAt(x, z), f.x, f.y, f.z, f.share])
   }
   return rows

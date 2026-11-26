@@ -50,7 +50,8 @@ import type { Game, System } from '../core/Game'
 import { graphicsLevel, levelNumber } from '../core/quality'
 import { type InputState, emptyInput } from '../core/Input'
 import type { Terrain } from '../world/Terrain'
-import { applyWaterForces, waterSinking } from './buoyancy'
+import { applyWaterForces, planingFactor, skipFactors, waterSinking } from './buoyancy'
+import { type SkipContact, type SkipForce, planingSpeed, skipForce, skipShare, surfaceNormal } from './skip'
 import { type LiquidState, lavaCoolingTime, lavaViscosity, liquidKind } from './lava'
 import { hotExposureNode } from './skins/hotExposure'
 
@@ -92,13 +93,9 @@ export const zorbAirHops = defineParam({ id: 'zorb.airHops', label: 'Hop in mid-
  * Before these existed there was no skipping: a ball of any speed floated at once, losing
  * about 9 m/s of 20 in its first second to the bulk water drag.
  */
-export const zorbSkipSpeed = defineParam({ id: 'zorb.skipSpeed', label: 'Skip speed (m/s)', group: 'Zorb', scope: 'world', default: 10, min: 2, max: 40, step: 0.5 })
-/** Steepest entry, in degrees from the surface, that still skips fully; lift fades over 15 more. */
-export const zorbSkipAngle = defineParam({ id: 'zorb.skipAngle', label: 'Skip entry angle (°)', group: 'Zorb', scope: 'world', default: 30, min: 0, max: 60, step: 1 })
-/** Drag along the surface while skimming, as a fraction of the lift: 0.03 slows a skimming ball 0.3 m/s each second. */
-export const zorbSkipFriction = defineParam({ id: 'zorb.skipFriction', label: 'Skip friction', group: 'Zorb', scope: 'world', default: 0.03, min: 0, max: 0.5, step: 0.005 })
-/** Share of the ball's up-and-down energy each skip keeps; the rest goes into the splash. */
-export const zorbSkipKeep = defineParam({ id: 'zorb.skipKeep', label: 'Energy kept per skip', group: 'Zorb', scope: 'world', default: 0.5, min: 0.05, max: 0.95, step: 0.01 })
+// The zorb's skip is the shared planing contact (skip.ts): its old zorb.skipSpeed, skipAngle,
+// skipFriction and skipKeep are the water.skip.* settings now, its planing speed derived from
+// the vehicle's weight over the ball's floating patch. Old names still arriving are ignored.
 /** Extra shield brightness at the peak of a hop's pulse; it eases back like an impact flare. */
 export const zorbPulseBrightness = defineParam({ id: 'zorb.pulseBrightness', label: 'Hop pulse brightness', group: 'Zorb', scope: 'world', default: 0.8, min: 0, max: 3, step: 0.05 })
 
@@ -120,12 +117,8 @@ const SHRINK_RAMP = 6
 export const ZORB_RELEASE_RADIUS = 1
 /** Smallest collider radius while growing; Rapier needs a non-degenerate ball. */
 const MIN_RADIUS = 0.05
-/** Skipping (see zorbSkipSpeed): the dynamic lift stops growing once the patch is this wide (the floating patch). */
+/** Skipping: the dynamic lift stops growing once the patch is this wide (the floating patch). */
 const SKIM_DEPTH = ZORB_FLOAT_DEPTH
-/** Degrees past `zorb.skipAngle` over which a steep entry's lift fades to none. */
-const SKIM_ANGLE_FADE = 15
-/** Lift stops growing at this multiple of the skip speed, so a 60 Hz step stays stable. */
-const SKIM_MAX_RATIO = 4
 /** Metres either side of the ball's centre where the liquid's slope is sampled. */
 const SKIM_SLOPE_SAMPLE = 0.5
 /** A hop counts the ball as on a liquid while its base is within this many metres of the surface. */
@@ -175,7 +168,7 @@ export function zorbRadius(size: number, camOffset: number): number {
 
 const tmpV = new THREE.Vector3()
 const skimFlow = { x: 0, z: 0 }
-const skimOut: SkimForce = { x: 0, y: 0, z: 0, share: 0, depth: 0 }
+const skimOut: ZorbSkim = { x: 0, y: 0, z: 0, share: 0, depth: 0 }
 const tmpN = new THREE.Vector3()
 const tmpQ = new THREE.Quaternion()
 // The hop's own scratch, apart from tmpV / tmpN / tmpC, which its prediction uses.
@@ -192,13 +185,17 @@ interface ZorbTerrain {
 type ZorbLiquidTerrain = Pick<Terrain, 'liquidHeightAt' | 'liquidKindAt' | 'liquidFlowAt' | 'liquidVerticalSpeedAt'>
 
 /**
- * `skimForce` for a ball centred at `p` over the liquid of `kind` whose surface under it is at
- * `surface`, moving at `v`: the surface's slope, current and rise come from the terrain at the
- * ball's position on the shared wave clock, so every client that built the same world
- * computes the same force. Writes into and returns `out`.
+ * The ball's planing contact (skip.ts `skipForce`) for a ball centred at `p` over the liquid of
+ * `kind` whose surface under it is at `surface`, moving at `v`, carrying `mass`. The patch is
+ * the ball's wetted cap, pi (2 r h - h^2) at wetted depth h along the surface normal, wholly wet
+ * at the floating depth; its planing speed is the shared one for the vehicle's weight over that
+ * floating patch. The surface's slope, current and rise come from the terrain at the ball's
+ * position on the shared wave clock, so every client that built the same world computes the
+ * same force. Writes into and returns `out` (force per unit mass, its share of the support).
  */
 export function zorbSkimAt(terrain: ZorbLiquidTerrain, kind: string, p: { x: number; y: number; z: number }, r: number, surface: number,
-  v: { x: number; y: number; z: number }, g: number, out: SkimForce): SkimForce {
+  v: { x: number; y: number; z: number }, g: number, mass: number, out: ZorbSkim): ZorbSkim {
+  out.x = out.y = out.z = out.share = out.depth = 0
   const at = (x: number, z: number) => {
     if (terrain.liquidKindAt && terrain.liquidKindAt(x, z) !== kind) return NaN
     return terrain.liquidHeightAt?.(x, z) ?? NaN
@@ -207,81 +204,40 @@ export function zorbSkimAt(terrain: ZorbLiquidTerrain, kind: string, p: { x: num
   const d = SKIM_SLOPE_SAMPLE
   const slope = (lo: number, hi: number) => Number.isFinite(lo) && Number.isFinite(hi) ? (hi - lo) / (2 * d)
     : Number.isFinite(hi) ? (hi - surface) / d : Number.isFinite(lo) ? (surface - lo) / d : 0
+  surfaceNormal(slope(at(p.x - d, p.z), at(p.x + d, p.z)), slope(at(p.x, p.z - d), at(p.x, p.z + d)), skimN)
+  const h = r - (p.y - surface) * skimN.y
+  if (!(h > 0) || !(r > 0) || !(g > 0)) return out
+  out.depth = h
   skimFlow.x = skimFlow.z = 0
   terrain.liquidFlowAt?.(p.x, p.z, skimFlow)
   const rise = terrain.liquidVerticalSpeedAt?.(p.x, p.z) ?? 0
-  return skimForce({
-    radius: r, height: p.y - surface,
-    slopeX: slope(at(p.x - d, p.z), at(p.x + d, p.z)), slopeZ: slope(at(p.x, p.z - d), at(p.x, p.z + d)),
-    vx: v.x - (Number.isFinite(skimFlow.x) ? skimFlow.x : 0), vy: v.y - (Number.isFinite(rise) ? rise : 0), vz: v.z - (Number.isFinite(skimFlow.z) ? skimFlow.z : 0),
-    g,
-  }, out)
-}
-
-/** Everything `skimForce` reads: the ball, the liquid surface under it and gravity. */
-export interface SkimInput {
-  /** Ball radius, metres. */
-  radius: number
-  /** Ball centre height above the liquid surface under it, metres. */
-  height: number
-  /** Surface slope, rise per metre along x and z. */
-  slopeX: number; slopeZ: number
-  /** Ball velocity relative to the liquid's own motion (current and the surface rising). */
-  vx: number; vy: number; vz: number
-  /** Gravity, m/s², positive. */
-  g: number
-}
-/** The skim force per unit mass, its share of the ball's support (0 floating, near 1 skimming), and the wetted depth. */
-export interface SkimForce { x: number; y: number; z: number; share: number; depth: number }
-
-/**
- * Skipping-stone lift on the ball, per unit mass: a pure function of the ball's state relative
- * to the liquid, so every client computes the same force from the same networked state.
- *
- * The wetted depth `h` is how far the ball cuts below the surface plane, measured along the
- * surface normal, so a wave face tilts both the patch and the push. The patch's area is the
- * cap's waterline, pi (2 r h - h^2). Lift along the normal is
- *
- *   L = g (vt / skipSpeed)^2 * area(h) / area(SKIM_DEPTH) * fade(entry angle)
- *
- * with vt the speed along the surface: the stone's planing lift, which carries the ball's
- * weight at the skip speed with the floating patch wet. It is a spring that stiffens with
- * speed, so a ball falling onto the surface bounces; a damper sized from `zorb.skipKeep` makes
- * each bounce keep that share of its up-and-down energy at any speed (a spring-damper's
- * restitution is exp(-zeta pi / sqrt(1 - zeta^2))). Drag along the surface is
- * `zorb.skipFriction` times the push. Steep entries dig in: past `zorb.skipAngle` the lift
- * fades out over SKIM_ANGLE_FADE degrees and the ball ploughs and floats as before.
- */
-export function skimForce(i: SkimInput, out: SkimForce): SkimForce {
-  out.x = out.y = out.z = out.share = out.depth = 0
-  const nl = Math.hypot(i.slopeX, 1, i.slopeZ), nx = -i.slopeX / nl, ny = 1 / nl, nz = -i.slopeZ / nl
-  const h = i.radius - i.height * ny
-  if (!(h > 0) || !(i.radius > 0) || !(i.g > 0)) return out
-  out.depth = h
-  const un = i.vx * nx + i.vy * ny + i.vz * nz
-  const tx = i.vx - un * nx, ty = i.vy - un * ny, tz = i.vz - un * nz
-  const vt = Math.hypot(tx, ty, tz)
-  const skip = zorbSkipSpeed.value
-  const angle = Math.atan2(Math.abs(un), vt) * THREE.MathUtils.RAD2DEG
-  const fade = 1 - THREE.MathUtils.smoothstep(angle, zorbSkipAngle.value, zorbSkipAngle.value + SKIM_ANGLE_FADE)
-  const q = Math.min(SKIM_MAX_RATIO, vt / skip) ** 2 * fade
-  if (!(q > 0)) return out
-  const r = i.radius, wet = Math.min(h, r), ref = Math.min(SKIM_DEPTH, r)
-  const area = Math.min(1, (2 * r * wet - wet * wet) / (2 * r * ref - ref * ref))
-  const lift = i.g * q * area
-  // Damping of the linear spring L = k h, k = g q / SKIM_DEPTH, for the chosen restitution.
-  const e = Math.sqrt(THREE.MathUtils.clamp(zorbSkipKeep.value, 0.01, 0.99)), le = Math.log(e)
-  const zeta = -le / Math.sqrt(Math.PI * Math.PI + le * le)
-  // The surface pushes, never pulls: the damper only eases the push as the ball leaves.
-  const push = Math.max(0, lift - 2 * zeta * Math.sqrt(i.g * q / ref) * un)
-  const drag = vt > 1e-6 ? zorbSkipFriction.value * push / vt : 0
-  out.x = nx * push - tx * drag
-  out.y = ny * push - ty * drag
-  out.z = nz * push - tz * drag
-  // Dynamic lift over buoyancy at the same depth is about q (both grow with the wetted patch).
-  out.share = q / (1 + q)
+  const wet = Math.min(h, r), ref = Math.min(SKIM_DEPTH, r)
+  const capRef = 2 * r * ref - ref * ref
+  skimContact.wet = Math.min(1, (2 * r * wet - wet * wet) / capRef)
+  skimContact.full = ref; skimContact.share = 1; skimContact.g = g
+  skimContact.planing = zorbPlaningSpeed(mass, r, g)
+  const k = skipFactors('zorb'); skimContact.friction = k.friction; skimContact.keep = k.keep
+  skimContact.nx = skimN.x; skimContact.ny = skimN.y; skimContact.nz = skimN.z
+  skimContact.vx = v.x - (Number.isFinite(skimFlow.x) ? skimFlow.x : 0)
+  skimContact.vy = v.y - (Number.isFinite(rise) ? rise : 0)
+  skimContact.vz = v.z - (Number.isFinite(skimFlow.z) ? skimFlow.z : 0)
+  skipForce(skimContact, skimF)
+  out.x = skimF.x; out.y = skimF.y; out.z = skimF.z
+  out.share = skipShare(skimF.q)
   return out
 }
+
+/** A ball's planing speed (skip.ts): the vehicle's weight over the ball's floating patch. */
+export function zorbPlaningSpeed(mass: number, r: number, g: number): number {
+  const ref = Math.min(SKIM_DEPTH, r)
+  return planingSpeed(mass, Math.PI * (2 * r * ref - ref * ref), g, planingFactor('zorb'))
+}
+
+/** The ball's skim: force per unit mass, its share of the ball's support (0 floating, near 1 skimming), and the wetted depth. */
+export interface ZorbSkim { x: number; y: number; z: number; share: number; depth: number }
+const skimN = { x: 0, y: 1, z: 0 }
+const skimContact: SkipContact = { wet: 0, full: SKIM_DEPTH, share: 1, nx: 0, ny: 1, nz: 0, vx: 0, vy: 0, vz: 0, planing: Infinity, g: 9.81 }
+const skimF: SkipForce = { x: 0, y: 0, z: 0, q: 0 }
 
 /**
  * The physical ball: one zero-density sphere collider on the vehicle's own rigid body, so mass,
@@ -589,7 +545,7 @@ export class ZorbBall {
    * vehicle inside hangs from the ball, and a push at the ball's base would only spin it.
    */
   private skim(terrain: ZorbLiquidTerrain, kind: string, p: THREE.Vector3, r: number, surface: number): number {
-    const f = zorbSkimAt(terrain, kind, p, r, surface, this.body.linvel(), -this.world.gravity.y, skimOut)
+    const f = zorbSkimAt(terrain, kind, p, r, surface, this.body.linvel(), -this.world.gravity.y, this.body.mass(), skimOut)
     if (!Number.isFinite(f.x + f.y + f.z + f.share)) return 0
     const mass = this.body.mass()
     if (f.depth > 0) this.body.addForce({ x: f.x * mass, y: f.y * mass, z: f.z * mass }, true)

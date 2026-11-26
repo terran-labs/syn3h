@@ -33,7 +33,7 @@ export interface Basin {
   waves?: 'sea' | 'inland'
 }
 
-export interface Sample { vy: number; yaw: number; t: number; x: number; y: number; z: number; speed: number; pitch: number; roll: number; depth: number; up: number }
+export interface Sample { vy: number; yaw: number; t: number; x: number; y: number; z: number; speed: number; pitch: number; roll: number; depth: number; up: number; /** Planing lift over weight this step (src/vehicles/skip.ts), 0 when not planing. */ skipping: number }
 export interface Run { clock: { t: number }; h: ReturnType<typeof harness>; v: Vehicle; basin: Basin; trace: Sample[]; ground: (z: number) => number }
 
 const tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3()
@@ -100,7 +100,7 @@ export function pitchRoll(v: Vehicle) {
 function sample(run: Run, t: number): Sample {
   const p = run.v.body.translation(), l = run.v.body.linvel(), a = pitchRoll(run.v)
   const s = run.h.terrain.liquidHeightAt!(p.x, p.z)
-  return { vy: l.y, yaw: a.yaw, t, x: p.x, y: p.y, z: p.z, speed: Math.hypot(l.x, l.z), pitch: a.pitch, roll: a.roll, up: a.up, depth: Number.isFinite(s) ? s - p.y : 0 }
+  return { vy: l.y, yaw: a.yaw, t, x: p.x, y: p.y, z: p.z, speed: Math.hypot(l.x, l.z), pitch: a.pitch, roll: a.roll, up: a.up, depth: Number.isFinite(s) ? s - p.y : 0, skipping: run.v.liquidState.skipping }
 }
 
 /** Step `seconds`, recording every step, stopping early when `until` returns true. */
@@ -320,8 +320,8 @@ export interface Coast { run: Run; rest: number | null; distance: number; under:
  * throttle is released (and `brakes` applied if asked). Seconds and metres until it is at rest
  * (under 0.3 m/s), seconds until its top is under the surface, and samples every half second.
  */
-export function coast(liquid: Liquid, speed: number, seconds = 12, brakes = false): Coast {
-  const basin: Basin = { liquid, length: 600, depth: 4, slope: 30 }
+export function coast(liquid: Liquid, speed: number, seconds = 12, brakes = false, length = 600): Coast {
+  const basin: Basin = { liquid, length, depth: 4, slope: 30 }
   const { h, g, clock } = basinBed(basin)
   const v = makeVehicle('buggy', h, new THREE.Vector3(0, 2, 30))
   const run: Run = { clock, h, v, basin, trace: [], ground: g }

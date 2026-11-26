@@ -1,7 +1,8 @@
 /**
- * Zorb skipping on water and lava (zorb.ts `skimForce`). Invariants only: how far, how many
- * skips and how much speed are tuning, reported by tools/handling-report.ts. Speeds here are
- * multiples of `zorb.skipSpeed`, so retuning it moves the scenarios with it.
+ * Zorb skipping on water and lava (zorb.ts `zorbSkimAt`, the shared planing contact of skip.ts).
+ * Invariants only: how far, how many skips and how much speed are tuning, reported by
+ * tools/handling-report.ts. Speeds here are multiples of the zorbed buggy's derived planing
+ * speed (`ballPlaning`), so retuning the water.skip.* settings moves the scenarios with it.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
@@ -9,11 +10,12 @@ import { FIXED_DT, initPhysics } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { decodeState, encodeState } from '../../shared/protocol'
 import { emptyInput } from '../../src/core/Input'
-import { skimForce, zorbSkipSpeed, type SkimForce } from '../../src/vehicles/zorb'
-import { coast, skipsOf, speedAt, zorbLaunch, type ZorbRun } from './zorbSkipScenarios'
+import { ballPlaning, coast, skipsOf, speedAt, zorbLaunch, type ZorbRun } from './zorbSkipScenarios'
 
 beforeAll(initPhysics)
-const IDS = ['zorb.skipSpeed', 'zorb.skipAngle', 'zorb.skipFriction', 'zorb.skipKeep']
+const IDS = ['water.skip.planingScale', 'water.skip.minSpeed', 'water.skip.angle', 'water.skip.friction', 'water.skip.keep', 'water.zorb.planing']
+let planing = 0
+beforeAll(() => { planing = ballPlaning() })
 afterEach(() => { for (const id of IDS) params.set(id, params.get(id)!.def.default) })
 
 const finite = (r: ZorbRun) => r.trace.every((s) => Number.isFinite(s.y + s.z + s.vy + s.speed + s.base + s.skipping))
@@ -22,8 +24,8 @@ const loss = (r: ZorbRun, seconds: number) => 1 - speedAt(r.trace, seconds) / r.
 describe('zorb skipping', () => {
   for (const liquid of ['water', 'lava'] as const) {
     it(`a fast shallow ball skips off ${liquid} and keeps far more of its speed than a slow one`, () => {
-      const fast = zorbLaunch({ liquid, depth: 30 }, zorbSkipSpeed.value * 2.5, 8)
-      const slow = zorbLaunch({ liquid, depth: 30 }, zorbSkipSpeed.value * 0.5, 8)
+      const fast = zorbLaunch({ liquid, depth: 30 }, planing * 2.5, 8)
+      const slow = zorbLaunch({ liquid, depth: 30 }, planing * 0.5, 8)
       try {
         coast(fast, 3); coast(slow, 3)
         expect(skipsOf(fast.trace)).toBeGreaterThanOrEqual(1)
@@ -35,7 +37,7 @@ describe('zorb skipping', () => {
   }
 
   it('rolling slowly into water settles into it and floats', () => {
-    const r = zorbLaunch({ liquid: 'water', depth: 30 }, zorbSkipSpeed.value * 0.3, 2)
+    const r = zorbLaunch({ liquid: 'water', depth: 30 }, planing * 0.3, 2)
     try {
       coast(r, 6)
       expect(skipsOf(r.trace)).toBe(0)
@@ -48,13 +50,13 @@ describe('zorb skipping', () => {
 
   it('never falls through a shallow bed, on waves or diving in steeply, and stays finite', () => {
     for (const [speed, angle] of [[2.5, 8], [3, 45], [1, 60]]) {
-      const r = zorbLaunch({ liquid: 'water', depth: 2, waves: 'sea' }, zorbSkipSpeed.value * speed, angle, 3)
+      const r = zorbLaunch({ liquid: 'water', depth: 2, waves: 'sea' }, planing * speed, angle, 3)
       try {
         coast(r, 5)
         expect(finite(r)).toBe(true)
         // A contact can overlap the bed by up to one step's travel before Rapier pushes it out;
         // falling through goes deeper and never comes back. It must end resting on top.
-        const step = zorbSkipSpeed.value * speed * FIXED_DT
+        const step = planing * speed * FIXED_DT
         for (const s of r.trace) expect(s.y - r.radius).toBeGreaterThan(r.bed(s.z) - step)
         const end = r.trace[r.trace.length - 1]
         expect(end.y - r.radius).toBeGreaterThan(r.bed(end.z) - 0.05)
@@ -62,19 +64,8 @@ describe('zorb skipping', () => {
     }
   })
 
-  it('skimForce stays finite and never pulls the ball into the liquid', () => {
-    const out: SkimForce = { x: 0, y: 0, z: 0, share: 0, depth: 0 }
-    const values = [0, 1e-9, 0.3, 5, 80, 1e6, -1e6, -0.3]
-    for (const height of values) for (const slope of [0, 0.4, -3]) for (const vx of values) for (const vy of values) {
-      skimForce({ radius: 5, height, slopeX: slope, slopeZ: -slope, vx, vy, vz: 0, g: 9.81 }, out)
-      expect(Number.isFinite(out.x + out.y + out.z + out.share + out.depth)).toBe(true)
-      const nl = Math.hypot(slope, 1, slope)
-      expect((-slope * out.x + out.y + slope * out.z) / nl).toBeGreaterThanOrEqual(-1e-9)
-    }
-  })
-
   it('a skipping ball survives a network round trip: copies built from its state agree', () => {
-    const a = zorbLaunch({ liquid: 'water', depth: 30, waves: 'sea' }, zorbSkipSpeed.value * 2.5, 8)
+    const a = zorbLaunch({ liquid: 'water', depth: 30, waves: 'sea' }, planing * 2.5, 8)
     const copies: ZorbRun[] = []
     try {
       coast(a, 0.5)

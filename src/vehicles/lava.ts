@@ -1,11 +1,12 @@
 /** Indestructible vehicles: viscous lava, cooling paint and legacy water buoyancy. */
 import * as THREE from 'three/webgpu'
-import { applyWaterForces, waterSinking, hasWaterContact, waterProfiles } from './buoyancy'
+import { applyWaterForces, waterSinking, hasWaterContact, waterProfiles, waterProfileOf, planingFactor, skipFactors } from './buoyancy'
+import { applySkip, hullGiveWay, planingPatch, planingSpeed, ploughGiveWay } from './skip'
 import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { type UnityBody, signedAngle, unityEulerAngles } from './unityBody'
-import { applyHull, applyWings, createHullState, type HullInput, type HullProfile, type HullState, type WingProfile } from './liquidHull'
+import { applyHull, applyWings, createHullState, hullBottom, type HullInput, type HullProfile, type HullState, type WingProfile } from './liquidHull'
 
 export const buggyLavaFloat = defineParam({
   id: 'buggy.lavaFloat', label: 'Float on water', group: 'Buggy', scope: 'world',
@@ -143,7 +144,6 @@ export const waterLiftSpeed=defineParam({...W,id:'water.liftSpeed',label:'Buggy:
 export const waterCoast=defineParam({...W,id:'water.coast',label:'Buggy: coasting drag (1/s)',default:1,min:0,max:6,step:.05})
 export const waterSteer=defineParam({...W,id:'water.steer',label:'Buggy: steering (0 to 2)',default:.55,min:0,max:2,step:.05})
 export const waterWaddle=defineParam({...W,id:'water.waddle',label:'Buggy: waddle (0 to 1)',default:.2,min:0,max:1,step:.05})
-export const waterSkim=defineParam({...W,id:'water.skim',label:'Buggy: planing lift / weight',default:.9,min:0,max:2,step:.05})
 // The owner, 18 November 2026: "once it starts sinking, the water should feel like water and not
 // like honey", and the tyres "should even be able to pull it a little bit further up and out of
 // the water under full throttle if it's skimming across the top".
@@ -152,11 +152,19 @@ export const waterTyreLift=defineParam({...W,id:'water.tyreLift',label:'Buggy: s
 export const waterTyrePull=defineParam({...W,id:'water.tyrePull',label:'Buggy: skimming tyre pull (m/s²)',default:10,min:0,max:20,step:.5})
 export const waterTyreSpeed=defineParam({...W,id:'water.tyreSpeed',label:'Buggy: speed from which skimming tyres lift (m/s)',default:12,min:3,max:40,step:.5})
 export const waterGrip=defineParam({...W,id:'water.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.6,min:0,max:1,step:.05})
-const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:.9,deep:0,steer:.55}
-function waterProfile():HullProfile{
- const w=waterProfiles.buggy
- waterHull.buoyancy=w.buoyancy.value;waterHull.planing=w.planing.value;waterHull.thickness=waterThickness.value;waterHull.paddle=waterPaddle.value
- waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=waterSkim.value;waterHull.steer=waterSteer.value;waterHull.liftSpeed=waterLiftSpeed.value;waterHull.coast=waterCoast.value
+const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:0,deep:0,steer:.55}
+/**
+ * The buggy's water hull. Its lift from speed is the shared planing contact (skip.ts), so the
+ * hull's own whole-hull planing lift is off here. Its bow lift stays: that is the hull's attitude
+ * at speed (the nose riding up, the porpoise), on the front columns, not a lift that skips it.
+ * `planing` (how far it has risen onto the plane, which wets less hull) is the buggy's derived
+ * planing speed.
+ */
+function waterProfile(body:RAPIER.RigidBody,g:number):HullProfile{
+ const w=waterProfiles.buggy,patch=planingPatch(body)
+ waterHull.buoyancy=w.buoyancy.value;waterHull.thickness=waterThickness.value;waterHull.paddle=waterPaddle.value
+ waterHull.planing=patch?planingSpeed(body.mass(),patch.area,g,w.planing.value):Infinity
+ waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=0;waterHull.steer=waterSteer.value;waterHull.liftSpeed=waterLiftSpeed.value;waterHull.coast=waterCoast.value
  waterHull.sunkHeave=waterSunkDrag.value;waterHull.tyreLift=waterTyreLift.value;waterHull.tyrePull=waterTyrePull.value;waterHull.tyreSpeed=waterTyreSpeed.value
  return waterHull
 }
@@ -169,6 +177,8 @@ export function liquidKind(terrain:Terrain,x:number,z:number):'lava'|'water'|nul
 }
 export interface LiquidState {
  lavaDepth:number
+ /** Planing lift over weight at the water this step (skip.ts), 0 when not planing or skipping. */
+ skipping:number
  entrySpeed:number
  wasImmersed:boolean
  wingWasOpen:boolean
@@ -194,7 +204,7 @@ export interface LiquidState {
  /** Mean wetness of the hull last step, 0..1. */
  hullWet:number
 }
-export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,wheel:{x:1.1,z:1.3,radius:.5},preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0}}
+export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,skipping:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,wheel:{x:1.1,z:1.3,radius:.5},preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0}}
 const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0)
 
 /**
@@ -214,7 +224,7 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  const p=body.translation(),surface=terrain.liquidHeightAt?.(p.x,p.z)??-Infinity
  const type=liquidKind(terrain,p.x,p.z)
  state.lavaDepth=type==='lava'&&Number.isFinite(surface)?Math.max(0,surface-p.y):0
- state.stuck=false
+ state.stuck=false;state.skipping=0
  state.heat=Math.max(0,state.heat-dt/lavaCoolingTime.value)
  // Contact begins when the lower chassis enters, not while a hover vehicle rides above it.
  const immersion=Number.isFinite(surface)&&type?Math.max(0,surface-p.y+.25):0
@@ -244,9 +254,13 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   // open the air flight model fades out as the hull goes under and the wings work as hydrofoils.
   softenController(body,state,wingsOpen?1-Math.min(1,state.hull.mean*2):1-(1-(lava?lavaGrip:waterGrip).value)*Math.min(1,state.hullWet*2))
   hullInput.throttle=input.y;hullInput.steer=input.x;hullInput.brakes=!!input.brakes;hullInput.wheelSpeed=state.wheelSpeed;hullInput.wheel=state.wheel
-  const profile=lava?lavaProfile():waterProfile()
+  const profile=lava?lavaProfile():waterProfile(body,-world.gravity.y)
   // Water holds a buggy up only while it works to stay up; open wings carry it instead.
   if(!lava)profile.sink=wingsOpen?undefined:waterSink.value
+  // Skipping and planing: the shared planing contact on the buggy's own hull, first, so the
+  // hull's drag and heave give way to it once it carries the hull (skip.ts `hullGiveWay`).
+  state.skipping=lava?0:applySkip(body,terrain,-world.gravity.y,profile.buoyancy,planingFactor(kind),hullBottom(state.wheel),lava?1:state.hull.lift,skipFactors(kind))
+  hullInput.bulk=1-hullGiveWay(state.skipping);hullInput.plough=1-ploughGiveWay(state.skipping)
   state.hullWet=applyHull(body,world,terrain,type,profile,state.hull,hullInput,dt)
   if(wingsOpen){
    wingProfile.buoyancy=liquidWingBuoyancy.value;wingProfile.authority=liquidWingAuthority.value;wingProfile.density=lava?LAVA_DENSITY.value:1
@@ -254,7 +268,13 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   }
   return
  }
- if(type==='water'&&waterSinking.value){applyWaterForces(body,world,terrain,kind,dt);return}
+ if(type==='water'&&waterSinking.value){
+  // Skipping and planing: the shared planing contact, first, so the bulk drag and heave give way
+  // to it by its share. No reserve buoyancy, no planing (the tank).
+  state.skipping=applySkip(body,terrain,-world.gravity.y,waterProfileOf(kind).buoyancy.value,planingFactor(kind),undefined,undefined,skipFactors(kind))
+  applyWaterForces(body,world,terrain,kind,dt,0,undefined,1-hullGiveWay(state.skipping))
+  return
+ }
  if(!immersion||type==='water')return
  const fraction=Math.min(1,immersion/.5)
  state.stuck=state.lavaDepth>=lavaSinkDepth.value*.65&&Math.hypot(v.x,v.z)<1.5
