@@ -64,11 +64,16 @@ export function helpParts(line: string): Array<{ keys?: string; text: string }> 
   })
 }
 /**
- * A plain part of a help line with the keys it names drawn as caps: a lone capital letter
- * ("Hold E to lift off", "in flight E / Q"), never A or I, which are words.
+ * A lone capital letter in a plain part of a help line ("Hold E to lift off", "in flight E /
+ * Q", "A / D roll") is a key. A and I are keys only beside a "/" join; elsewhere they are
+ * words. A letter joined to a word ("D-pad") is not a key.
  */
+const LONE_KEY = /(?<![\w-])([B-HJ-Z]|[AI](?= \/ )|(?<=\/ )[AI])(?![\w-])/
+export function inlineParts(text: string): Array<{ key?: string; text?: string }> {
+  return text.split(new RegExp(LONE_KEY.source, 'g')).map((piece, i) => i % 2 ? { key: piece } : { text: piece }).filter((p) => p.key ?? p.text)
+}
 export function inlineKeys(text: string): Node[] {
-  return text.split(/\b([B-HJ-Z])\b/).map((piece, i) => i % 2 ? keycap(piece) : document.createTextNode(piece)).filter((n) => n.textContent)
+  return inlineParts(text).map((p) => p.key !== undefined ? keycap(p.key) : document.createTextNode(p.text!))
 }
 export function renderHelp(element: HTMLElement, kind: VehicleKind, touch = false, quick = false, gear = false): void {
   element.replaceChildren()
