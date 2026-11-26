@@ -416,7 +416,15 @@
           // A later stage that takes long creeps toward its end but never reaches it, so a slow load
           // never shows a frozen bar and never claims a stage it has not finished. The number only
           // ever goes up, and stays just short of 1 until the veil lifts.
-          var ENDS = [0.6, 0.72, 0.88, 0.97], AT = { world: 1, terrain: 2, ready: 3 };
+          // Measured 25 November 2026 (Slow 4G; the phone also at 4x CPU), share of the load's time:
+          //               download  engine  world  graphics
+          //   phone cold     84%      0%      2%     13%
+          //   desktop cold   96%      0%      1%      3%
+          //   phone cached   37%      0%     10%     52%
+          // A fast load is over before the bar shows (desktop, cold or cached: 2.4 s). The bar shows
+          // slow loads, nearly all of them cold, so the download has most of it; graphics, the longest
+          // of the rest and the one a cached phone sees, the next most.
+          var ENDS = [0.8, 0.82, 0.86, 0.97], AT = { world: 1, terrain: 2, ready: 3 };
           var set = window.__miraBootSet, total = set && set.bytes > 0 ? set.bytes : 0, files = total ? set.files : [];
           // Bytes received of the startup set: the document, and each listed file's body as
           // delivered (decoded), the largest seen per file, so a retried download is never counted
@@ -461,7 +469,7 @@
             // Stages with nothing to measure creep; the download has its bytes (without a total, as
             // on the dev server and in builds from before it, it creeps too).
             var ceiling = (stage < ENDS.length ? ENDS[stage] : 1) - 0.015;
-            if (target < ceiling && !(total && stage === 0)) target += (ceiling - target) * (1 - Math.exp(-dt / 28000));
+            if (target < ceiling && !(total && stage === 0)) target += (ceiling - target) * (1 - Math.exp(-dt / 4000));
             shown += (target - shown) * (1 - Math.exp(-dt / 230));
             root.style.setProperty("--boot-progress", shown.toFixed(4));
             // With reduced motion the bar moves in steps of a twentieth.

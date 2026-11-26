@@ -1,7 +1,8 @@
 /**
  * The loading veil's progress bar (index.html's bootstrap, tools/boot-bytes.mjs). Bugs caught:
- * - the bar's total missing a startup file, so it overshoots, or counting a lazy chunk or source
- *   map, so it stalls short of the end of the download (startupFiles);
+ * - the bar's total missing a startup file, so it overshoots, or counting a file the page never
+ *   fetches before its first frame (a lazy chunk, a source map, a worker, a font weight the veil
+ *   does not use), so it stalls short of the end of the download (startupFiles);
  * - the inlined total not what the veil adds up from the emitted files (the build's own check,
  *   countedTotal), or the document's size depending on the number written into it;
  * - a retried physics download counted twice, a resource outside the startup set counted, or a
@@ -16,6 +17,7 @@ import { bootSetScript, countedTotal, fillSlot, startupFiles } from '../../tools
 const chunk = (fileName: string, code: string, imports: string[] = [], extra: object = {}) => ({ type: 'chunk', fileName, code, imports, dynamicImports: [], isEntry: false, viteMetadata: { importedCss: new Set<string>() }, ...extra })
 const asset = (fileName: string, source: string | Uint8Array) => ({ type: 'asset', fileName, source })
 
+const CSS = '@font-face{src:url(/fonts/barlow-400-latin.woff2)}@font-face{src:url(/fonts/barlow-500-latin.woff2)}@font-face{src:url(/fonts/barlow-600-latin.woff2)}'
 function bundle() {
   const entry = chunk('assets/index-AAAA1111.js', 'x'.repeat(1000) + 'new Worker(new URL(`/assets/terrainWorker-BBBB2222.js`,``+import.meta.url))', ['assets/three-CCCC3333.js'],
     { isEntry: true, dynamicImports: ['assets/GlassPost-DDDD4444.js'], viteMetadata: { importedCss: new Set(['assets/index-EEEE5555.css']) } })
@@ -24,7 +26,7 @@ function bundle() {
     chunk('assets/three-CCCC3333.js', 'y'.repeat(500), ['assets/vendor-FFFF6666.js']),
     chunk('assets/vendor-FFFF6666.js', 'z'.repeat(300)),
     chunk('assets/GlassPost-DDDD4444.js', 'lazy'.repeat(100)),
-    asset('assets/index-EEEE5555.css', '@font-face{src:url(/fonts/barlow-400-latin.woff2)}'),
+    asset('assets/index-EEEE5555.css', CSS),
     asset('assets/terrainWorker-BBBB2222.js', 'w'.repeat(200)),
     asset('assets/index-AAAA1111.js.map', 'm'.repeat(9000)),
     asset('assets/rapier_wasm3d_bg-GGGG7777.wasm', new Uint8Array(4000)),
@@ -32,20 +34,24 @@ function bundle() {
   ]
   return Object.fromEntries(files.map(f => [f.fileName, f]))
 }
-const fonts = (url: string) => (url === '/fonts/barlow-400-latin.woff2' ? 160 : null)
+const fonts = (url: string) => ({ '/fonts/barlow-400-latin.woff2': 160, '/fonts/barlow-500-latin.woff2': 170, '/fonts/barlow-600-latin.woff2': 180 } as Record<string, number>)[url] ?? null
 
 describe('the startup set the build counts', () => {
-  it('is the entry, its static imports and their CSS, the workers it starts, the physics engine and the fonts its CSS declares', () => {
+  it('is the entry, its static imports and their CSS, the physics engine and the veil\'s own fonts; never a worker, a lazy chunk, a map or another weight', () => {
     const files = startupFiles(bundle(), fonts)
     expect(Object.fromEntries(files)).toEqual({
       'assets/index-AAAA1111.js': 1000 + 'new Worker(new URL(`/assets/terrainWorker-BBBB2222.js`,``+import.meta.url))'.length,
-      'assets/index-EEEE5555.css': '@font-face{src:url(/fonts/barlow-400-latin.woff2)}'.length,
-      'assets/terrainWorker-BBBB2222.js': 200,
+      'assets/index-EEEE5555.css': CSS.length,
       'assets/three-CCCC3333.js': 500,
       'assets/vendor-FFFF6666.js': 300,
       'assets/rapier_wasm3d_bg-GGGG7777.wasm': 4000,
       'fonts/barlow-400-latin.woff2': 160,
+      'fonts/barlow-500-latin.woff2': 170,
     })
+  })
+  it('fails the build when the startup CSS stops declaring a font the veil is set in', () => {
+    const b = bundle(); (b['assets/index-EEEE5555.css'] as { source: string }).source = '@font-face{src:url(/fonts/barlow-400-latin.woff2)}'
+    expect(() => startupFiles(b, fonts)).toThrow(/barlow-500/)
   })
   it('writes the total into a slot of fixed width, and the veil adds up the same number from the emitted files', () => {
     const files: Map<string, number> = startupFiles(bundle(), fonts)
@@ -108,7 +114,7 @@ describe('the veil\'s progress', () => {
     v.entries.navigation.push({ name: 'https://mira.cc/', decodedBodySize: 5000 })
     v.run(400)
     const half = v.bar()
-    expect(half).toBeGreaterThan(0.25); expect(half).toBeLessThanOrEqual(0.3)
+    expect(half).toBeGreaterThan(0.35); expect(half).toBeLessThanOrEqual(0.4)
     // A retry restarting the engine's stream lowers the count; the bar stays where it was.
     v.win.__miraPhysicsUrl = '/assets/rapier_wasm3d_bg-C.wasm'; v.win.__miraPhysicsBytes = 0
     v.entries.navigation[0].decodedBodySize = 4000
@@ -128,7 +134,7 @@ describe('the veil\'s progress', () => {
     const v = veil(set)
     v.run(5000); expect(v.bar()).toBe(0)
     v.boot.stage('world'); v.run(50_000)
-    expect(v.bar()).toBeGreaterThan(0.72); expect(v.bar()).toBeLessThan(0.88)
+    expect(v.bar()).toBeGreaterThan(0.82); expect(v.bar()).toBeLessThan(0.86)
   })
 
   it('steps the bar under reduced motion', () => {

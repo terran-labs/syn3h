@@ -6,10 +6,13 @@
  *   - the document itself (index.html, after this plugin has written the total into it);
  *   - the entry script and every chunk it imports statically, with the CSS those chunks import;
  *   - the physics engine's WebAssembly (tools/rapier-wasm.mjs);
- *   - the module workers the startup code starts (new Worker(new URL(...)));
- *   - the fonts the startup CSS declares (public/fonts, by url()).
+ *   - the fonts the veil's own text is set in (VEIL_FONTS), which the startup CSS declares.
  * Not in it: source maps, chunks imported only dynamically (the glass shader, tuners), the
- * audio worklets and anything else fetched after play starts.
+ * audio worklets, the module workers (a worker's script is not one of the page's resource
+ * entries, so the veil could never count it, and the planet map's starts after loading), the
+ * other font weights (fetched when text set in them is first shown, after the veil) and
+ * anything else fetched after play starts. Measured 25 November 2026: on every load, cold and
+ * cached, desktop and phone, exactly these were absent when the first frame was drawn.
  *
  * Sizes are decoded sizes, the file's own bytes, because that is what the browser reports as
  * decodedBodySize whatever the transfer encoding: a server that sends Brotli where the build
@@ -28,7 +31,8 @@ import { join } from 'node:path'
 const PLACEHOLDER = '__MIRA_BOOT_BYTES__'
 
 const baseName = file => file.slice(file.lastIndexOf('/') + 1)
-const WORKER = /new Worker\(new URL\(([`"'])([^`"']+?)\1/g
+/** The veil's status line is Barlow 500 and its progress line Barlow 400 (index.html). */
+export const VEIL_FONTS = ['/fonts/barlow-400-latin.woff2', '/fonts/barlow-500-latin.woff2']
 const FONT = /url\((["']?)(\/fonts\/[^"')]+\.woff2)\1\)/g
 
 /**
@@ -55,25 +59,24 @@ export function startupFiles(bundle, publicFile) {
     add(name, size(chunk))
     queue.push(...chunk.imports)
     for (const css of chunk.viteMetadata?.importedCss ?? []) if (byName.has(css)) add(css, size(byName.get(css)))
-    // Workers the startup code starts, emitted by Vite as their own files.
-    for (const [, , url] of chunk.code.matchAll(WORKER)) {
-      const worker = [...byName.keys()].find(file => file.endsWith(baseName(url)) && !file.endsWith('.map'))
-      if (worker) add(worker, size(byName.get(worker)))
-    }
   }
   // The physics engine's binary, fetched from the page's head (tools/rapier-wasm.mjs).
   const wasm = [...byName.keys()].filter(file => /(^|\/)rapier_wasm3d_bg-[\w-]+\.wasm$/.test(file))
   if (wasm.length !== 1) throw new Error(`Expected exactly 1 Rapier .wasm in the startup set, found ${wasm.length}`)
   add(wasm[0], size(byName.get(wasm[0])))
-  // Fonts the startup CSS declares. Public files, so not in the bundle.
-  for (const [path, item] of [...files].map(([path]) => [path, byName.get(path)])) {
+  // The veil's fonts, which the startup CSS must declare. Public files, so not in the bundle.
+  const declared = new Set()
+  for (const [path] of files) {
     if (!path.endsWith('.css')) continue
+    const item = byName.get(path)
     const text = typeof item.source === 'string' ? item.source : Buffer.from(item.source).toString('utf8')
-    for (const [, , url] of text.matchAll(FONT)) {
-      const bytes = publicFile(url)
-      if (bytes === null) throw new Error(`The startup CSS declares ${url}, which is not in public/`)
-      add(url.slice(1), bytes)
-    }
+    for (const [, , url] of text.matchAll(FONT)) declared.add(url)
+  }
+  for (const url of VEIL_FONTS) {
+    if (!declared.has(url)) throw new Error(`The startup CSS no longer declares ${url}; update VEIL_FONTS in tools/boot-bytes.mjs`)
+    const bytes = publicFile(url)
+    if (bytes === null) throw new Error(`The veil's font ${url} is not in public/`)
+    add(url.slice(1), bytes)
   }
   return files
 }
