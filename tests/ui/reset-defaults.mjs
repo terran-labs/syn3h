@@ -117,7 +117,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- 6. A row does not move when its reset appears. ----
     const row = page.locator('.wi-row[data-id="paint.gloss"]')
-    await row.evaluate(r => { r.closest('.wi-card').querySelector('.wi-head').click(); r.closest('details').open = true })
+    // Paint and looks sits inside World > Vehicles (the sidebar consolidation): open the card if it
+    // is closed, then every section round the row.
+    await row.evaluate(r => { const card = r.closest('.wi-card'); if (!card.classList.contains('is-open')) card.querySelector('.wi-head').click(); for (let d = r.closest('details'); d; d = d.parentElement.closest('details')) d.open = true })
     await page.waitForTimeout(600); await row.scrollIntoViewIfNeeded()
     const boxes = () => row.evaluate(r => [r, ...r.children].map(el => { const b = el.getBoundingClientRect(); return [el.tagName, Math.round(b.x * 2) / 2, Math.round(b.y * 2) / 2, Math.round(b.width * 2) / 2, Math.round(b.height * 2) / 2] }))
     const atDefault = await boxes()
