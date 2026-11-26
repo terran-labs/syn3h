@@ -176,8 +176,9 @@ try {
       const gears = await page.locator('.gear-selector .gs-drum button.gs-item').count()
       for (let g = 0; g < gears; g++) {
         await page.keyboard.press(String(g + 1))
-        // Measured once the drum has stopped turning (its transitions run slower on a loaded machine).
-        await page.waitForTimeout(50)
+        // Measured once that gear is selected (the game takes the key on its next frame, later on
+        // a loaded machine) and the drum has stopped turning.
+        await page.waitForFunction((g) => document.querySelectorAll('.gear-selector .gs-drum button.gs-item')[g]?.classList.contains('is-active'), g, { timeout: 10000 })
         await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
         onLines(await lines(page), `${w}x${h} gear ${g + 1}`)
         oneColumn(await names(page), `${w}x${h} gear ${g + 1}`)
