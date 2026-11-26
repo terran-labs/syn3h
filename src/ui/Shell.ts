@@ -413,8 +413,13 @@ export class Shell implements System {
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
     // The version beside the lobby's settings gear opens What's new.
-    // A slow single click opens Updates; five quick ones reveal the Creator key row (creatorReveal.ts).
-    bindVersionLabel(this.lobbySettings.version, () => { this.audio.cue('click'); this.showUpdates() }, signal)
+    // Opens Updates at once; five quick taps also reveal the hidden sign-in row (creatorReveal.ts).
+    const version = this.lobbySettings.version
+    bindVersionLabel({
+      label: version, root: document, rect: () => version.getBoundingClientRect(), signal,
+      openUpdates: () => { this.audio.cue('click'); this.showUpdates() },
+      closeUpdates: () => { if (this.updatesSheet.isOpen) this.updatesSheet.close() },
+    })
     // About and Updates, each its own sheet from its icon above the gear. Their content is
     // built on first open, so nothing in them is requested before the player asks.
     const edges = () => this.galaxy?.wordmarkEdges() ?? null
