@@ -22,3 +22,15 @@
   border: 1px solid rgb(255 255 255 / .5); border-bottom-width: 2px; border-radius: 5px; background: none;
   font: 600 11.5px/1.55 'Barlow', sans-serif; letter-spacing: .04em; text-transform: none; text-align: center; color: var(--s3-ink, #fff);
 }
+
+/* Phones. The tips keep the touch slot's place on a phone on its side (beside the minimap,
+   exploration.css); upright they rise from just above the PANELS pill row, full width, so they
+   touch neither the pill, the thumb buttons nor the minimap (the Foreman, 25 November 2026). */
+.mira-shell.exploration-ui.has-touch .spawn-help.is-tips { white-space: normal; max-width: none; padding: 7px 12px; font-size: 13px; }
+.mira-shell.has-touch .spawn-help.is-tips > div > div { white-space: normal; }
+@media (orientation: portrait) {
+  html .mira-shell.exploration-ui.has-touch .spawn-help.is-tips {
+    left: var(--edge-left, 16px); right: var(--edge-right, 16px); transform: none;
+    bottom: calc(var(--thumb-top) + var(--thumb-gap) + 36px + 8px);
+  }
+}

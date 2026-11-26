@@ -4,7 +4,7 @@
 
    The strip, where nothing else lives:
    desktop  the upper right while driving (below); nothing with the cursor free.
-   phone    on the left under the speed readout; it never takes a touch. */
+   phone    upright: under the gear column; on its side: top right (below). Never takes a touch. */
 .chat-strip {
   position: fixed; z-index: 22; left: 242px; bottom: var(--edge-bottom); width: clamp(260px, calc(50vw - 352px), 360px);
   display: flex; flex-direction: column; gap: 3px; pointer-events: none; transition: opacity .4s ease;
@@ -13,13 +13,28 @@
 /* A desktop shows incoming chat in the upper right while driving, like notifications: newest at
    the bottom, so an arrival never moves the lines already there (the owner, 25 November 2026).
    With the cursor free the sidebar is there and its Chat card counts what is unread, so no
-   toasts. Touch keeps the strip's own place above until the phone layout is agreed. */
+   toasts. */
 .mira-shell:not(.has-touch) .chat-strip {
   top: var(--edge-top, 16px); right: var(--edge-right, 16px); left: auto; bottom: auto; width: 340px;
   align-items: flex-end;
 }
 .mira-shell:not(.has-touch) .chat-strip .chat-line { border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) 0 var(--chat-bubble-radius); }
-.mira-shell:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .chat-strip { display: none; }
+/* Panels showing (a desktop with the cursor free, a phone with its panels up): Chat is a card
+   there, with its unread count, so no toasts over it. */
+.mira-shell:has(.world-inspector:not([hidden], .lobby-settings)) .chat-strip { display: none; }
+/* Phones: one line at a time, the newest. Upright, full width in the band under the gear column
+   (--gear-bottom, Shell) and above the speed and altitude readouts; on its side, top right, its
+   left edge kept right of the centre column the system toasts use (the owner's plan, 25 November
+   2026, approved from the mock). */
+.mira-shell.has-touch .chat-strip { --chat-bubble-radius: 17px; }
+.mira-shell.has-touch .chat-strip .chat-line:not(:last-child) { display: none; }
+@media (orientation: portrait) {
+  .mira-shell.has-touch .chat-strip { top: calc(var(--gear-bottom, 140px) + 8px); bottom: auto; left: var(--edge-left, 16px); right: var(--edge-right, 16px); width: auto; align-items: flex-end; }
+}
+@media (orientation: landscape) {
+  .mira-shell.has-touch .chat-strip { top: var(--edge-top, 16px); bottom: auto; right: var(--edge-right, 16px); left: max(calc(50% + 150px), calc(100% - var(--edge-right, 16px) - 300px)); width: auto; align-items: flex-end; }
+}
+.mira-shell.has-touch .chat-strip .chat-line { border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) 0 var(--chat-bubble-radius); }
 .mira-shell:not(.is-playing) .chat-strip { display: none; }
 /* A name label or readout passed behind the strip: it steps back until they part. */
 .chat-strip.is-yielding { opacity: .18; }

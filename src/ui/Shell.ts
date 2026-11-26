@@ -342,6 +342,12 @@ export class Shell implements System {
     // neighbours, and the controls that apply right now. On touch it adds buttons for the
     // gear's extra actions (the Grapple's Let out and Let go).
     this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
+    // A phone held upright shows incoming chat in the band under the gear column (chat.css): its
+    // lower edge, which moves with the number of gears, is kept in --gear-bottom.
+    if (typeof ResizeObserver !== 'undefined') {
+      const gearEdge = new ResizeObserver(() => this.element.style.setProperty('--gear-bottom', `${Math.round(this.gearSelector.element.getBoundingClientRect().bottom)}px`))
+      gearEdge.observe(this.gearSelector.element); this.abort.signal.addEventListener('abort', () => gearEdge.disconnect(), { once: true })
+    }
     // Under the drum, the driven vehicle's accessories (Zorb, wings, jet mode...), each with its
     // key and its state (src/vehicles/accessories.ts). Part of the left column, hud-column.css.
     this.accessories = new AccessoryControls(this.element, game.input, () => this.audio.cue('click'), this.abort.signal)
@@ -2350,9 +2356,9 @@ export class Shell implements System {
    */
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
-    // A keyboard's first look is the control tips (updateTips), taught by use; touch keeps its
-    // one-line card until the phone layout is agreed.
-    if (!full && !touch) { this.tips.restart(); if (!hint.classList.contains('is-tips')) this.hideHelp(); return }
+    // The first look is the control tips (updateTips), taught by use: keys on a keyboard, the
+    // on-screen buttons' names on touch.
+    if (!full) { this.tips.restart(); if (!hint.classList.contains('is-tips')) this.hideHelp(); return }
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint', 'is-quiet'); this.touch.highlight(null)
     fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
@@ -2381,14 +2387,14 @@ export class Shell implements System {
   private tipsFade?: ReturnType<typeof setTimeout>
   /**
    * Every frame: draw the tips the lessons give, in the controls card's place, unless the full
-   * sheet (H) or a stuck hint holds it. Desktop only for now (touch keeps its own line).
+   * sheet (H) or a stuck hint holds it. On touch the lines name the on-screen buttons.
    */
   updateTips(dt: number, input: Omit<TipInput, 'touch' | 'tagAllowed'>): void {
-    if (this.touch.available) return
+    const touch = this.touch.available
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
     const busy = !card.hidden && !card.classList.contains('is-tips')
     const on = controlTips.value && this.started && this.playing && !this.menuVisible && !busy
-    const lines: TipLine[] = on ? this.tips.update(dt, { ...input, touch: false, tagAllowed: Boolean(params.get('laser.allowed')?.value ?? true) }) : []
+    const lines: TipLine[] = on ? this.tips.update(dt, { ...input, touch, tagAllowed: Boolean(params.get('laser.allowed')?.value ?? true) }) : []
     if (busy) return
     const key = lines.map(l => `${l.id}${l.learned ? '+' : ''}`).join(' ')
     if (key === this.tipsShown) return
@@ -2404,13 +2410,15 @@ export class Shell implements System {
     const body = card.querySelector('div')!
     body.replaceChildren(...lines.map(line => {
       const row = document.createElement('div'); row.dataset.tip = line.id; row.classList.toggle('is-learned', line.learned)
+      if (touch) { row.textContent = line.text; return row }
       for (const part of line.parts) {
         if ('key' in part) { const key = document.createElement('kbd'); key.className = 'tip-key'; key.textContent = keyFor(part.key); row.append(key) }
         else row.append(`${part.text} `)
       }
       return row
     }))
-    const foot = card.querySelector('small')!; foot.replaceChildren(); const h = document.createElement('kbd'); h.className = 'tip-key'; h.textContent = keyFor('help'); foot.append(h, 'all controls')
+    const foot = card.querySelector('small')!; foot.replaceChildren()
+    if (!touch) { const h = document.createElement('kbd'); h.className = 'tip-key'; h.textContent = keyFor('help'); foot.append(h, 'all controls') }
     card.classList.remove('is-full', 'is-hint', 'is-quiet', 'is-fading'); card.classList.add('is-tips'); card.hidden = false
   }
   /**

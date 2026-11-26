@@ -1,4 +1,4 @@
-// Incoming chat and the control tips on a desktop, in a jet. Bugs caught: a chat bubble drawn
+// Incoming chat and the control tips on a desktop and on a phone either way up, in a jet. Bugs caught: a chat bubble drawn
 // over the controls (the owner's screenshot, 25 November 2026) or over any other HUD element;
 // tips that never teach E, Q and Space, or that come back after they were learned; chat toasts
 // over the open sidebar; the full controls sheet as bare text on the scene.
@@ -19,7 +19,7 @@ const overlaps = () => {
   const visible = el => { const s = getComputedStyle(el), b = box(el); return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0.05 && b.width > 2 && b.height > 2 && b.bottom > 0 && b.right > 0 && b.left < innerWidth && b.top < innerHeight }
   const mine = [...shell.querySelectorAll('.chat-strip, .spawn-help')].filter(visible)
   // Name labels follow vehicles round the screen; the strip steps back from them on its own (ChatCard.yield).
-  const others = [...shell.querySelectorAll('*')].filter(el => getComputedStyle(el).position === 'fixed' && visible(el) && !mine.some(m => m === el || m.contains(el) || el.contains(m)) && !el.closest('.vehicle-nameplates, .nameplate') && !(box(el).width >= innerWidth - 2 && box(el).height >= innerHeight - 2))
+  const others = [...shell.querySelectorAll('*')].filter(el => (getComputedStyle(el).position === 'fixed' || el.matches('.touch-controls button')) && visible(el) && !mine.some(m => m === el || m.contains(el) || el.contains(m)) && !el.closest('.vehicle-nameplates, .nameplate') && !(box(el).width >= innerWidth - 2 && box(el).height >= innerHeight - 2))
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const name = el => `${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 2).join('.')}`
   const found = []
@@ -80,5 +80,35 @@ try {
     assert.deepEqual(errors, [], `${size}: no page errors`)
     console.log(`${size}: ok`)
     await page.close()
+  }
+  // Phones: one toast, the newest; tips naming the on-screen buttons; clear of the PANELS pill,
+  // the thumb buttons, the minimap and everything else.
+  for (const [width, height] of [[390, 844], [844, 390]]) {
+    const size = `${width}x${height}`
+    const context = await browser.newContext({ viewport: { width, height }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
+    await context.addInitScript(() => localStorage.setItem('mira.chat.overlay', '1'))
+    const page = await context.newPage()
+    const errors = []; page.on('pageerror', e => errors.push(e.message))
+    await page.goto(`${base}?autoplay=1&vehicle=jet&room=hud-messages-${size}-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30 && window.miraNet?.connected, null, { timeout: 180000 })
+    await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 180000 })
+    await page.waitForFunction(() => window.mira.shell.playing && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 180000 })
+    await page.evaluate(() => { localStorage.removeItem('mira.tips.learned'); window.mira.params.set('daydream.seconds', 0, 'local'); window.mira.params.set('bots.count', 0); window.mira.shell.tips.restart() })
+    if (await page.locator('.world-inspector').isVisible()) await page.evaluate(() => window.mira.shell.returnToDriving())
+    for (const text of ['race you to the volcano', 'Please do not do it again. Do it again.']) await page.evaluate(text => window.miraNet.chat.receive({ type: 'chat', from: 4242, text }), text)
+    await page.waitForFunction(() => document.querySelector('.chat-strip .chat-line') && document.querySelector('.spawn-help.is-tips:not([hidden])'), null, { timeout: 20000 })
+    await page.waitForTimeout(600)
+    const shownLines = await page.locator('.chat-strip .chat-line').evaluateAll(ls => ls.filter(l => getComputedStyle(l).display !== 'none').length)
+    assert.equal(shownLines, 1, `${size}: one chat line at a time on a phone`)
+    const first = await page.locator('.spawn-help [data-tip]').first().innerText()
+    assert.match(first, /THR \+/, `${size}: the tips name the on-screen buttons (${first})`)
+    const pill = await page.locator('.hud-navigation').boundingBox(), help = await page.locator('.spawn-help').boundingBox()
+    if (width < height) assert.ok(help.y + help.height <= pill.y - 4, `${size}: the tips sit above the PANELS pill (${JSON.stringify([help, pill])})`)
+    const clash = await page.evaluate(overlaps)
+    await page.screenshot({ path: `${shots}/${size}-driving.png` })
+    assert.deepEqual(clash.found, [], `${size}: chat and tips touch no other HUD element (${JSON.stringify(clash)})`)
+    assert.deepEqual(errors, [], `${size}: no page errors`)
+    console.log(`${size}: ok`)
+    await context.close()
   }
 } finally { await browser.close() }
