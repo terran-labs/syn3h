@@ -10,6 +10,7 @@ import {SWAP_CLEARANCE,createVehicleSwapper} from '../../src/vehicles/swap'
 import {REST_HEIGHT} from '../../src/vehicles/Vehicle'
 import type {Vehicle} from '../../src/vehicles/Vehicle'
 import {Materialize} from '../../src/vehicles/effects/Materialize'
+import {LAMP_POSES} from '../../src/vehicles/effects/lamps'
 beforeAll(initPhysics)
 
 /** A flat world with the parts of Game the vehicles, their effects and the swap use. */
@@ -123,7 +124,9 @@ describe('swapping the player vehicle in place',()=>{
   expect(old.body.translation()).toEqual(parked)
   const after:T.SpotLight[]=[];w.game.scene.traverse(o=>{if(o instanceof T.SpotLight)after.push(o)})
   expect(after).toEqual(lights)
-  expect(after.map(o=>o.position.toArray())).toEqual([[-.6,.23,-1.85],[.6,.23,-1.85]])
+  // The same two lights, moved to the hovercraft's own lamps: its one lamp pose (effects/lamps.ts).
+  const lamp=LAMP_POSES.hovercraft
+  expect(after.map(o=>o.position.toArray())).toEqual([[-lamp.x,lamp.y,lamp.z],[lamp.x,lamp.y,lamp.z]])
   expect(swapper.swap('buggy')).toBe(old)
   expect(next.body.isEnabled()).toBe(false)
   expect(old.body.isEnabled()).toBe(true)
