@@ -13,8 +13,8 @@ export const BANISH_STOPS = [
   { id: 'none', short: 'None', words: 'None', seconds: 0, says: 'They can come back straight away.' },
   { id: '5m', short: '5 min', words: '5 minutes', seconds: 5 * 60, says: 'Banished for 5 minutes.' },
   { id: '30m', short: '30 min', words: '30 minutes', seconds: 30 * 60, says: 'Banished for 30 minutes.' },
-  { id: '24h', short: '24 hours', words: '24 hours', seconds: 24 * 3600, says: 'Banished for 24 hours.' },
-  { id: 'permanent', short: 'Permanently', words: 'Permanently', seconds: -1, says: 'Banished permanently.' },
+  { id: '24h', short: '24 h', words: '24 hours', seconds: 24 * 3600, says: 'Banished for 24 hours.' },
+  { id: 'permanent', short: 'Permanent', words: 'Permanently', seconds: -1, says: 'Banished permanently.' },
 ] as const
 export type BanishStop = (typeof BANISH_STOPS)[number]
 
