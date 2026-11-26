@@ -59,7 +59,14 @@ try {
       await page.waitForFunction(() => { const s = window.syn3h, c = s.camera.cinematic, cam = s.game.camera; return !c || (cam.position.distanceTo(c.position) < 0.05 && c.look.distanceTo(c.target) < 0.1) }, null, { timeout: 30000, polling: 200 }).catch(() => errors.push('camera did not settle'))
       await page.waitForTimeout(800)
       await page.screenshot({ path: `${out}/${kind}-${label}${phone ? '-phone' : ''}.png` })
-      notes.push({ ...look, label })
+      // What the shown bot drew: its distance from the camera and, where its look exposes one
+      // (hover, jet, tank: a part with level and setLevel), its detail level, 0 full, 2 farthest.
+      const shown = await page.evaluate((kind) => {
+        const { bots, game } = window.syn3h, v = bots.vehicles.find(b => b.kind === kind)
+        const look = Object.values(v).find(o => o && typeof o === 'object' && typeof o.setLevel === 'function' && 'level' in o)
+        return { distance: +game.camera.position.distanceTo(v.object.position).toFixed(1), level: look ? look.level : 'not exposed' }
+      }, kind)
+      notes.push({ ...look, label, ...shown })
     }
   }
 } finally {
