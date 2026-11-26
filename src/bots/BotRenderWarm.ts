@@ -31,6 +31,12 @@ type Parked = { vehicle: Vehicle; afterFrame: number }
 /** Park unused models between actor lifetimes without giving two actors the same vehicle. */
 export class BotRenderWarm {
   private readonly parked = new Map<VehicleKind, Parked[]>()
+  /**
+   * One parked model per kind kept for drawing every look at a quality climb, never lent to a bot:
+   * once every kind is on the road the lending pool can be empty, and a climb would draw no look a
+   * bot is not showing at that moment. The model the first warm draws; released with the world.
+   */
+  private readonly reserve = new Map<VehicleKind, Vehicle>()
   private readonly checkedOut = new WeakMap<Vehicle, number>()
   private readonly forward = new Vector3()
   private readonly detailPosition = new Vector3()
@@ -136,7 +142,7 @@ export class BotRenderWarm {
       for (const { kind } of VEHICLE_KINDS) {
         await warm.yieldFrame(`Bot ${kind} setup`)
         if (!current()) break
-        const vehicle = this.takeParked(kind) ?? createVehicle(this.game, this.terrain, kind, this.game.camera.position)
+        const vehicle = this.reserve.get(kind) ?? this.takeParked(kind) ?? createVehicle(this.game, this.terrain, kind, this.game.camera.position)
         vehicle.isLocal = false
         vehicle.setParked(true)
         try {
@@ -152,12 +158,15 @@ export class BotRenderWarm {
             }
           }
         } finally {
-          if (!current()) vehicle.dispose()
+          if (!current()) { if (this.reserve.get(kind) === vehicle) this.reserve.delete(kind); vehicle.dispose() }
           else {
             try {
               this.reset(vehicle)
-              this.park(vehicle, -Infinity)
+              // The kind's reserve if it has none yet; otherwise lent out as before.
+              if (!this.reserve.has(kind)) this.reserve.set(kind, vehicle)
+              else if (this.reserve.get(kind) !== vehicle) this.park(vehicle, -Infinity)
             } catch (error) {
+              if (this.reserve.get(kind) === vehicle) this.reserve.delete(kind)
               vehicle.dispose()
               throw error
             }
@@ -237,7 +246,8 @@ export class BotRenderWarm {
 
   /** The distant models always use plain shading. Their target changes only at Minimal. */
   drawReliefFleet(minimal: boolean, submit: () => void): void {
-    const actors = [...this.parked.values()].flatMap(entries => entries.slice(0, 1).map(entry => entry.vehicle))
+    // Each kind's reserve, else a parked model of it.
+    const actors = VEHICLE_KINDS.map(({ kind }) => this.reserve.get(kind) ?? this.parked.get(kind)?.[0]?.vehicle).filter((v): v is Vehicle => !!v)
     if (!actors.length) { submit(); return }
     const drawPose = (index: number, pose: Look, jetOnly: boolean): void => {
       if (index === actors.length) { submit(); return }
@@ -275,5 +285,7 @@ export class BotRenderWarm {
   private disposeParked(): void {
     for (const entries of this.parked.values()) for (const { vehicle } of entries) vehicle.dispose()
     this.parked.clear()
+    for (const vehicle of this.reserve.values()) vehicle.dispose()
+    this.reserve.clear()
   }
 }

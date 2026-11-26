@@ -67,6 +67,11 @@ export interface System {
   drawReliefFleet?(minimal: boolean, draw: () => void): void
   /** After a climb outside play: draw every distance look of the parked bot models, unseen, around `draw`. */
   drawClimbFleet?(draw: () => void): void
+  /**
+   * A manual quality change behind its veil: draw every look of every bot kind at the new level,
+   * one a frame, making a model for any kind with none parked (BotRenderWarm.warm).
+   */
+  warmClimbFleet?(warm: CoveredWarm): Promise<void>
   drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
@@ -898,6 +903,16 @@ export class Game {
         }
       }
       if (batch) await batch.ready()
+    }
+    // Every look of every bot kind at the new level, one a frame. warmVisibleQuality draws only
+    // what is on screen now: a look no bot shows at this moment (another detail level, another
+    // paint) would otherwise build its pipelines for the passes this level adds (ambient occlusion,
+    // indirect light, a larger shadow tier) when a bot drives into it, in play.
+    for (const system of this.systems) {
+      if (!system.warmClimbFleet) continue
+      progress('Preparing vehicles')
+      await system.warmClimbFleet({ draw: () => submit(), yieldFrame: async () => { await frame(); signal.throwIfAborted() } })
+      signal.throwIfAborted()
     }
     progress('Drawing the new level')
     await frame()
