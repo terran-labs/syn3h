@@ -14,7 +14,7 @@ export { botChatterAmount }
 
 /**
  * Unprompted lines a minute at amount 1, at chatter level normal: measured with one person
- * and four bots on two planets (tools/banter-rate.mjs), about 70 budgeted lines in ten
+ * and four bots on two planets, about 70 budgeted lines in ten
  * minutes. Quiet and chatty scale it (LEVEL_SCALE).
  */
 export const BASE_PER_MINUTE = 7

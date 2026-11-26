@@ -177,7 +177,7 @@ export class BanterDirector {
   private readonly session = { critters: [] as { critter: string; by: string }[], resets: 0 }
   /** Count of lines said, for the cost report and tests. */
   said = 0
-  /** Lines said, by line pool, for measuring how much the bots talk (tools/banter-rate.mjs). */
+  /** Lines said, by line pool, for measuring how much the bots talk. */
   readonly counts: Record<string, number> = {}
 
   constructor(private readonly world: BanterWorld, private readonly hooks: BanterHooks, private readonly options: DirectorOptions = {}) {
