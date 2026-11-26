@@ -45,6 +45,8 @@ export class BotRenderWarm {
   /** Set while the climb fleet draws: each pose is drawn shrunk and behind the camera. */
   private unseen = false
   private running = false
+  /** The warm in flight, for a climb's warm to follow rather than share. */
+  private inFlight: Promise<void> | null = null
   private disposed = false
 
   constructor(private readonly game: Game, private readonly terrain: Terrain) {}
@@ -133,8 +135,23 @@ export class BotRenderWarm {
     vehicle.id = vehicle.name = ''
   }
 
-  async warm(warm: CoveredWarm): Promise<void> {
-    if (this.running || this.disposed) return
+  /**
+   * A quality climb's warm: after any warm in flight (it draws at its own level, the entry's or an
+   * earlier climb's), a fresh pass at this one.
+   */
+  warmAfter(warm: CoveredWarm): Promise<void> {
+    const run = (this.inFlight ?? Promise.resolve()).catch(() => {}).then(() => this.warm(warm))
+    return run
+  }
+
+  warm(warm: CoveredWarm): Promise<void> {
+    if (this.running || this.disposed) return this.inFlight ?? Promise.resolve()
+    const run = this.warmOnce(warm).finally(() => { if (this.inFlight === run) this.inFlight = null })
+    this.inFlight = run
+    return run
+  }
+
+  private async warmOnce(warm: CoveredWarm): Promise<void> {
     this.running = true
     const generation = this.generation
     const current = () => !this.disposed && generation === this.generation
