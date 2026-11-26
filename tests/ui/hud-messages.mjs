@@ -19,7 +19,7 @@ const overlaps = () => {
   const visible = el => { const s = getComputedStyle(el), b = box(el); return s.display !== 'none' && s.visibility !== 'hidden' && Number(s.opacity) > 0.05 && b.width > 2 && b.height > 2 && b.bottom > 0 && b.right > 0 && b.left < innerWidth && b.top < innerHeight }
   const mine = [...shell.querySelectorAll('.chat-strip, .spawn-help')].filter(visible)
   // Name labels follow vehicles round the screen; the strip steps back from them on its own (ChatCard.yield).
-  const others = [...shell.querySelectorAll('*')].filter(el => (getComputedStyle(el).position === 'fixed' || el.matches('.touch-controls button')) && visible(el) && !mine.some(m => m === el || m.contains(el) || el.contains(m)) && !el.closest('.vehicle-nameplates, .nameplate') && !(box(el).width >= innerWidth - 2 && box(el).height >= innerHeight - 2))
+  const others = [...shell.querySelectorAll('*')].filter(el => (getComputedStyle(el).position === 'fixed' || el.matches('.touch-controls button, .focus-hud .fh-read, .gear-selector :is(.gs-meter, .gs-status, .gs-release)')) && visible(el) && !mine.some(m => m === el || m.contains(el) || el.contains(m)) && !el.closest('.vehicle-nameplates, .nameplate') && !(box(el).width >= innerWidth - 2 && box(el).height >= innerHeight - 2))
   const hit = (a, b) => a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5
   const name = el => `${el.tagName.toLowerCase()}.${[...el.classList].slice(0, 2).join('.')}`
   const found = []
@@ -50,6 +50,9 @@ try {
     assert.match(await page.locator('.spawn-help [data-tip="jet.hover.liftoff"]').innerText(), /^E\s*hold: lift off and climb · Q\s*come down/, `${size}: the lift-off line names E and Q`)
     const strip = await page.locator('.chat-strip').boundingBox(), help = await page.locator('.spawn-help').boundingBox()
     assert.ok(strip.y < height / 3 && strip.x + strip.width > width - 40, `${size}: chat is in the upper right (${JSON.stringify(strip)})`)
+    const card = await page.locator('.chat-strip .chat-line').last().evaluate(el => { const r = el.getBoundingClientRect(), s = getComputedStyle(el); return { right: innerWidth - r.right, corners: [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius] } })
+    assert.equal(Math.round(card.right), 16, `${size}: the chat card stands 16 px in from the right edge`)
+    assert.equal(new Set(card.corners).size, 1, `${size}: the chat card is round on every corner (${card.corners})`)
     const map = await page.locator('.shell-minimap').boundingBox()
     assert.ok(help.x >= map.x + map.width, `${size}: the tips sit right of the minimap's box (${help.x} >= ${map.x + map.width})`)
     const clash = await page.evaluate(overlaps)
@@ -67,6 +70,8 @@ try {
     await page.keyboard.press('KeyH'); await page.waitForTimeout(300)
     const sheet = await page.evaluate(() => { const el = document.querySelector('.spawn-help'), s = getComputedStyle(el); return { full: el.classList.contains('is-full'), hidden: el.hidden, background: s.backgroundColor, shadow: s.textShadow } })
     assert.ok(sheet.full && !sheet.hidden, `${size}: H opens the full sheet`)
+    const reach = await page.evaluate(() => { const r = [...document.querySelectorAll('.focus-hud .fh-read.fh-left, .focus-hud .fh-read.fh-right')].map(e => e.getBoundingClientRect()).filter(b => b.height); return { top: document.querySelector('.spawn-help').getBoundingClientRect().top, mid: Math.max(...r.map(b => (b.top + b.bottom) / 2)) } })
+    assert.ok(reach.top >= reach.mid - 1, `${size}: the sheet stays below the readouts' centre line (${JSON.stringify(reach)})`)
     assert.notEqual(sheet.background, 'rgba(0, 0, 0, 0)', `${size}: the sheet has a backing (${sheet.background})`)
     assert.equal(sheet.shadow, 'none', `${size}: no shadow on the sheet's text`)
     await page.screenshot({ path: `${shots}/${size}-sheet.png` })
@@ -103,7 +108,18 @@ try {
     const first = await page.locator('.spawn-help [data-tip]').first().innerText()
     assert.match(first, /THR \+/, `${size}: the tips name the on-screen buttons (${first})`)
     const pill = await page.locator('.hud-navigation').boundingBox(), help = await page.locator('.spawn-help').boundingBox()
-    if (width < height) assert.ok(help.y + help.height <= pill.y - 4, `${size}: the tips sit above the PANELS pill (${JSON.stringify([help, pill])})`)
+    if (width < height) {
+      // Upright: tips in the sky band between the gear list and the readouts, chat below the readouts.
+      const bands = await page.evaluate(() => {
+        const box = el => el.getBoundingClientRect(), seen = el => { const r = box(el); return r.height > 0 && getComputedStyle(el).visibility !== 'hidden' }
+        const gear = [document.querySelector('.gear-selector'), ...document.querySelectorAll('.gear-selector :is(.gs-meter, .gs-status, .gs-release, .gs-drum)')].filter(e => e && seen(e))
+        const reads = [...document.querySelectorAll('.focus-hud .fh-read.fh-left, .focus-hud .fh-read.fh-right')].filter(seen)
+        return { gear: Math.max(...gear.map(e => box(e).bottom)), readTop: Math.min(...reads.map(e => box(e).top)), readBottom: Math.max(...reads.map(e => box(e).bottom)), tips: box(document.querySelector('.spawn-help')).toJSON(), chat: box(document.querySelector('.chat-strip')).toJSON() }
+      })
+      assert.ok(bands.tips.top >= bands.gear && bands.tips.bottom <= bands.readTop, `${size}: the tips sit between the gear list and the readouts ${JSON.stringify(bands)}`)
+      assert.ok(bands.chat.top >= bands.readBottom, `${size}: the chat sits below the readouts ${JSON.stringify(bands)}`)
+      assert.ok(help.y + help.height <= pill.y - 4, `${size}: the tips stay clear of the PANELS pill`)
+    }
     const clash = await page.evaluate(overlaps)
     await page.screenshot({ path: `${shots}/${size}-driving.png` })
     assert.deepEqual(clash.found, [], `${size}: chat and tips touch no other HUD element (${JSON.stringify(clash)})`)

@@ -342,12 +342,6 @@ export class Shell implements System {
     // neighbours, and the controls that apply right now. On touch it adds buttons for the
     // gear's extra actions (the Grapple's Let out and Let go).
     this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
-    // A phone held upright shows incoming chat in the band under the gear column (chat.css): its
-    // lower edge, which moves with the number of gears, is kept in --gear-bottom.
-    if (typeof ResizeObserver !== 'undefined') {
-      const gearEdge = new ResizeObserver(() => this.element.style.setProperty('--gear-bottom', `${Math.round(this.gearSelector.element.getBoundingClientRect().bottom)}px`))
-      gearEdge.observe(this.gearSelector.element); this.abort.signal.addEventListener('abort', () => gearEdge.disconnect(), { once: true })
-    }
     // Under the drum, the driven vehicle's accessories (Zorb, wings, jet mode...), each with its
     // key and its state (src/vehicles/accessories.ts). Part of the left column, hud-column.css.
     this.accessories = new AccessoryControls(this.element, game.input, () => this.audio.cue('click'), this.abort.signal)
@@ -2380,6 +2374,28 @@ export class Shell implements System {
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
     card.hidden = true; card.classList.remove('is-tips', 'is-fading', 'is-full', 'is-hint', 'is-quiet'); this.tipsShown = ''
   }
+  private bandsIn = 0
+  /**
+   * The free bands the tips, chat and full sheet fit between (help.css, chat.css), as CSS
+   * variables on the shell, four times a second: the lowest visible line of the gear list
+   * (a Grapple's cord status included), and the top, centre and bottom of the speed and
+   * altitude readouts (their THRUST line included). Only a change is written.
+   */
+  private measureBands(): void {
+    const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' ? r : null }
+    const gear = this.gearSelector.element, boxes = [gear, ...gear.querySelectorAll('.gs-meter, .gs-status, .gs-release, .gs-drum')].map(visible).filter((r): r is DOMRect => !!r)
+    const reads = [...this.element.querySelectorAll('.focus-hud .fh-read.fh-left, .focus-hud .fh-read.fh-right')].map(visible).filter((r): r is DOMRect => !!r)
+    const vars: Record<string, number | null> = {
+      '--gear-bottom': boxes.length ? Math.max(...boxes.map(r => r.bottom)) : null,
+      '--readouts-top': reads.length ? Math.min(...reads.map(r => r.top)) : null,
+      '--readouts-mid': reads.length ? Math.max(...reads.map(r => (r.top + r.bottom) / 2)) : null,
+      '--readouts-bottom': reads.length ? Math.max(...reads.map(r => r.bottom)) : null,
+    }
+    for (const [name, value] of Object.entries(vars)) {
+      const text = value === null ? '' : `${Math.round(value)}px`
+      if (this.element.style.getPropertyValue(name) !== text) { if (text) this.element.style.setProperty(name, text); else this.element.style.removeProperty(name) }
+    }
+  }
   /** The control tips (help/lessons.ts): what each vehicle's keys do, until the player has used them. */
   readonly tips = new Lessons()
   /** The lines last drawn, to touch the DOM only when they change. */
@@ -2391,6 +2407,7 @@ export class Shell implements System {
    */
   updateTips(dt: number, input: Omit<TipInput, 'touch' | 'tagAllowed'>): void {
     const touch = this.touch.available
+    this.bandsIn -= dt; if (this.bandsIn <= 0) { this.bandsIn = 0.25; this.measureBands() }
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
     const busy = !card.hidden && !card.classList.contains('is-tips')
     const on = controlTips.value && this.started && this.playing && !this.menuVisible && !busy
