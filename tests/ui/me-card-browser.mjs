@@ -1,4 +1,4 @@
-// The Me card in a real browser: linked and saved names, the vehicle picker by mouse and by
+// The Game card's Me section in a real browser: linked and saved names, the vehicle picker by mouse and by
 // keyboard, Randomize three times with frames across one change, and a second player seeing
 // the name and colours change. Run through tools/heavy.sh against a running dev server:
 //   tools/heavy.sh node tests/ui/me-card-browser.mjs http://127.0.0.1:5447 /tmp/me-card
@@ -18,10 +18,11 @@ const ready = async page => {
   await page.waitForFunction(() => window.mira?.game.tick > 60 && window.miraNet?.connected, null, { timeout: 180000 })
   await page.evaluate(() => window.mira.params.set('daydream.seconds', 0))
 }
-const meCard = '.wi-card[data-section="you"]'
+// The Me section now opens the Game card (sidebar consolidation, 25 November 2026).
+const meCard = '.wi-card[data-section="game"]'
 async function openMe(page) {
   await page.waitForFunction(() => window.mira.shell.playing && !window.mira.shell.transitioning, null, { timeout: 90000 })
-  await page.evaluate(() => window.mira.shell.showCard('you'))
+  await page.evaluate(() => window.mira.shell.showCard('game'))
   const card = page.locator(meCard)
   // The panels appear once the arrival has finished, which a loaded machine can stretch.
   await card.waitFor({ state: 'visible', timeout: 90000 })
