@@ -48,6 +48,8 @@ export interface System {
   prepareCoveredDraw?(): void
   /** Apply world render state after updates can attach actors or switch their materials. */
   prepareWorldDraw?(): void
+  /** Refresh inputs for a screenshot or paused repaint without exposing warm-up meshes. */
+  prepareWorldCapture?(): void
   /** Apply forces. Runs before every physics step. */
   fixedUpdate?(dt: number): void
   /** Read results. Runs after every physics step. */
@@ -382,7 +384,7 @@ export class Game {
       finally {
         this.renderer.setPixelRatio(before)
         // The resize cleared the canvas; the loop is stopped, so draw the paused view again.
-        try { runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)) } catch { /* The copy below draws too. */ }
+        try { this.drawWorldCapture(1) } catch { /* The copy below draws too. */ }
       }
     }
     return this.copyFrame(1)
@@ -397,10 +399,7 @@ export class Game {
     const copy = document.createElement('canvas'); copy.width = width; copy.height = height
     const context = copy.getContext('2d'); if (!context) return null
     let drawn = false
-    const draw = () => runGuarded(this.renderer as unknown as GuardedRenderer, () => {
-      for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
-      drawn = true
-    })
+    const draw = () => { drawn = this.drawWorldCapture(draws) }
     if (this.postChain?.withoutGlass) this.postChain.withoutGlass(draw)
     else draw()
     if (!drawn) return null
@@ -414,7 +413,17 @@ export class Game {
    * Physics and the simulation clock stay stopped. */
   redrawPaused(): void {
     if (!this.started || !this.paused || document.hidden) return
-    runGuarded(this.renderer as unknown as GuardedRenderer, () => drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16))
+    this.drawWorldCapture(1)
+  }
+
+  private drawWorldCapture(draws: number): boolean {
+    let drawn = false
+    runGuarded(this.renderer as unknown as GuardedRenderer, () => {
+      for (const system of this.systems) system.prepareWorldCapture?.()
+      for (let i = 0; i < draws; i++) drawFrame(this.renderer, this.scene, this.camera, this.postChain, 16)
+      drawn = true
+    })
+    return drawn
   }
 
   /** Frames the loop has run since start, drawn or not. Stands still while paused. */
@@ -467,9 +476,9 @@ export class Game {
     const updateStart = performance.now()
     for (const s of this.systems) s.update?.(frameDt, alpha)
     const renderStart = performance.now()
-    // Behind the opaque galaxy lobby nobody can see the world: draw it twice a second, enough
-    // to keep it warm for the descent, instead of every frame under a full-screen shader.
-    // The first frames always draw: loading ends, and shaders compile, on a real frame.
+    // Startup needs real world draws. Once ready, the opaque galaxy can run the
+    // simulation without linking newly arrived vehicles in an invisible world draw.
+    // Descent and explicit captures submit their own draws.
     longFrames.end('System updates', updateStart)
     const view = this.view()
     this.lossRecorder?.frame()
@@ -483,7 +492,7 @@ export class Game {
     if (held) this.presentHeldFrames++
     // ?frameCap=30 (flashSwitches.ts): in play, at most one drawn frame every 30 ms.
     const capped = flashSwitches.frameCap30 && view === 'playing' && now - this.lastDraw < 30
-    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
+    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading)
     if (draw) {
       // Before drawing: a size that changed without a usable resize event is applied here, and a
       // render scale the governor chose last frame (QualityController.deferPixelRatio).
