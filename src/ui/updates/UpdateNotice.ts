@@ -19,10 +19,12 @@ export class UpdateNotice {
   version: string | null = null
   /** `place` positions the banner; it runs whenever the banner appears. */
   constructor(private readonly whatsNew: () => void, signal: AbortSignal, private readonly place: () => void = () => {}) {
-    this.banner.className = 'build-banner update-banner'
+    // The house card face and buttons (glass.css .liquid-glass), not the build pill's outline (the
+    // owner, 26 November 2026: "Remove the border. Use normal card styling").
+    this.banner.className = 'build-banner update-banner liquid-glass'
     this.banner.setAttribute('role', 'status')
     this.banner.hidden = true
-    this.banner.innerHTML = '<span class="update-banner-text"><strong><span class="update-banner-label"></span><span class="update-banner-version"></span></strong><span class="update-banner-summary"></span></span><span class="update-banner-actions"><button type="button" class="panel-action update-reload">Reload</button><button type="button" class="panel-action update-whatsnew">What’s new</button><button type="button" class="panel-action update-dismiss" aria-label="Dismiss for now">×</button></span>'
+    this.banner.innerHTML = '<span class="update-banner-text"><strong><span class="update-banner-label"></span><span class="update-banner-version"></span></strong><span class="update-banner-summary"></span></span><span class="update-banner-actions"><button type="button" class="update-reload liquid-glass is-primary">Reload</button><button type="button" class="update-whatsnew liquid-glass">What’s new</button><button type="button" class="update-dismiss" aria-label="Dismiss for now">×</button></span>'
     this.banner.querySelector('.update-reload')!.addEventListener('click', () => location.reload(), { signal })
     this.banner.querySelector('.update-whatsnew')!.addEventListener('click', () => this.whatsNew(), { signal })
     this.banner.querySelector('.update-dismiss')!.addEventListener('click', () => this.dismiss(), { signal })

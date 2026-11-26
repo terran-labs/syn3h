@@ -3,8 +3,8 @@
 .mira-shell.exploration-ui .about-pane[hidden] { display: none; }
 
 .mira-shell.exploration-ui .about-updates .updates-status { color: var(--s3-dim); }
-.mira-shell.exploration-ui .about-updates :is(.updates-retry, .updates-reload) { min-height: 44px; margin: 4px 0; padding: 8px 20px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(205 205 205 / .06); color: var(--s3-accent-2); cursor: pointer; }
-.mira-shell.exploration-ui .about-updates .updates-pinned { padding: 12px 16px; border: 1px solid var(--s3-line); border-radius: 12px; background: rgb(205 205 205 / .05); }
+.mira-shell.exploration-ui .about-updates :is(.updates-retry, .updates-reload) { min-height: 44px; margin: 4px 0; padding: 8px 20px; color: var(--s3-accent-2); font: 500 14px/1.2 'Barlow', sans-serif; letter-spacing: .03em; cursor: pointer; }
+.mira-shell.exploration-ui .about-updates .updates-pinned { margin: 0 0 16px; }
 .mira-shell.exploration-ui .about-updates .updates-pinned a { color: var(--s3-accent-2); text-underline-offset: 4px; }
 /* Updates, one entry per Pacific day (days.ts), each opening to that day's releases, each of
    those opening to its bullets (and, when the feed carries them, its betas and changes). A thin
@@ -12,14 +12,20 @@
    player is on has a solid node. Every toggle is a real button with aria-expanded. */
 .mira-shell.exploration-ui :is(.updates-days, .update-releases) { list-style: none; margin: 0; padding: 0; }
 .mira-shell.exploration-ui .updates-days { position: relative; display: grid; gap: 12px; margin-top: 4px; }
-.mira-shell.exploration-ui .updates-days::before { content: ''; position: absolute; left: 7px; top: 28px; bottom: 28px; width: 1px; background: linear-gradient(180deg, var(--s3-line), var(--s3-line-quiet) 70%, transparent); }
-.mira-shell.exploration-ui .update-day { position: relative; padding-left: 30px; }
-.mira-shell.exploration-ui .update-day::before { content: ''; position: absolute; left: 3px; top: 25px; width: 7px; height: 7px; border: 1px solid var(--s3-line); border-radius: 50%; background: rgb(10 10 11 / .8); }
-.mira-shell.exploration-ui .update-day::after { content: ''; position: absolute; inset: 0 0 0 30px; border: 1px solid var(--s3-line-quiet); border-radius: 14px; pointer-events: none; }
-.mira-shell.exploration-ui .update-day:has(.update-day-toggle[aria-expanded="true"])::after { border-color: var(--s3-line); background: rgb(205 205 205 / .025); }
-.mira-shell.exploration-ui.exploration-ui .update-day-toggle { padding: 14px 16px; border-radius: 14px; }
+/* The rail: full strength beside every day shown, fading only below the last of them, over Show
+   more (the owner, 26 November 2026). --rail-solid is the last day's foot, measured (about.ts). */
+.mira-shell.exploration-ui .updates-days { --rail-x: 7px; --rail-top: 26px; }
+.mira-shell.exploration-ui .updates-days::before { content: ''; position: absolute; left: var(--rail-x); top: var(--rail-top); bottom: 0; width: 1px; pointer-events: none;
+  background: linear-gradient(180deg, var(--s3-line) 0, var(--s3-line) calc(var(--rail-solid, 100%) - var(--rail-top)), transparent calc(var(--rail-solid, 100%) - var(--rail-top) + 56px)); }
+.mira-shell.exploration-ui .update-day { position: relative; padding-left: 26px; }
+/* Each day's node is drawn on its date, centred on the date's capitals (the owner: "The date title
+   of each day's releases should align perfectly with the circles"). It keeps the date's own line
+   (its static top) and is offset from there in em, so it follows the date at any size. */
+.mira-shell.exploration-ui .update-day-date::before { content: ''; position: absolute; left: calc(var(--rail-x) - 4px); width: 9px; height: 9px; box-sizing: border-box; margin-top: calc(var(--cap-mid, .57em) - 4.5px); border-radius: 50%; background: rgb(10 10 11); box-shadow: inset 0 0 0 1px var(--s3-line); }
+
+.mira-shell.exploration-ui.exploration-ui .update-day-toggle { padding: 10px 12px; border-radius: 12px; }
 .mira-shell.exploration-ui .update-day .update-releases { padding: 0 4px 10px; }
-.mira-shell.exploration-ui .update-day.is-playing::before { left: 2px; top: 24px; width: 9px; height: 9px; border-color: var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: 0 0 10px rgb(255 255 255 / .45); }
+.mira-shell.exploration-ui .update-day.is-playing .update-day-date::before { background: var(--s3-accent-2); box-shadow: 0 0 10px rgb(255 255 255 / .45); }
 .mira-shell.exploration-ui .update-day-heading { margin: 0; font: inherit; }
 /* Doubled class: the game's own button:not(.liquid-glass) pill (exploration.css) must not reach these. */
 .mira-shell.exploration-ui.exploration-ui :is(.update-day-toggle, .update-release-toggle) { display: grid; gap: 4px; width: 100%; min-height: 44px; margin: 0; padding: 10px 12px; border: 0; border-radius: 12px; background: none; box-shadow: none; color: inherit; font: inherit; text-align: left; text-shadow: inherit; letter-spacing: normal; text-transform: none; cursor: pointer; }
@@ -42,8 +48,11 @@
 .mira-shell.exploration-ui .update-time { margin-left: auto; color: var(--s3-dim); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* The headline lines up under the version, past the arrow. */
 .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 28px; }
-.mira-shell.exploration-ui .update-betas { padding: 0 0 6px; border-left: 1px solid var(--s3-line-quiet); margin-left: 2px; }
-.mira-shell.exploration-ui .update-changes { padding-left: 22px; }
+.mira-shell.exploration-ui .update-betas { padding: 0 0 6px 12px; }
+/* Changes: plain text, one GitHub mark each at the right edge, the marks in one column. */
+.mira-shell.exploration-ui .update-notes .update-changes { list-style: none; padding-left: 0; }
+.mira-shell.exploration-ui .update-changes > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 12px; }
+.mira-shell.exploration-ui .update-change-title { padding: 2px 0; }
 /* A release's bullets sit under its headline, past the arrow. */
 .mira-shell.exploration-ui .update-release .update-notes { padding: 2px 12px 10px 40px; border: 0; }
 .mira-shell.exploration-ui .update-betas .update-notes { padding-left: 40px; }
@@ -62,15 +71,26 @@
 .mira-shell.exploration-ui .about-pane > .updates-github { display: flex; width: max-content; margin: -8px 0 4px auto; }
 .mira-shell.exploration-ui .update-badge { padding: 2px 8px; white-space: nowrap; border-radius: 999px; font: 500 11px/1.4 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; }
 .mira-shell.exploration-ui .update-badge.is-new { color: #0f0f0f; background: var(--s3-accent-2); }
-.mira-shell.exploration-ui .update-badge.is-running { color: var(--s3-accent-2); border: 1px solid var(--s3-line); }
+.mira-shell.exploration-ui .update-badge.is-running { color: #0f0f0f; background: rgb(244 244 244 / .78); }
 .mira-shell.exploration-ui .update-summary { color: var(--s3-ink); font-size: 15px; line-height: 1.5; }
-.mira-shell.exploration-ui .update-notes { padding: 0 16px 12px; border-top: 1px solid transparent; border-image: var(--rule) 1; overflow-wrap: anywhere; }
+.mira-shell.exploration-ui .update-notes { padding: 0 16px 12px; overflow-wrap: anywhere; }
 .mira-shell.exploration-ui .update-notes :is(h4, h5) { margin: 18px 0 8px; font: 500 12px/1.4 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-accent-2); }
 .mira-shell.exploration-ui .update-notes :is(p, li) { font-size: 15px; line-height: 1.6; color: var(--s3-dim); }
 .mira-shell.exploration-ui .update-notes p { margin: 0 0 10px; }
 .mira-shell.exploration-ui .update-notes :is(ul, ol) { margin: 0 0 10px; padding-left: 22px; }
 .mira-shell.exploration-ui .update-notes a { color: var(--s3-accent-2); text-underline-offset: 3px; }
-.mira-shell.exploration-ui .update-notes a.update-full { display: inline-flex; align-items: center; min-height: 44px; }
+/* A link to GitHub is GitHub's mark alone, in the text's ink, with an accessible name (about.ts). */
+.mira-shell.exploration-ui .github-link { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 8px; color: var(--s3-dim); }
+.mira-shell.exploration-ui .github-link:hover { color: var(--s3-accent-2); background: rgb(205 205 205 / .08); }
+.mira-shell.exploration-ui .github-link:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 0; }
+.mira-shell.exploration-ui .github-link .github-mark { width: 16px; height: 16px; fill: currentColor; }
+.mira-shell.exploration-ui .update-full-row { display: flex; justify-content: flex-end; margin: 0; }
+/* A finger gets 44 px. */
+@media (pointer: coarse) { .mira-shell.exploration-ui .github-link { width: 44px; height: 44px; } }
+/* Show more: the last entry, a house button, beside the rail's fading end. */
+.mira-shell.exploration-ui .updates-more { padding: 8px 0 8px 26px; }
+.mira-shell.exploration-ui .updates-more-button { min-height: 44px; padding: 0 22px; color: var(--glass-ink); font: 500 13.5px/1.2 'Barlow', sans-serif; letter-spacing: .06em; cursor: pointer; }
+.mira-shell.exploration-ui .updates-end { margin: 0; color: var(--s3-dim); font-size: 14px; }
 .mira-shell.exploration-ui .update-notes code { padding: 1px 5px; border-radius: 4px; background: rgb(205 205 205 / .08); font: 13px ui-monospace, monospace; color: var(--s3-ink); }
 .mira-shell.exploration-ui .update-notes strong { color: var(--s3-ink); font-weight: 500; }
 .mira-shell.exploration-ui .update-table { overflow-x: auto; margin: 0 0 10px; }
@@ -91,20 +111,26 @@
 .mira-shell.exploration-ui .update-banner-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgb(233 233 233 / .8); font-size: 13px; }
 .mira-shell.exploration-ui .update-banner-summary:empty { display: none; }
 .mira-shell.exploration-ui .update-banner-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
-.mira-shell.exploration-ui .update-banner-actions button { min-height: 44px; min-width: 44px; margin: 0; padding: 0 14px; border: 0; border-radius: 999px; background: none; box-shadow: none; color: #f3fbff; font: 500 13.5px/1.2 'Barlow', sans-serif; letter-spacing: .03em; white-space: nowrap; cursor: pointer; }
-.mira-shell.exploration-ui .update-banner-actions .update-reload { background: rgb(205 205 205 / .16); }
-.mira-shell.exploration-ui .update-banner-actions .update-whatsnew { color: var(--s3-accent-2); text-decoration: underline; text-underline-offset: 4px; }
-.mira-shell.exploration-ui .update-banner-actions .update-dismiss { padding: 0; font-size: 18px; color: rgb(233 233 233 / .75); }
-.mira-shell.exploration-ui .update-banner-actions button:hover { background: rgb(205 205 205 / .12); }
-.mira-shell.exploration-ui .update-banner-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: -2px; }
+/* The bar wears the house card (the lobby settings card's glass), not the build pill's white
+   outline (the owner, 26 November 2026: "Remove the border. Use normal card styling"). :where keeps
+   it under the glass materials' own rules (glass.css) while it outranks body .build-banner. */
+.mira-shell.exploration-ui .update-banner { --glass-radius: var(--halo-r, 16px); --glass-body: rgb(12 12 14 / .72); --glass-body-hover: rgb(12 12 14 / .72); --glass-frost: blur(20px) saturate(1.1) brightness(.92); }
+:where(body) .build-banner.update-banner.liquid-glass { border: 0; border-radius: var(--glass-radius); background: var(--glass-body); box-shadow: 0 1px 4px rgb(0 0 0 / .12); -webkit-backdrop-filter: var(--glass-frost); backdrop-filter: var(--glass-frost); }
+.mira-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { padding: 4px 4px 4px 20px; }
+.mira-shell.exploration-ui .update-banner-actions { gap: 6px; }
+.mira-shell.exploration-ui .update-banner-actions button { min-height: 40px; min-width: 40px; margin: 0; padding: 0 16px; font: 500 13.5px/1.2 'Barlow', sans-serif; letter-spacing: .03em; white-space: nowrap; cursor: pointer; }
+.mira-shell.exploration-ui .update-banner-actions .update-dismiss { padding: 0; border: 0; border-radius: 999px; background: none; box-shadow: none; font-size: 18px; color: rgb(233 233 233 / .75); }
+.mira-shell.exploration-ui .update-banner-actions .update-dismiss:hover { background: rgb(205 205 205 / .1); }
+.mira-shell.exploration-ui .update-banner-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 2px; }
 /* Narrow or short screens: version, Reload, What's new and close, no summary, one row. */
 @media (max-width: 900px), (max-height: 550px) {
   .mira-shell.exploration-ui .update-banner-summary { display: none; }
 }
 @media (max-width: 600px) {
   .mira-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { padding-left: 16px; gap: 4px; }
+  .mira-shell.exploration-ui .update-banner-actions { gap: 4px; }
   .mira-shell.exploration-ui .update-banner-label:has(+ .update-banner-version:not(:empty)) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  .mira-shell.exploration-ui .update-banner-actions button { padding: 0 10px; }
+  .mira-shell.exploration-ui .update-banner-actions button { padding: 0 12px; }
 }
 /* The dev server's own rebuild pill is replaced by the banner in the lobby. */
 body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { display: none; }
@@ -118,15 +144,12 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
 }
 
 /* .update-badge.is-beta: a beta inside a production release, quieter than New. */
-.mira-shell.exploration-ui .update-badge.is-beta { color: var(--s3-dim); border: 1px dashed var(--s3-line-quiet); }
+.mira-shell.exploration-ui .update-badge.is-beta { color: var(--s3-ink); background: rgb(205 205 205 / .14); }
 
 /* Phones: a narrower rail, so a 320 px screen keeps room for the version and its time. */
 @media (max-width: 600px) {
-  .mira-shell.exploration-ui .update-day { padding-left: 20px; }
-  .mira-shell.exploration-ui .update-day::after { left: 20px; }
-  .mira-shell.exploration-ui .updates-days::before { left: 5px; }
-  .mira-shell.exploration-ui .update-day::before { left: 1px; }
-  .mira-shell.exploration-ui .update-day.is-playing::before { left: 0; }
+  .mira-shell.exploration-ui .update-day, .mira-shell.exploration-ui .updates-more { padding-left: 18px; }
+  .mira-shell.exploration-ui .updates-days { --rail-x: 5px; }
   .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 22px; }
   .mira-shell.exploration-ui .update-release .update-notes { padding-left: 34px; }
   .mira-shell.exploration-ui .update-day-date { font-size: 24px; }
