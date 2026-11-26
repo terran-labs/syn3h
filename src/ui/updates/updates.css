@@ -84,7 +84,15 @@
 .mira-shell.exploration-ui .github-link:hover { color: var(--s3-accent-2); background: rgb(205 205 205 / .08); }
 .mira-shell.exploration-ui .github-link:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 0; }
 .mira-shell.exploration-ui .github-link .github-mark { width: 16px; height: 16px; fill: currentColor; }
-.mira-shell.exploration-ui .update-full-row { display: flex; justify-content: flex-end; margin: 0; }
+/* A release's mark on its header row, right of the time, its right edge on the changes' column
+   (12 px in, as the notes' padding); the row's line keeps clear of it. */
+.mira-shell.exploration-ui .update-release { position: relative; }
+.mira-shell.exploration-ui .update-release > .update-full { position: absolute; top: 4px; right: 12px; }
+.mira-shell.exploration-ui .update-release-toggle .update-release-line { padding-right: 36px; }
+@media (pointer: coarse) {
+  .mira-shell.exploration-ui .update-release > .update-full { top: -4px; }
+  .mira-shell.exploration-ui .update-release-toggle .update-release-line { padding-right: 52px; }
+}
 /* A finger gets 44 px. */
 @media (pointer: coarse) { .mira-shell.exploration-ui .github-link { width: 44px; height: 44px; } }
 /* Show more: the last entry, a house button, beside the rail's fading end. */

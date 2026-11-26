@@ -163,6 +163,13 @@ for (const mode of ['desktop', 'phone']) {
       assert.deepEqual(c.links[0], [true, 'View this change on GitHub', '_blank', 'noopener noreferrer', true])
     }
     if (!changes.length) console.log(`${mode}: the open release lists no changes, so the change rows were not checked`)
+    // The release's own mark stands on its header row (centred on the version's line within 2 px),
+    // its right edge on the changes' column, never alone under the list.
+    const mark = await first.evaluate(li => {
+      const box = el => el?.getBoundingClientRect(), m = box(li.querySelector(':scope > .update-full')), v = box(li.querySelector('.update-version')), c = box(li.querySelector('.update-change-link'))
+      return { dy: Math.abs((m.top + m.bottom) / 2 - (v.top + v.bottom) / 2), dx: c ? Math.abs(m.right - c.right) : 0, inNotes: !!li.querySelector('.update-notes .update-full') }
+    })
+    assert.ok(mark.dy <= 2 && mark.dx <= 1 && !mark.inNotes, `${mode}: the release's GitHub mark is on its header row, in the changes' column (${JSON.stringify(mark)})`)
     // Show more: the last entry; the older file is not fetched before it is pressed; pressing it
     // reveals older days down to the very first release, and the rail stays solid to the last day.
     assert.equal(olderRequests, 0, `${mode}: nothing older is fetched before Show more`)

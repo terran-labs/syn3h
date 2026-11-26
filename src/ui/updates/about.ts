@@ -118,12 +118,12 @@ function releaseRow(r: ReleaseEntry): HTMLLIElement {
       for (const b of r.betas) list.append(releaseRow(b))
       notes.append(list)
     }
-    const full = document.createElement('p'); full.className = 'update-full-row'
-    full.append(githubLink(r.href, `${r.beta ? 'Beta notes' : 'Release notes'} for v${r.release.version}, on GitHub`, 'update-full'))
-    notes.append(full)
     inner.append(notes)
   })
-  item.append(button, fold)
+  // The release's own GitHub mark stands on its header row, after the time and in the changes'
+  // column: a sibling of the toggle, since a link cannot sit inside a button.
+  const full = githubLink(r.href, `${r.beta ? 'Beta notes' : 'Release notes'} for v${r.release.version}, on GitHub`, 'update-full')
+  item.append(button, full, fold)
   return item
 }
 
