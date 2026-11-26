@@ -153,8 +153,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await (touch ? reset.tap() : reset.click())
     assert.equal(await page.evaluate(() => mira.params.get('paint.gloss').value), 0.42)
 
-    // ---- 5. "Reset M changes" restores its own section and nothing else. ----
-    const fold = page.locator('details.wi-group[data-group="Vehicle paint"]')
+    // ---- 5. "Reset M changes" restores its own section and nothing else. Vehicle paint shares
+    //      World > Vehicles > "Paint and looks" with Vehicle looks (the sidebar consolidation). ----
+    const fold = page.locator('details.wi-group[data-group="Paint and looks"]')
     await page.evaluate(() => { mira.params.set('paint.flakes', 1.2, 'local'); mira.params.set('paint.seams', 0.8, 'local'); mira.params.set('hud.mapNorthUp', true, 'local') })
     await page.waitForTimeout(100)
     assert.match(await fold.locator(':scope > summary > small').innerText(), /· 2 changed$/)
