@@ -35,7 +35,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, pickLobbyTarget, type GalaxyWorld } from './galaxy/Galaxy'
-import { CAPTION_INSET, avoidDrawn, captionClearance, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
+import { CAPTION_INSET, captionClearance, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -2105,7 +2105,7 @@ export class Shell implements System {
         const candidates = []
         const visible = new Set<string>()
         const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
-        const drawn = this.drawnReservations(now)
+        this.drawnReservations(now)
         // A planet that leapt (the clock set, a resize, the galaxy reframed) is a teleport, not an
         // orbit: its name goes straight to its new place, with no glide, hold or wait to return.
         const leapt = new Set<string>()
@@ -2135,7 +2135,7 @@ export class Shell implements System {
           candidates.push({ id: place.id, options, priority, moon: row.moon })
         }
         // A name keeps its side and lines while they still work (labels.ts preferPrevious).
-        const layout = captionLayout(avoidDrawn(preferPrevious(candidates, this.captionKeys), drawn))
+        const layout = captionLayout(preferPrevious(candidates, this.captionKeys))
         const dt = Math.min(0.1, Math.max(0, (now - this.captionClock) / 1000)); this.captionClock = now
         const canChoose = !chosen && !this.dropping && !this.overlay.inert && this.element.classList.contains('galaxy-open')
         for (const [id, chip] of chips) {

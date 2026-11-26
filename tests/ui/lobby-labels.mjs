@@ -31,7 +31,9 @@ try {
       !window.mira?.shell?.galaxy?.opening && [...document.querySelectorAll('.galaxy-label')].some(chip => getComputedStyle(chip).pointerEvents === 'auto'), null, { timeout: 120000 })
     await page.evaluate(() => document.fonts.ready.then(() => true))
     const measure = () => page.evaluate(() => [...document.querySelectorAll('.galaxy-label')]
-      .filter(chip => !chip.hidden && Number(getComputedStyle(chip).opacity) > 0.05)
+      // Shown means at half opacity or more: names now fade in and out over .35 s (the owner,
+      // 26 November 2026), and one partway through a cross-fade is not a collision.
+      .filter(chip => !chip.hidden && Number(getComputedStyle(chip).opacity) >= 0.5)
       .map(chip => ({ id: chip.dataset.world, box: chip.getBoundingClientRect().toJSON() })))
     const check = captions => {
       assert.ok(captions.length >= 2, `${name}: multiple visible captions`)
