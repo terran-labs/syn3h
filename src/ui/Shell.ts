@@ -390,7 +390,9 @@ export class Shell implements System {
     }, { after: 'game' })
     // Performance follows World; its controls remain part of the searchable card stack.
     if (game.quality) game.quality.manualChange = (level, apply) => {
-      if (!this.playing || this.transitioning) { apply(); return }
+      // First entry prepares the chosen preset during descent. An existing session
+      // can resume directly from Settings, so prepare a cold preset under its veil.
+      if (!this.started || this.transitioning) { apply(); return }
       if (!this.qualityVeil && game.manualQualityReady(level)) { apply(); return }
       this.queuedQuality = { level, apply }
       if (!this.qualityVeil) void this.applyQualityBehindVeil()
