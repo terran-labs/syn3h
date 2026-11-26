@@ -119,6 +119,10 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-
 }
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::before,
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::after { display: none; }
+/* Held, as a bare label: no fill to light, so its words and arrow dim while the finger is down
+   (.held from the touch listener in glassMaterial.ts, or :active), and come back when it lifts. */
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close { transition: opacity .08s ease-out; }
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close:is(:active, .held) { opacity: .55; }
 @media (max-width: 700px), (max-height: 500px) {
   /* The list as tall as its names, so what follows it (Close panels) sits right under the last. */
   /* Upright, the list as tall as its names, so Close panels sits right under the last; longer

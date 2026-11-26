@@ -60,12 +60,15 @@ try {
     // No permanent stick; the first-run hint is there, clear of the minimap and the buttons.
     let state = await stick()
     assert.equal(state.visible, false, 'no stick on screen before a drag')
-    // The hint steps aside while the shell's spawn card is up, then shows until the first drag.
+    // A new phone player is told how to steer: by the stick's own hint, or by the control tips
+    // card, which the hint steps aside for while it shows (touch-stick.css).
     const hint = page.locator('.touch-stick-hint')
-    await hint.waitFor({ state: 'visible', timeout: 20000 })
+    await page.waitForFunction(() => [...document.querySelectorAll('.touch-stick-hint, .spawn-help')].some((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true }) && /drag on the left to drive|left thumb: drive/i.test(e.innerText)), null, { timeout: 20000 })
     await page.waitForTimeout(400)
-    assert.match(await hint.innerText(), /Drag on the left to drive/)
-    const hintBox = await hint.boundingBox(), map = await page.locator('.shell-minimap').boundingBox()
+    const toldBy = await page.evaluate(() => [...document.querySelectorAll('.touch-stick-hint, .spawn-help')].filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).map((e) => e.className.split(' ')[0]))
+    // Whichever tells it is on screen, clear of the minimap and the buttons.
+    const told = page.locator(toldBy.includes('touch-stick-hint') ? '.touch-stick-hint' : '.spawn-help')
+    const hintBox = await told.boundingBox(), map = await page.locator('.shell-minimap').boundingBox()
     assert.ok(hintBox.x >= 0 && hintBox.y >= 0 && hintBox.x + hintBox.width <= width && hintBox.y + hintBox.height <= height, 'hint on screen')
     assert.ok(!overlaps(hintBox, map), `hint clears the minimap ${JSON.stringify([hintBox, map])}`)
     for (const button of await page.locator('.touch-actions button:visible').all()) assert.ok(!overlaps(hintBox, await button.boundingBox()), 'hint clears the touch buttons')
