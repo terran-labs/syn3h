@@ -58,10 +58,11 @@ describe('what is written, and what never is', () => {
   })
 
   // Bug: an IP address or anything but the two codes leaving request.cf.
-  it('takes only country and continent codes from request.cf', () => {
-    expect(geoOf({ country: 'NZ', continent: 'OC', clientTcpRtt: 12, asOrganization: 'ISP', city: 'Wellington' }, 'beta')).toEqual({ country: 'NZ', continent: 'OC', channel: 'beta' })
-    expect(geoFromHeader('NZ,OC,production')).toEqual({ country: 'NZ', continent: 'OC', channel: 'production' })
-    expect(geoFromHeader('1.2.3.4,xx,anything')).toEqual({ country: '', continent: '', channel: '' })
+  // Region and its code came with the players card (feat/player-info-and-eject); nothing finer, ever.
+  it('takes only country, continent and first-level region codes from request.cf', () => {
+    expect(geoOf({ country: 'NZ', continent: 'OC', clientTcpRtt: 12, asOrganization: 'ISP', city: 'Wellington' }, 'beta')).toEqual({ country: 'NZ', continent: 'OC', channel: 'beta', region: '', regionCode: '' })
+    expect(geoFromHeader('NZ,OC,production')).toEqual({ country: 'NZ', continent: 'OC', channel: 'production', region: '', regionCode: '' })
+    expect(geoFromHeader('1.2.3.4,xx,anything')).toEqual({ country: '', continent: '', channel: '', region: '', regionCode: '' })
     expect(channelOf('beta.mira.cc')).toBe('beta')
     expect(channelOf('syn3h-staging.example.workers.dev')).toBe('beta')
     expect(channelOf('mira.cc')).toBe('production')
@@ -310,7 +311,7 @@ describe('client posts and the Worker', () => {
     const req = new Request('https://beta.mira.cc/ws?room=lobby', { headers: { Upgrade: 'websocket', [GEO_HEADER]: 'US,NA,production' } })
     Object.defineProperty(req, 'cf', { value: { country: 'NZ', continent: 'OC' } })
     await worker.fetch(req, env as never)
-    expect(reached[0].headers.get(GEO_HEADER)).toBe('NZ,OC,beta')
+    expect(reached[0].headers.get(GEO_HEADER)).toBe('NZ,OC,beta,,')
   })
 
   // Bug: /e failing loudly, writing malformed posts, or affecting anything when analytics is off.

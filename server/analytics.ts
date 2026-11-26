@@ -174,20 +174,32 @@ export function cleanRef(v: unknown): string {
 }
 
 /** Where a connection came from: request.cf's codes, and the channel by the hostname asked. */
-export interface Geo { country: string; continent: string; channel: string }
-export const NO_GEO: Geo = { country: '', continent: '', channel: '' }
+/**
+ * Where a connection comes from, never finer than a first-level region (a US state): the roster
+ * shows "Texas, USA" (feat/player-info-and-eject), analytics counts country and continent. geoOf
+ * is the one allowlist: city, postal code, coordinates, timezone, ASN, IP and the rest of
+ * request.cf never get past it.
+ */
+export interface Geo { country: string; continent: string; channel: string; region: string; regionCode: string }
+export const NO_GEO: Geo = { country: '', continent: '', channel: '', region: '', regionCode: '' }
 /** The header in which the Worker passes a connection's Geo to a room object. Stripped from callers. */
 export const GEO_HEADER = 'x-mira-geo'
 
 /** request.cf's country (ISO 3166-1 alpha-2, or T1 for Tor, XX unknown) and continent codes only. */
 export function geoOf(cf: unknown, channel = ''): Geo {
-  const c = (cf ?? {}) as { country?: unknown; continent?: unknown }
-  return { country: word(c.country, /^[A-Z][A-Z0-9]$/), continent: word(c.continent, /^[A-Z]{2}$/), channel: word(channel, /^(beta|production)$/) }
+  const c = (cf ?? {}) as { country?: unknown; continent?: unknown; region?: unknown; regionCode?: unknown }
+  return {
+    country: word(c.country, /^[A-Z][A-Z0-9]$/), continent: word(c.continent, /^[A-Z]{2}$/), channel: word(channel, /^(beta|production)$/),
+    region: word(c.region, /^[\p{L}\p{M}][\p{L}\p{M} .'\u2019-]{0,39}$/u), regionCode: word(c.regionCode, /^[A-Z0-9]{1,3}$/),
+  }
 }
-export const geoHeader = (g: Geo): string => `${g.country},${g.continent},${g.channel}`
+// The region is percent-encoded: a header carries bytes, and region names are not always Latin-1.
+export const geoHeader = (g: Geo): string => `${g.country},${g.continent},${g.channel},${g.regionCode},${encodeURIComponent(g.region)}`
 export function geoFromHeader(v: string | null): Geo {
-  const [country = '', continent = '', channel = ''] = (v ?? '').split(',')
-  return geoOf({ country, continent }, channel)
+  const [country = '', continent = '', channel = '', regionCode = '', region = ''] = (v ?? '').split(',')
+  let name = ''
+  try { name = decodeURIComponent(region) } catch { /* a malformed header names no region */ }
+  return geoOf({ country, continent, regionCode, region: name }, channel)
 }
 
 // ---------------------------------------------------------------------------------------------

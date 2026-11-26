@@ -12,8 +12,12 @@ import {
   NO_GEO, roomKind, sessionKind, sessionPaused, sessionSnapshot, startSession,
 } from './analytics'
 import { recipeIdForLook } from '../shared/recipes'
+import { canModerate, type Moderator, type RoomKind } from '../shared/moderation'
+import { cleanDeviceLabel, cleanDeviceModel } from '../shared/device'
+import { BANISH_MS, BanishList, isBanishChoice, type Banish } from './banish'
 import { type ParamDef, params as registry, sanitize } from '../shared/params'
 import {
+  BOT_TRAITS, CLOSE_EJECTED, type BanishChoice, type BotTraits,
   type ClientMessage,
   type GameState,
   type ParamWireValue,
@@ -98,10 +102,15 @@ export interface RoomOptions {
   creatorKeySha256?: string
   /** Names only the creator may take, comma separated (CREATOR_RESERVED_NAMES); only while the hash is set. */
   reservedNames?: string
+  /** This world's banishes (server/banish.ts), kept apart from the snapshot, and where to save them. */
+  banishes?: unknown
+  onBanishes?: (list: Banish[]) => void
 }
 
 /** What a Durable Object stores to survive hibernation. */
 export interface RoomSnapshot {
+  /** Bots' personality overrides by bot id (onBotTraits). */
+  botTraits?: Record<number, BotTraits>
   params: Record<string, ParamWireValue>
   it: number
   scores: Record<number, number>
@@ -140,6 +149,10 @@ export interface RoomSnapshot {
 }
 
 interface Player {
+  /** The anonymous id the client sent (server/banish.ts identifies a banished person by it). */
+  aid?: string
+  /** The player's own choice to show their region and country (PlayerInfo.country, region). */
+  shareLocation?: boolean
   /** Explicit local driving state, independent of hidden-tab heartbeats. */
   raceDriving: boolean
   /** Launch analytics: this player's session (server/analytics.ts), or null for none. */
@@ -342,6 +355,12 @@ export class Room {
   private captureLoggedAt = -Infinity
   private capturesUnlogged = 0
   private readonly now: () => number
+  private readonly banished: BanishList
+  private readonly onBanishes?: (list: Banish[]) => void
+  /** Bots' personality overrides by bot id (shared/protocol.ts BOT_TRAITS), kept across host changes. */
+  private readonly botTraits = new Map<number, BotTraits>()
+  /** Why the host is leaving right now, for the host event (set only during an eject). */
+  private leaving: 'ejected' | null = null
   private readonly maxPlayers: number
   private readonly onPersist?: (s: RoomSnapshot) => void
   private readonly analytics?: RoomOptions['analytics']
@@ -388,6 +407,8 @@ export class Room {
     this.name = name
     this.tag = roomTag(name)
     this.now = opts.now ?? Date.now
+    this.banished = new BanishList(opts.banishes, this.now)
+    this.onBanishes = opts.onBanishes
     this.analytics = opts.analytics
     this.maxPlayers = opts.maxPlayers ?? MAX_ROOM_PLAYERS
     this.onPersist = opts.onPersist
@@ -523,6 +544,22 @@ export class Room {
         break
       case 'profile':
         this.onProfile(player, msg.kind, msg.colors, msg.name, msg.play)
+        if (typeof msg.shareLocation === 'boolean') this.onShareLocation(peer, player, msg.shareLocation)
+        break
+      case 'mute':
+        this.onMute(player, msg.id, msg.muted)
+        break
+      case 'eject':
+        this.onEject(peer, player, msg.id, msg.banish)
+        break
+      case 'bot-traits':
+        this.onBotTraits(player, msg.bot, msg.traits)
+        break
+      case 'banishes':
+        if (this.mayModerateHere(player)) this.sendTo(peer, { type: 'banishes', list: this.banished.list() })
+        break
+      case 'unbanish':
+        if (this.mayModerateHere(player) && this.banished.lift(msg.ref)) { this.saveBanishes(); this.sendTo(peer, { type: 'banishes', list: this.banished.list() }) }
         break
       case 'unhook': {
         // The grabbed player asks a cord's owner to let go. Only a cord the room last relayed as
@@ -559,6 +596,7 @@ export class Room {
         break
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
+        this.onBotBase(player, msg.id, msg.traits)
         break
       case 'bot-leave':
         this.onBotLeave(player, msg.bot)
@@ -755,7 +793,7 @@ export class Room {
     const wasIt = this.it === id
     if (wasIt) this.it = nextId
     if (wasIt && this.mode === MODE_TAG) this.setIt(nextId, 'leave')
-    if (hostLeft && next) this.broadcastGame('host', nextId)
+    if (hostLeft && next) this.broadcastGame('host', nextId, undefined, { from: id, reason: this.leaving ?? 'left' })
     else if (!wasIt || this.mode !== MODE_TAG) this.persist()
   }
 
@@ -766,7 +804,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2, tag: this.tag,
+      host: this.host, locked: this.locked, ...(this.botTraits.size ? { botTraits: Object.fromEntries(this.botTraits) } : {}), zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2, days: 2, tag: this.tag,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
       race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
@@ -846,6 +884,8 @@ export class Room {
   }
 
   restore(s: RoomSnapshot): void {
+    // Bots' trait overrides live in the room, so they outlast a host change and hibernation.
+    for (const [id, traits] of Object.entries(s.botTraits ?? {})) if (traits && typeof traits === 'object') this.botTraits.set(Number(id), traits)
     for (const id in s.params) {
       const v = this.validateParam(id, s.params[id])
       if (v !== null) this.values.set(id, v)
@@ -957,6 +997,14 @@ export class Room {
     // public address): that place is still "connected" but has gone quiet, and is taken over.
     const token = isToken(msg.resume) ? msg.resume : null
     const page = isToken(msg.page) ? msg.page : null
+    // A person banished from this world (server/banish.ts) is told so and turned away.
+    const aid = cleanFacts(msg).aid || undefined
+    const ban = this.banished.find(aid, token)
+    if (ban) {
+      this.sendTo(peer, { type: 'ejected', by: 0, banish: ban.choice ?? (ban.until === null ? 'permanent' : '24h'), seconds: ban.until === null ? null : Math.ceil((ban.until - this.now()) / 1000) })
+      peer.close(CLOSE_EJECTED, 'ejected')
+      return
+    }
     const held = this.rejoinOn() ? this.heldFor(token) ?? this.quietFor(token, page) : undefined
     // Proved afresh on every hello, a rejoin included: a held place does not pass the role on.
     const role = this.roleFor(msg.creator)
@@ -1039,12 +1087,18 @@ export class Room {
       colors: cleanColors(msg.colors) ?? [...DEFAULT_COLORS],
       // Only a deliberate no is carried: absent means the bots may play.
       ...(msg.play === false ? { play: false } : {}),
+      ...deviceOf(msg),
+      ...(msg.shareLocation !== false ? locationOf(this.geo.get(peer)) : {}),
     }
     const player = this.newPlayer(info)
+    player.aid = aid
+    player.shareLocation = msg.shareLocation !== false
     // Two connections must never share a secret (a duplicated tab copies it): the second is
     // an ordinary new player with none.
     player.token = token && ![...this.players.values()].some((p) => p.token === token) ? token : null
     player.page = player.token ? page : null
+    // Muted for everyone earlier in this room's life: a reload or a fresh tab does not lift it.
+    if (this.mutedKeys(player).some(k => this.roomMuted.has(k))) player.info.muted = true
     this.players.set(peer, player)
     this.scores[info.id] = 0
     this.beginSession(peer, player, msg)
@@ -1082,6 +1136,8 @@ export class Room {
       serverTime: this.now() / 1000,
       race: this.raceView(),
       botRams: true,
+      roomKind: this.kind(),
+      ...(this.botTraits.size ? { botTraits: Object.fromEntries(this.botTraits) } : {}),
     }
     const text = JSON.stringify(welcome)
     if (largeWelcome || text.length <= MAX_JSON_BYTES) peer.send(text)
@@ -1155,7 +1211,7 @@ export class Room {
     let bot = this.bots.get(state.id)
     if (!bot) {
       const n = state.id - BOT_ID_BASE
-      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: this.botKinds.get(state.id) ?? 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true })
+      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: this.botKinds.get(state.id) ?? 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true, ...this.effectiveTraits(state.id) })
       // Bots appear and vanish with a slider; they do not get a newcomer's grace period.
       bot.lastTag = -Infinity
       this.bots.set(state.id, bot)
@@ -1197,6 +1253,8 @@ export class Room {
     if (!bot) return
     this.removeBot(id, bot)
     this.botKinds.delete(id)
+    // A bot the host let go: whoever takes its place later starts with its own nature.
+    this.botTraits.delete(id); this.botBase.delete(id)
   }
 
   private expireBots(): void {
@@ -1241,13 +1299,15 @@ export class Room {
 
   private onChat(peer: Peer, player: Player, raw: unknown, botId: unknown): void {
     const now = this.now()
+    // Muted for everyone (onMute): nothing of theirs is relayed, and they are told why.
+    if (botId === undefined && player.info.muted) { this.sendTo(peer, { type: 'chat-refused', reason: 'muted' }); return }
     let speaker = player
     if (botId !== undefined) {
       // Only the host simulates bots, so only the host may speak for one, and only while
       // it is here and the room has bot chatter on. Refusals are silent: the host paces itself.
       if (player.info.id !== this.host || player.heldUntil || typeof botId !== 'number' || !isBotId(botId)) return
       const bot = this.bots.get(botId)
-      if (!bot || !this.paramBool(botChatter.def)) return
+      if (!bot || bot.info.muted || !this.paramBool(botChatter.def)) return
       const text = cleanChatText(raw)
       if (!text) return
       this.botChat ??= new ChatBucket(BOT_CHAT_BURST, BOT_CHAT_REFILL_S, now)
@@ -1864,8 +1924,125 @@ export class Room {
     this.broadcastGame(event, id, target)
   }
 
-  private broadcastGame(event: TagEvent | undefined, actor?: number, target?: number): void {
-    this.broadcast({ type: 'game', game: this.gameState(), event, actor, target })
+  // -------------------------------------------------------------------------------------
+  // Moderation: room mute, eject and banish, bot traits (shared/moderation.ts decides who)
+  // -------------------------------------------------------------------------------------
+
+  private kind(): RoomKind { return roomKind(this.name) }
+  private moderator(p: Player): Moderator {
+    return { id: p.info.id, host: p.info.id === this.host, ...(p.info.role === 'creator' ? { role: 'creator' as const } : {}), ...(p.info.bot ? { bot: true } : {}) }
+  }
+  /** May this player moderate anyone here (for the banish list): the rule against a plain stand-in. */
+  private mayModerateHere(p: Player): boolean {
+    return canModerate(this.moderator(p), { id: -1, host: false }, this.kind()).ok
+  }
+  /** A creator moderating a public world: one line, no names, so misuse of a leaked key shows. */
+  private noteCreator(action: 'mute' | 'eject' | 'bot-traits', actor: Player): void {
+    if (actor.info.role === 'creator' && this.kind() === 'public') logEvent('moderation', { room: this.tag, action, actorRole: 'creator', roomKind: 'public' })
+  }
+  private saveBanishes(): void { this.onBanishes?.(this.banished.save()) }
+
+  private onShareLocation(peer: Peer, player: Player, share: boolean): void {
+    if ((player.shareLocation !== false) === share) return
+    player.shareLocation = share
+    delete player.info.country; delete player.info.region
+    if (share) Object.assign(player.info, locationOf(this.geo.get(peer)))
+    this.broadcast({ type: 'profile', player: player.info })
+    this.persist()
+  }
+
+  /**
+   * Who is muted for everyone, by anonymous id and rejoin secret, so a reload (with or without a
+   * held place) or a fresh tab comes back muted. In memory for the room's life only, never
+   * stored: an emptied, hibernated or released room starts with nobody muted.
+   */
+  private readonly roomMuted = new Set<string>()
+  private mutedKeys(p: Player): string[] {
+    if (p.info.bot) return []
+    return [...(p.aid ? [`a:${p.aid}`] : []), ...(p.token ? [`t:${p.token}`] : [])]
+  }
+
+  private onMute(actor: Player, id: unknown, muted: unknown): void {
+    const target = typeof id === 'number' ? this.byId(id) ?? this.bots.get(id) : undefined
+    if (!target || typeof muted !== 'boolean' || !canModerate(this.moderator(actor), this.moderator(target), this.kind()).ok) return
+    if (Boolean(target.info.muted) === muted) return
+    if (muted) target.info.muted = true; else delete target.info.muted
+    for (const key of this.mutedKeys(target)) if (muted) this.roomMuted.add(key); else this.roomMuted.delete(key)
+    this.noteCreator('mute', actor)
+    this.broadcast({ type: 'profile', player: target.info })
+    this.broadcastGame('mute', actor.info.id, target.info.id, { muted })
+  }
+
+  private onEject(peer: Peer, actor: Player, id: unknown, banish: unknown): void {
+    const target = typeof id === 'number' ? this.byId(id) ?? this.bots.get(id) : undefined
+    if (!target || !canModerate(this.moderator(actor), this.moderator(target), this.kind()).ok) return
+    this.noteCreator('eject', actor)
+    if (target.info.bot) {
+      // A bot: gone from the room, one fewer asked for (so the host does not refill it), and the
+      // host's simulation drops that very bot when it sees the event (src/net/index.ts).
+      const botId = target.info.id
+      this.botTraits.delete(botId)
+      this.broadcastGame('eject', actor.info.id, botId)
+      const gone = this.bots.get(botId)
+      if (gone) { this.removeBot(botId, gone); this.botKinds.delete(botId) }
+      const count = this.values.get('bots.count')
+      if (typeof count === 'number' && count > 0) { this.storeParam('bots.count', count - 1); this.broadcast({ type: 'param', id: 'bots.count', value: count - 1, from: actor.info.id }) }
+      this.persist()
+      return
+    }
+    const choice = isBanishChoice(banish) ? banish : 'none'
+    const ms = BANISH_MS[choice]
+    if (ms > 0) {
+      const added = this.banished.add({ ...(target.aid ? { aid: target.aid } : {}), ...(target.token ? { token: target.token } : {}), name: target.info.name, until: ms === Infinity ? null : this.now() + ms, choice })
+      if (added === 'full') { this.sendTo(peer, { type: 'banish-refused', reason: 'full' }); return }
+      this.saveBanishes()
+    }
+    const targetPeer = this.peerOf(target)
+    this.broadcastGame('eject', actor.info.id, target.info.id)
+    if (targetPeer) this.sendTo(targetPeer, { type: 'ejected', by: actor.info.id, banish: choice, seconds: ms === Infinity ? null : Math.ceil(ms / 1000) })
+    // Gone now, with no seat held for a rejoin; its socket's close finds no place and does nothing.
+    this.leaving = 'ejected'
+    try { if (targetPeer) this.leave(targetPeer, target) } finally { this.leaving = null }
+    targetPeer?.close(CLOSE_EJECTED, 'ejected')
+  }
+
+  /** The host's own values for a bot's personality, as it announces the bot (each 0..1). */
+  private readonly botBase = new Map<number, BotTraits>()
+  private onBotBase(sender: Player, id: unknown, raw: unknown): void {
+    if (sender.info.id !== this.host || typeof id !== 'number' || !isBotId(id) || !raw || typeof raw !== 'object') return
+    this.botBase.set(id, cleanTraits(raw))
+    this.refreshBotTraits(id)
+  }
+  private effectiveTraits(id: number): { traits?: BotTraits; nature?: BotTraits } {
+    const nature = this.botBase.get(id), t = { ...nature, ...this.botTraits.get(id) }
+    return { ...(Object.keys(t).length ? { traits: t } : {}), ...(nature && Object.keys(nature).length ? { nature } : {}) }
+  }
+  /** Put a bot's effective traits on its roster entry, and tell everyone when they changed. */
+  private refreshBotTraits(id: number): void {
+    const bot = this.bots.get(id)
+    if (!bot) return
+    const { traits: next, nature } = this.effectiveTraits(id)
+    if (JSON.stringify([next, nature]) === JSON.stringify([bot.info.traits, bot.info.nature])) return
+    if (next) bot.info.traits = next; else delete bot.info.traits
+    if (nature) bot.info.nature = nature; else delete bot.info.nature
+    this.broadcast({ type: 'profile', player: bot.info })
+  }
+  private onBotTraits(actor: Player, botId: unknown, raw: unknown): void {
+    const bot = typeof botId === 'number' ? this.bots.get(botId) : undefined
+    if (!bot || !raw || typeof raw !== 'object' || !canModerate(this.moderator(actor), this.moderator(bot), this.kind()).ok) return
+    const traits: BotTraits = { ...this.botTraits.get(bot.info.id), ...cleanTraits(raw) }
+    // null drops that override: the trait goes back to the bot's nature.
+    for (const key of BOT_TRAITS) if ((raw as Record<string, unknown>)[key] === null) delete traits[key]
+    if (JSON.stringify(traits) === JSON.stringify(this.botTraits.get(bot.info.id) ?? {})) return
+    if (Object.keys(traits).length) this.botTraits.set(bot.info.id, traits); else this.botTraits.delete(bot.info.id)
+    this.noteCreator('bot-traits', actor)
+    this.broadcast({ type: 'bot-traits', bot: bot.info.id, traits })
+    this.refreshBotTraits(bot.info.id)
+    this.persist()
+  }
+
+  private broadcastGame(event: TagEvent | undefined, actor?: number, target?: number, extra: { from?: number; reason?: 'left' | 'away' | 'ejected'; muted?: boolean } = {}): void {
+    this.broadcast({ type: 'game', game: this.gameState(), event, actor, target, ...extra })
     this.persist()
   }
 
@@ -2019,9 +2196,10 @@ export class Room {
     this.hostPausedSince = 0
     // As on leave: a race needs its host's simulation, and the bots belong to the old host.
     this.cancelRace('Host away')
+    const from = host.info.id
     this.host = next.info.id
     this.clearBots()
-    this.broadcastGame('host', next.info.id)
+    this.broadcastGame('host', next.info.id, undefined, { from, reason: 'away' })
   }
 
   /** In tag, pass "it" on from a holder who has been away too long; see IT_ABSENT_MS. */
@@ -2360,4 +2538,25 @@ function isShot(s: unknown): s is ShotInfo {
 function commonOfHello(hello: object, geo: Geo): Common {
   const f = cleanFacts(hello)
   return { channel: geo.channel, build: f.build, recipe: '', roomKind: '', device: f.device, backend: f.backend, country: geo.country, continent: geo.continent, aid: f.aid }
+}
+
+/** The device a client says it is on: one of the fixed words and, where given, a strict model (shared/device.ts). */
+function deviceOf(msg: { deviceLabel?: unknown; deviceModel?: unknown }): Pick<PlayerInfo, 'deviceLabel' | 'deviceModel'> {
+  const label = cleanDeviceLabel(msg.deviceLabel), model = label ? cleanDeviceModel(msg.deviceModel) : undefined
+  return { ...(label ? { deviceLabel: label } : {}), ...(model ? { deviceModel: model } : {}) }
+}
+/** Region and country for the roster, never finer (server/analytics.ts geoOf already allowlisted them). */
+export function locationOf(geo: Geo | undefined): Pick<PlayerInfo, 'country' | 'region'> {
+  if (!geo?.country) return {}
+  return { country: geo.country, ...(geo.region ? { region: geo.region } : {}) }
+}
+
+/** Known traits only, each a finite number clamped to 0..1. */
+function cleanTraits(raw: object): BotTraits {
+  const out: BotTraits = {}
+  for (const key of BOT_TRAITS) {
+    const v = (raw as Record<string, unknown>)[key]
+    if (typeof v === 'number' && Number.isFinite(v)) out[key] = Math.min(1, Math.max(0, v))
+  }
+  return out
 }
