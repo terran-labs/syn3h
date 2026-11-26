@@ -225,8 +225,6 @@ export class Materialize implements System {
    * otherwise built its arrival ghosts (the tail lights' and the fans' among them) in play.
    */
   warmClimbLooks(warm: CoveredWarm): Promise<void> {
-    // TEMPORARY measurement flag, removed after the veil comparison: ?noArrivalClimbWarm skips this.
-    if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('noArrivalClimbWarm')) return Promise.resolve()
     this.drawReliefEffects(arrivalLevel(), () => warm.draw())
     return Promise.resolve()
   }
