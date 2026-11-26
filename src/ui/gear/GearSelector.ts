@@ -594,7 +594,8 @@ export class GearSelector {
       keys.className = 'gs-keys'
       h.keys.forEach((k, i) => {
         if (i) { const or = document.createElement('span'); or.className = 'gs-or'; or.textContent = '/'; keys.append(or) }
-        keys.append(...shortcut(k))
+        // A double tap of the tag control is a double-click on a desktop, where these hints show.
+        keys.append(...shortcut(/^double tap$/i.test(k) ? 'double-click' : k))
       })
       const label = document.createElement('span')
       label.className = 'gs-act'
