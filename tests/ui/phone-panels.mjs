@@ -17,6 +17,16 @@ import assert from 'node:assert/strict'
 const base = process.env.MIRA_URL ?? 'http://127.0.0.1:5213/'
 const overlaps = (a, b) => !!a && !!b && a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
 const browser = await webkit.launch()
+/**
+ * The column has finished arriving: no animation running on the stack or inside it, and its own
+ * transform back to none (it grows in from 94% scale). A fixed wait measured it mid-scale under
+ * load (scale 0.944 logged on train/beta5); this waits on the state instead, as bottom-stack's steady does.
+ */
+const arrived = page => page.waitForFunction(() => {
+  const stack = document.querySelector('.world-inspector')
+  return !!stack && !stack.getAnimations({ subtree: true }).some(a => a.playState === 'running') && getComputedStyle(stack).transform === 'none'
+}, null, { polling: 'raf', timeout: 30000 })
+
 try {
   const ipad = (width, height) => ({ viewport: { width, height }, screen: { width, height }, deviceScaleFactor: 2, isMobile: true, hasTouch: true })
   for (const [name, options, phone] of [['portrait', devices['iPhone 14'], true], ['landscape', devices['iPhone 14 landscape'], true], ['ipad-portrait', ipad(744, 1133), false], ['ipad-landscape', ipad(1133, 744), false]]) {
@@ -47,7 +57,7 @@ try {
     await panels.waitFor({ state: 'visible' })
     assert.equal(await page.locator('.world-inspector .wi-card.is-open').count(), 0, `${name}: Show panels opens the list`)
     assert.equal(await show.evaluate(el => getComputedStyle(el).writingMode), 'horizontal-tb', `${name}: no rotated edge tab`)
-    await page.waitForTimeout(300)
+    await arrived(page)
     const shape = await page.evaluate(() => {
       const stack = document.querySelector('.world-inspector'), box = stack.getBoundingClientRect()
       const radius = el => parseFloat(getComputedStyle(el).borderTopLeftRadius)
@@ -84,7 +94,7 @@ try {
       await x.tap()
       await panels.waitFor({ state: 'hidden' })
       assert.ok(await show.isVisible(), `${name}: the panel's X returns to driving with Show panels back`)
-      await show.tap(); await panels.waitFor({ state: 'visible' }); await page.waitForTimeout(300)
+      await show.tap(); await panels.waitFor({ state: 'visible' }); await arrived(page)
       await head.tap(); await page.waitForTimeout(400)
     } else assert.ok(await page.locator('.panels-close').isVisible(), `${name}: Close panels shows with a panel open`)
     await head.tap(); await page.waitForTimeout(400)
