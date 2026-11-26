@@ -131,3 +131,76 @@ for (const mode of ['desktop', 'phone']) {
     console.log(`${mode}: sidebar ok`)
   } finally { await browser.close() }
 }
+
+// A wide sidebar never covers the rest of the play HUD (the Foreman, 25 November 2026: at 552 px
+// it covered the new-build notice, the world name and the altitude readout). At its widest, with
+// the new-build notice and the running-slow offer showing (made the way the game makes them, as in
+// bottom-stack.mjs), the column's box meets none of: the bottom stack, the world name, the speed
+// and altitude readouts, the gear column, the minimap.
+for (const [width, height] of [[1280, 800], [1440, 900], [1700, 1100]]) {
+  const tag = `${width}x${height}`
+  const browser = await chromium.launch({ channel: 'chrome', headless: true })
+  try {
+    const page = await browser.newPage({ viewport: { width, height } })
+    const errors = []; page.on('pageerror', e => errors.push(e.message))
+    await page.addInitScript(() => { try { localStorage.setItem('mira.sidebar.width', '10000') } catch { /* storage optional */ } })
+    await page.goto(`${process.env.MIRA_URL}?autoplay=1&room=sidebar-wide-${tag}-${Date.now()}`)
+    await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
+    await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
+    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+    const rail = page.locator('.world-inspector'); await rail.waitFor({ state: 'visible' }); await settled(page)
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('mira:new-build')))
+    await page.evaluate(() => {
+      const quality = window.mira.game.quality, history = quality.history, level = quality.governor.level
+      const offer = Object.freeze({ level, targetLevel: Math.max(0, level - 1), observedFps: 24, bots: 4, fewerBots: false })
+      const sample = history.sample.bind(history)
+      history.sample = (...args) => { const changed = sample(...args); history.recommendation = offer; return changed }
+      history.recommendation = offer
+      quality.publishPerformance()
+    })
+    await page.waitForFunction(() => ['#mira-build-notice', '.bottom-stack > .performance-recommendation'].every(s => { const el = document.querySelector(s); return el && !el.hidden && Number(getComputedStyle(el).opacity) === 1 }), null, { timeout: 30000 })
+    // The widest the handle allows now that everything is showing (End on the handle).
+    await page.locator('.rail-resize').focus(); await page.keyboard.press('End'); await page.waitForTimeout(300)
+    const found = await page.evaluate(() => {
+      const box = el => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+      // Painted, counting its ancestors: the instruments' readouts keep their own opacity while their display fades.
+      const shown = el => el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+      const others = [...document.querySelectorAll('.bottom-stack > *, .focus-hud .fh-top, .focus-hud .fh-left, .focus-hud .fh-right, .gear-selector, .shell-minimap')].filter(shown).map(el => ({ name: el.id || el.className.split(' ').slice(0, 2).join('.'), ...box(el) }))
+      return { rail: box(document.querySelector('.world-inspector')), width: Math.round(document.querySelector('.world-inspector').getBoundingClientRect().width), others }
+    })
+    const meets = (a, b) => a.right > b.left + 0.5 && a.left < b.right - 0.5 && a.bottom > b.top + 0.5 && a.top < b.bottom - 0.5
+    for (const other of found.others) assert.ok(!meets(found.rail, other), `${tag}: the sidebar at its widest (${found.width}px) covers ${other.name} ${JSON.stringify([found.rail, other])}`)
+    assert.ok(found.others.some(o => o.name === 'mira-build-notice'), `${tag}: the notice was measured (${found.others.map(o => o.name)})`)
+    // Beside the column the instruments are gone (they show only with the cursor captured).
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.focus-hud')).opacity), '0', `${tag}: no instruments beside the sidebar`)
+    // Incoming chat in the driving view (the cursor captured, the sidebar gone): the notification
+    // cards at the upper right meet neither the world name nor the sidebar, at the width the
+    // player chose (ui/hud-messages-and-help moved them there, 25 November 2026).
+    await page.evaluate(() => window.miraNet.chat.receive({ type: 'chat', from: 4242, text: 'race you to the volcano, then back round the long way' }))
+    await page.evaluate(() => window.mira.params.set('hud.mode', 1))
+    await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus') && [...document.querySelectorAll('.chat-strip .chat-line')].some(l => l.checkVisibility({ opacityProperty: true })), null, { timeout: 15000 })
+    await page.waitForTimeout(800)
+    const driving = await page.evaluate(() => {
+      const box = el => { const r = el.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom } }
+      const seen = el => el.checkVisibility({ opacityProperty: true, visibilityProperty: true })
+      const rail = document.querySelector('.world-inspector'), name = document.querySelector('.focus-hud .fh-top')
+      return { lines: [...document.querySelectorAll('.chat-strip .chat-line')].filter(seen).map(box), rail: seen(rail) ? box(rail) : null, name: name && seen(name) ? box(name) : null }
+    })
+    assert.ok(driving.lines.length > 0, `${tag}: a chat card shows in the driving view`)
+    for (const line of driving.lines) {
+      if (driving.rail) assert.ok(!meets(line, driving.rail), `${tag}: a chat card meets the sidebar ${JSON.stringify([line, driving.rail])}`)
+      if (driving.name) assert.ok(!meets(line, driving.name), `${tag}: a chat card meets the world name ${JSON.stringify([line, driving.name])}`)
+    }
+    await page.evaluate(() => window.mira.params.set('hud.mode', 0))
+    await page.waitForFunction(() => !document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 15000 })
+    await settled(page)
+    // At its narrowest, with the running-slow offer making Performance's value its longest, no
+    // card header's value is cut short.
+    await page.locator('.rail-resize').focus(); await page.keyboard.press('Home'); await page.waitForTimeout(300)
+    const cut = await page.evaluate(() => [...document.querySelectorAll('.wi-cards > .wi-card .wi-sum')].filter(s => s.scrollWidth > s.clientWidth + 1).map(s => `${s.closest('.wi-card').dataset.section}: ${s.textContent}`))
+    assert.deepEqual(cut, [], `${tag}: at its narrowest every card header's value reads whole`)
+    assert.deepEqual(errors, [], `${tag}: no page errors`)
+    console.log(`${tag}: widest sidebar ${found.width}px clear of the play HUD; narrowest reads whole`)
+  } finally { await browser.close() }
+}
