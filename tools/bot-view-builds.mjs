@@ -15,8 +15,8 @@ import { writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
 import { serveStable } from './serve-stable.mjs'
 
-const args = process.argv.slice(2).filter(a => !a.startsWith('--')), close = process.argv.includes('--close'), webgl = process.argv.includes('--webgl')
-const dir = args[0] ?? '.', label = (args[1] ?? 'build') + (close ? '-close' : '') + (webgl ? '-webgl' : '')
+const args = process.argv.slice(2).filter(a => !a.startsWith('--')), close = process.argv.includes('--close'), webgl = process.argv.includes('--webgl'), noArrival = process.argv.includes('--no-arrival')
+const dir = args[0] ?? '.', label = (args[1] ?? 'build') + (close ? '-close' : '') + (webgl ? '-webgl' : '') + (noArrival ? '-noarrival' : '')
 const app = await serveStable({ dir, port: 0 })
 const browser = await chromium.launch({ channel: 'chrome', args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const LEVELS = [[3, 6, 66], [4, 8, 85], [5, 16, 105]]
@@ -24,7 +24,10 @@ const out = { label, dir, levels: [], errors: [] }
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1 })
   page.on('pageerror', e => out.errors.push(e.message))
-  await page.goto(`http://127.0.0.1:${app.server.address().port}/?planet=alpine&seed=4&autoplay=1&vehicle=buggy&daydream=0&room=bvb${Date.now().toString(36)}${webgl ? '&webgl=1' : ''}`)
+  // Whether a climb's preparation ran past prepareManualQuality's deadline (it logs this, then applies anyway).
+  const deadlines = []
+  page.on('console', m => { if (m.text().includes('Manual graphics preparation')) deadlines.push(m.text()) })
+  await page.goto(`http://127.0.0.1:${app.server.address().port}/?planet=alpine&seed=4&autoplay=1&vehicle=buggy&daydream=0&room=bvb${Date.now().toString(36)}${webgl ? '&webgl=1' : ''}${noArrival ? '&noArrivalClimbWarm=1' : ''}`)
   await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.shell.transitioning && window.syn3hNet?.isHost, null, { timeout: 90000 })
   out.build = await page.evaluate(() => fetch('/build.json').then(r => r.ok ? r.json() : null).catch(() => null))
   await page.evaluate(() => {
@@ -49,7 +52,7 @@ try {
   })
   for (const [level, n, range] of LEVELS) {
     // How long the climb takes and keeps its veil up, from the request to the veil gone.
-    const climbStart = Date.now()
+    const climbStart = Date.now(), climbLoad = (await import('node:os')).loadavg()[0], deadlinesBefore = deadlines.length
     await page.evaluate(level => window.syn3h.game.quality.setLevel(level), level)
     await page.waitForFunction(level => window.syn3h.game.quality.governor.level === level && !document.querySelector('.quality-change-veil'), level, { timeout: 90000 })
     const climbMs = Date.now() - climbStart
@@ -97,7 +100,7 @@ try {
       })
       return { kinds: [...warm.reserve.keys()], meshes, geometryMB: +(bytes / 1048576).toFixed(2) }
     })
-    out.levels.push({ level, bots: n, range, kinds, total: builds.length, grouped, climbMs, reserve })
+    out.levels.push({ level, bots: n, range, kinds, total: builds.length, grouped, climbMs, climbLoad: +climbLoad.toFixed(1), deadline: deadlines.slice(deadlinesBefore), reserve })
     console.log(`${label} level ${level}: ${builds.length} pipelines built bringing ${n} bots (${[...new Set(kinds)].join(', ')}) into view to ${range} m; climb ${climbMs} ms`)
   }
 } catch (e) { out.errors.push(String(e)) } finally {
