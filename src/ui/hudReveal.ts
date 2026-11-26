@@ -28,8 +28,12 @@ export const HUD_REVEAL_LAST = 6
 export const HUD_REVEAL_ATTRIBUTE = 'data-hud-reveal'
 /** On a group that opened or closed while the reveal ran: it appears at once (hud-reveal.css). */
 export const HUD_REVEAL_SKIP = 'data-reveal-skip'
-/** Every group the reveal moves (hud-reveal.css), to notice one opening or closing mid-reveal. */
-const GROUPS = '.fh-top, .gear-selector, .hud-accessories, .hud-chat, .world-inspector, .hud-navigation, .shell-minimap, .chat-strip, .focus-hud .fh-left, .focus-hud .fh-right, .spawn-help, .touch-controls, .gear-actions'
+/**
+ * What the player can open while the reveal runs: the panels. Opened (or closed) mid-reveal, they
+ * appear at once instead of riding the arrival. Only these: the readouts, the minimap and the rest
+ * come into being a frame or two after play begins, and they are what the reveal is for.
+ */
+const OPENABLE = '.world-inspector'
 const shown = (e: Element): boolean => getComputedStyle(e).display !== 'none'
 
 /** The whole reveal's length in milliseconds at the current settings. */
@@ -47,9 +51,9 @@ export function startHudReveal(root: HTMLElement): void {
   root.style.setProperty('--reveal-ms', `${hudRevealMs.value}ms`)
   root.style.setProperty('--reveal-step', `${hudRevealStep.value}ms`)
   root.setAttribute(HUD_REVEAL_ATTRIBUTE, '')
-  // What shows as the reveal starts. A group that opens or closes after that (a panel the player
-  // opens) is not part of the arrival: it appears at once, with its own motion, if any.
-  const groups = [...root.querySelectorAll(GROUPS)]
+  // Whether the panels show as the reveal starts. Opened or closed after that by the player, they
+  // are not part of the arrival: they appear at once, with their own motion, if any.
+  const groups = [...root.querySelectorAll(OPENABLE)]
   const start = new Map(groups.map(e => [e, shown(e)]))
   const watch = new MutationObserver(() => {
     if (!root.classList.contains('is-playing')) { end(); return }

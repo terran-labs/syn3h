@@ -15,7 +15,7 @@
      5  the speed and height readouts: fade only
      6  the help line: fade only
    The bottom stack (the full-room notice, "Preparing world") is never held back. A group
-   that opens or closes while the reveal runs (a panel the player opens) is marked
+   the player opens or closes while the reveal runs (the panels) is marked
    data-reveal-skip by hudReveal.ts and appears at once. */
 .mira-shell[data-hud-reveal] {
   --reveal-ease: cubic-bezier(.16, 1, .3, 1);
