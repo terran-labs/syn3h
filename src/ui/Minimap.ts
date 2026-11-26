@@ -238,6 +238,8 @@ interface Slot {
 const newSlot = (): Slot => ({ x: 0, z: 0, heading: 0, kind: 'person', it: false, self: false, color: '', shades: [], accent: '', place: { x: 0, y: 0, distance: 0, bearing: 0, blend: 0 }, look: { radius: 0, alpha: 0 }, priority: 0, shown: false, fade: 1, crowd: false, life: 1 })
 
 const IT = '#9dff8a', HAIRLINE = 'rgba(4, 10, 18, .55)'
+/** The marks' tight shadow's opacity (Minimap.shadow), and the rim tick's dark edge's, of HAIRLINE. */
+const MARK_SHADOW = .3, RIM_EDGE = .8
 /** Mix steps from the paint toward black (negative) or white (positive): the facet shades. */
 const SHADE_STEPS = [-.42, -.28, -.14, 0, .14, .28, .42]
 const shadeCache = new Map<string, readonly string[]>()
@@ -583,7 +585,12 @@ export class Minimap {
     paint(canvas.getContext('2d')!, canvas.width / 2)
     return canvas
   }
-  /** A soft, tight shadow of a form: the silhouette spread three times at falling opacity. */
+  /**
+   * A tight shadow of a form: the silhouette itself, faint, drawn a device pixel or so below the
+   * mark. It does not spread (the owner, 25 November 2026: "I don't think you need a shadow
+   * here. At the very least, you should tune it down a lot."); it was the silhouette grown three
+   * times, which read as a dark smudge around the arrow.
+   */
   private shadow(form: 0 | 1 | 2, length: number): HTMLCanvasElement {
     const devicePx = length / this.px, key = form * 100000 + Math.round(devicePx * 4)
     let canvas = this.shadows.get(key)
@@ -591,12 +598,10 @@ export class Minimap {
       const outline = [FORMS.dart, FORMS.kite, FORMS.bot][form].outline
       canvas = this.sprite(devicePx * 2.6 + 6, (c, half) => {
         c.translate(half, half); c.fillStyle = '#02070d'
-        for (const [grow, alpha] of [[1.28, .1], [1.14, .2], [1, .38]]) {
-          c.globalAlpha = alpha; c.beginPath()
-          c.moveTo(outline[0] * devicePx * grow, outline[1] * devicePx * grow)
-          for (let i = 2; i < outline.length; i += 2) c.lineTo(outline[i] * devicePx * grow, outline[i + 1] * devicePx * grow)
-          c.closePath(); c.fill()
-        }
+        c.globalAlpha = MARK_SHADOW; c.beginPath()
+        c.moveTo(outline[0] * devicePx, outline[1] * devicePx)
+        for (let i = 2; i < outline.length; i += 2) c.lineTo(outline[i] * devicePx, outline[i + 1] * devicePx)
+        c.closePath(); c.fill()
       })
       this.shadows.set(key, canvas)
     }
@@ -616,16 +621,14 @@ export class Minimap {
     return canvas
   }
   /**
-   * A rim glyph's aura in one sprite: a faint dark under-halo (legibility over bright sky and
-   * ice) with the colour's glow on it, so a glyph costs one image draw for both.
+   * A rim glyph's aura: the colour's own soft glow. It had a dark under-halo as well, which the
+   * owner read as a dramatic shadow under the arrow (25 November 2026); the glyph's legibility
+   * over bright sky and ice now comes from a thin dark edge on the tick (rimGlyph) instead.
    */
   private aura(colour: string): HTMLCanvasElement {
     let canvas = this.auras.get(colour)
     if (!canvas) {
       canvas = this.sprite(64, (c, half) => {
-        const dark = c.createRadialGradient(half, half, 0, half, half, half)
-        dark.addColorStop(0, 'rgba(2, 7, 13, .72)'); dark.addColorStop(.55, 'rgba(2, 7, 13, .3)'); dark.addColorStop(1, 'rgba(2, 7, 13, 0)')
-        c.fillStyle = dark; c.fillRect(0, 0, half * 2, half * 2)
         const g = c.createRadialGradient(half, half, 0, half, half, half * .75)
         g.addColorStop(0, colour + 'b3'); g.addColorStop(.4, colour + '4d'); g.addColorStop(1, colour + '00')
         c.fillStyle = g; c.fillRect(0, 0, half * 2, half * 2)
@@ -673,7 +676,7 @@ export class Minimap {
   /**
    * A vehicle beyond the rim: a luminous tick on the ring pointing out toward it, with a
    * bright core, a soft glow and a trailing arc along the ring whose length and brightness
-   * say how near it is. A faint dark under-halo keeps it legible over bright sky and ice.
+   * say how near it is. A thin dark edge on the tick keeps it legible over bright sky and ice.
    */
   private rimGlyph(ctx: CanvasRenderingContext2D, s: Slot, alpha: number, m: number): void {
     const person = s.kind === 'person', fade = Math.min(1, s.look.alpha * 1.6)
@@ -681,7 +684,7 @@ export class Minimap {
     const base = Math.hypot(s.place.x, s.place.y), width = s.look.radius * .8
     const length = (person ? 15 : s.crowd ? 7 : 11) * m * (.5 + .5 * fade), tipX = dx * (base + length), tipY = dy * (base + length)
     const midX = dx * (base + length * .5), midY = dy * (base + length * .5)
-    // Aura (under-halo and glow in one sprite), then the arc, then the tick.
+    // Glow, then the arc, then the tick.
     const aura = this.aura(s.color), ah = length * (person ? 1.3 : 1)
     ctx.globalAlpha = alpha; ctx.drawImage(aura, midX - ah, midY - ah, ah * 2, ah * 2)
     const span = (person ? .04 + .12 * fade : .02 + .06 * fade)
@@ -690,6 +693,9 @@ export class Minimap {
     ctx.beginPath(); ctx.arc(0, 0, RIM_UNITS + 2.5 * this.px, angle - span, angle + span); ctx.stroke()
     ctx.globalAlpha = alpha; ctx.fillStyle = s.shades[person ? 5 : 4]
     ctx.beginPath(); ctx.moveTo(dx * base - dy * width, dy * base + dx * width); ctx.lineTo(tipX, tipY); ctx.lineTo(dx * base + dy * width, dy * base - dx * width); ctx.closePath(); ctx.fill()
+    // A thin dark edge, one device pixel, faint: the tick holds its shape over bright sky and
+    // ice without a halo around it.
+    ctx.globalAlpha = alpha * RIM_EDGE; ctx.strokeStyle = HAIRLINE; ctx.lineWidth = this.px; ctx.stroke()
     // A bright core: the contrast floor where the paint matches the sky (a red bot on the red
     // planet). A person's is brighter and longer than a bot's.
     {
