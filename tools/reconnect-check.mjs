@@ -55,6 +55,8 @@ const check = (name, ok, detail) => { results.push(ok); console.log(`${ok ? 'PAS
 
 try {
   const a = await open('Alice')
+  // The two seats in this fixture belong to Alice and Bob.
+  await a.evaluate(() => window.mira.params.set('bots.count', 0))
   const b = await open('Bob')
   await Promise.all([a, b].map((p) => p.waitForFunction(() => window.miraNet.players.size === 2 && window.miraNet.remotes.size === 1, null, { timeout: 30000 })))
   const before = [await view(a), await view(b)]
