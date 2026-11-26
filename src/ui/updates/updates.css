@@ -59,7 +59,7 @@
 /* A fold opens by reflowing its height and fading, never sliding (the sheets' own motion), and
    at once under reduced motion. Closed, it is hidden from the tab order and assistive tech. */
 .mira-shell.exploration-ui .update-fold { display: grid; grid-template-rows: 0fr; opacity: 0; visibility: hidden; transition: grid-template-rows .2s cubic-bezier(.2, .8, .2, 1), opacity .18s ease, visibility 0s linear .2s; }
-.mira-shell.exploration-ui :is([aria-expanded="true"] + .update-fold, .update-day-heading:has([aria-expanded="true"]) + .update-fold) { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows .2s cubic-bezier(.2, .8, .2, 1), opacity .18s ease, visibility 0s; }
+.mira-shell.exploration-ui :is([aria-expanded="true"] ~ .update-fold, .update-day-heading:has([aria-expanded="true"]) + .update-fold) { grid-template-rows: 1fr; opacity: 1; visibility: visible; transition: grid-template-rows .2s cubic-bezier(.2, .8, .2, 1), opacity .18s ease, visibility 0s; }
 .mira-shell.exploration-ui .update-fold-inner { min-height: 0; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) { .mira-shell.exploration-ui .update-fold { transition: none !important; } }
 /* All releases on GitHub: a quiet link in the text's own ink with GitHub's mark. In the lobby
