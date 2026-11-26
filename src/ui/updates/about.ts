@@ -138,7 +138,11 @@ function dayEntry(day: DayEntry): HTMLLIElement {
   if (day.playing) line.append(text('span', 'You are playing this', 'update-badge is-running'))
   else if (day.isNew) line.append(text('span', 'New', 'update-badge is-new'))
   // The count and the arrow wrap together, so the arrow is never left on a line of its own.
-  const meta = text('span', day.count, 'update-day-count')
+  // "3 releases · 2 betas": on phones the betas part steps aside so the count keeps the date's line
+  // (the betas still show in each release).
+  const [releases, ...rest] = day.count.split(' · ')
+  const meta = text('span', releases, 'update-day-count')
+  if (rest.length) meta.append(text('span', ` · ${rest.join(' · ')}`, 'update-day-betas'))
   meta.insertAdjacentHTML('beforeend', ACCORDION_ARROW)
   line.append(meta)
   button.append(line)

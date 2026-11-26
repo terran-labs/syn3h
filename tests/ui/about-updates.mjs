@@ -128,6 +128,12 @@ for (const mode of ['desktop', 'phone']) {
       const lines = mids.reduce((n, y, i) => n + (i && y - mids[i - 1] > 8 ? 1 : 0), mids.length ? 1 : 0)
       return { v: v.textContent, time: t ? Math.abs(mid(t) - mid(v)) : 0, mark: Math.abs(mid(m) - mid(v)), lines }
     }))
+    // Each day's count and arrow keep the date's line.
+    const dayRows = await page.locator('dialog.lobby-sheet-updates .update-day-line').evaluateAll(lines => lines.filter(l => l.getClientRects().length).map(l => {
+      const mid = el => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2 }
+      return { date: l.querySelector('.update-day-date').textContent, off: Math.abs(mid(l.querySelector('.update-day-count')) - mid(l.querySelector('.update-day-date'))) }
+    }))
+    for (const d of dayRows) assert.ok(d.off <= 4, `${mode}: ${d.date}'s count is on its line (${d.off.toFixed(1)} px off)`)
     for (const row of rows) assert.ok(row.time <= 3 && row.mark <= 3 && row.lines <= 2, `${mode}: ${row.v} keeps its time and mark on its line, in at most two lines (${JSON.stringify(row)})`)
 
     // The owner's polish (26 November 2026). No borders anywhere in the sheet: spacing and the

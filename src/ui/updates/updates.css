@@ -163,6 +163,7 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
   .mira-shell.exploration-ui .update-day, .mira-shell.exploration-ui .updates-more { padding-left: 18px; }
   .mira-shell.exploration-ui .updates-days { --rail-x: 5px; }
   .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 22px; }
+  .mira-shell.exploration-ui .update-day-betas { display: none; }
   /* Narrow rows: a beta inside a release still fits its version, time and mark on one line. */
   .mira-shell.exploration-ui .update-release .update-notes { padding-left: 22px; }
   .mira-shell.exploration-ui .update-betas { padding-left: 0; }
