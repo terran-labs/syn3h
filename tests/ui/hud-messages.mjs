@@ -153,10 +153,11 @@ try {
       ]) })
       rack.controls = () => fake
     })
-    await page.waitForFunction(() => [...document.querySelectorAll('.gear-selector .gs-status')].some(el => el.checkVisibility({ visibilityProperty: true }) && /cord/i.test(el.textContent)), null, { timeout: 10000 })
+    await page.waitForFunction(() => [...document.querySelectorAll('.gear-selector :is(.gs-status, .gs-held)')].some(el => el.checkVisibility({ visibilityProperty: true }) && /cord/i.test(el.textContent)), null, { timeout: 10000 })
     await page.waitForTimeout(700)
     const cord = await page.evaluate(() => {
-      const status = [...document.querySelectorAll('.gear-selector :is(.gs-status, .gs-release, .gs-meter)')].filter(el => el.checkVisibility({ visibilityProperty: true })).map(el => el.getBoundingClientRect().bottom)
+      // On touch the held status sits beside the name (.gs-held, e0da7906), under it before.
+      const status = [...document.querySelectorAll('.gear-selector :is(.gs-status, .gs-held, .gs-release, .gs-meter)')].filter(el => el.checkVisibility({ visibilityProperty: true })).map(el => el.getBoundingClientRect().bottom)
       return { statusBottom: Math.max(...status), tipsTop: document.querySelector('.spawn-help').getBoundingClientRect().top, clash: null }
     })
     cord.clash = (await page.evaluate(overlaps)).found
