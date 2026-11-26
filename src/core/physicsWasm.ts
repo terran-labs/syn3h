@@ -116,14 +116,18 @@ async function attempt(url: string, get: Fetch, stallMs: number, first: boolean,
   const abort = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined, fail: (error: Error) => void = () => {}, heard = false
   const ended = new Promise<never>((_, reject) => { fail = reject })
-  const end = (reason: string) => { clearTimeout(timer); abort.abort(); fail(new Error(reason)) }
+  // The page's early request (index.html, tools/rapier-wasm.mjs) has its own abort: ending this
+  // attempt ends that request too, so a stalled one is not left running beside the retry.
+  let dropEarly = () => {}
+  const end = (reason: string) => { clearTimeout(timer); abort.abort(); dropEarly(); fail(new Error(reason)) }
   const arm = () => { clearTimeout(timer); timer = setTimeout(() => end(`nothing arrived for ${Math.round(stallMs / 1000)} seconds`), stallMs) }
   onHush(() => { if (!heard) end('back online: asking again') })
   arm()
   const load = (async () => {
-    const w = typeof window === 'undefined' ? undefined : window as unknown as { __miraPhysicsWasm?: { url: string; response: Promise<Response | Error> }; __miraPhysicsBytes?: number }
+    const w = typeof window === 'undefined' ? undefined : window as unknown as { __miraPhysicsWasm?: { url: string; abort?: () => void; response: Promise<Response | Error> }; __miraPhysicsBytes?: number }
     const early = first ? w?.__miraPhysicsWasm : undefined
     if (w && first) delete w.__miraPhysicsWasm
+    if (early?.url === url) dropEarly = () => { try { early.abort?.() } catch { /* already over */ } }
     const response = early?.url === url ? await early.response : await get(url, first ? { signal: abort.signal } : { signal: abort.signal, cache: 'reload' })
     if (!(response instanceof Response)) throw response
     heard = true

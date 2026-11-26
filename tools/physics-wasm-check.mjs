@@ -35,7 +35,7 @@ const wasm = assets.filter(f => f.endsWith('.wasm'))
 const wasmBytes = wasm.map(f => statSync(join(dist, 'assets', f)).size)
 const html = readFileSync(join(dist, 'index.html'), 'utf8')
 const head = html.slice(0, html.indexOf('</head>'))
-const preload = wasm.length === 1 && head.includes(`window.__miraPhysicsWasm={url:"/assets/${wasm[0]}",response:fetch("/assets/${wasm[0]}")`) && !/rel="preload"[^>]+\.wasm/.test(html)
+const preload = wasm.length === 1 && head.includes(`window.__miraPhysicsWasm={url:"/assets/${wasm[0]}",abort:`) && head.includes(`response:fetch("/assets/${wasm[0]}",`) && !/rel="preload"[^>]+\.wasm/.test(html)
 report({ case: 'build contents', scripts: scripts.map(s => ({ file: s.file, bytes: Buffer.byteLength(s.text) })), inlinedOver100KB: inlined, wasm, wasmBytes, earlyFetchInHead: preload },
   inlined.length === 0 && wasm.length === 1 && /^rapier_wasm3d_bg-[\w-]+\.wasm$/.test(wasm[0]) && wasmBytes[0] === 3082103 && preload)
 
@@ -47,7 +47,10 @@ const watch = () => {
   const kind = x => x instanceof Response || (x && typeof x.then === 'function') ? 'response' : x instanceof WebAssembly.Module ? 'module' : 'bytes'
   for (const name of ['compileStreaming', 'instantiateStreaming', 'compile', 'instantiate']) {
     const original = WebAssembly[name]; if (typeof original !== 'function') continue
-    WebAssembly[name] = function (source, ...rest) { w.__wasm.push({ api: name, from: kind(source), bytes: size(source) }); return original.call(WebAssembly, source, ...rest) }
+    // For a Response: its content type, and whether its body is a stream not yet read (what
+    // compileStreaming needs to compile while the bytes arrive).
+    const body = x => x instanceof Response ? { type: x.headers.get('content-type') ?? '', stream: typeof ReadableStream === 'function' && x.body instanceof ReadableStream && !x.bodyUsed } : {}
+    WebAssembly[name] = function (source, ...rest) { w.__wasm.push({ api: name, from: kind(source), bytes: size(source), ...body(source) }); return original.call(WebAssembly, source, ...rest) }
   }
   // The cache mode of each request for the engine: a retry must bypass the HTTP cache.
   w.__wasmFetches = []
@@ -86,7 +89,7 @@ for (const name of which === 'both' ? ['chrome', 'webkit'] : [which]) {
           phases: (window.miraStartup?.phases ?? []).filter(p => /physics|quality initialise|renderer\.init|fetch and run|game\.start/.test(p.name)).map(p => ({ name: p.name, startMs: Math.round(p.startMs), ms: Math.round(p.ms) })),
           firstDrawMs: window.mira?.game?.performance?.firstFrameMs ?? null }))
         await page.screenshot({ path: `${shots}/${tag}.png` })
-        const streamed = s.wasm.filter(c => c.api === 'compileStreaming' && c.from === 'response').length === 1
+        const streamed = s.wasm.filter(c => c.api === 'compileStreaming' && c.from === 'response' && c.stream === true && /^application\/wasm\b/.test(c.type)).length === 1
         const fromBytes = s.wasm.filter(c => c.from === 'bytes' && c.bytes > 100000)
         report({ browser: name, size, case: 'healthy start', loadMs: Date.now() - t0, responses, compiles: s.wasm, backend: s.backend, phases: s.phases, firstDrawMs: s.firstDrawMs, errors },
           ok && streamed && fromBytes.length === 0 && responses.length === 1 && responses[0].status === 200 && /^application\/wasm\b/.test(responses[0].type) && s.fatal === 'none' && !errors.length)

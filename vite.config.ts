@@ -7,6 +7,7 @@ import { defineConfig } from 'vitest/config'
 import { manualReload } from './tools/manual-reload.mjs'
 import { releaseFeed } from './tools/release-feed.mjs'
 import { rapierWasmAsset } from './tools/rapier-wasm.mjs'
+import { bootBytes } from './tools/boot-bytes.mjs'
 import { devLabel } from './tools/build-label.mjs'
 import { shareCardAsset } from './tools/brand/share-card.mjs'
 
@@ -106,7 +107,9 @@ export default defineConfig({
   },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   // rapierWasmAsset: the physics engine's WebAssembly ships as its own hashed file, preloaded.
-  plugins: [glassNotices(), roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset(), shareCardAsset()],
+  // bootBytes: the startup set's byte total, written into index.html for the veil's progress bar.
+  // Last: it measures the page as written, after every other plugin has changed it.
+  plugins: [glassNotices(), roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset(), shareCardAsset(), bootBytes()],
   server: {
     host: '127.0.0.1',
     port: 5173,

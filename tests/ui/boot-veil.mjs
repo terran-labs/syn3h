@@ -23,7 +23,7 @@ try {
     page.on('pageerror', e => errors.push(`${view.name}: ${e.message}`)); page.on('console', m => { if (m.type() === 'error') errors.push(`${view.name}: ${m.text()}`) })
     // Hold the bundle back so the veil is seen on its own, as on a slow connection.
     let release; const held = new Promise(resolve => { release = resolve })
-    await page.route(/\/src\/main\.ts/, async route => { await held; await route.continue() })
+    await page.route(/\/(src\/main\.ts|assets\/index-[\w-]+\.js)(\?|$)/, async route => { await held; await route.continue() })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.goto(`${base}?room=boot-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
     const state = () => page.evaluate(() => ({ boot: document.documentElement.dataset.boot, progress: Number(getComputedStyle(document.documentElement).getPropertyValue('--boot-progress')), veil: getComputedStyle(document.querySelector('.boot-veil')).opacity, game: Boolean(window.mira) }))
@@ -31,7 +31,7 @@ try {
     await page.waitForTimeout(1200)
     const early = await state()
     assert.equal(early.game, false, `${view.name}: the veil is up before the game's code has run`)
-    assert.equal(early.veil, '1'); assert.ok(early.progress > 0.05 && early.progress < 0.45, `${view.name}: the light is already moving (${early.progress})`)
+    assert.equal(early.veil, '1'); assert.ok(early.progress >= 0.3 && early.progress < 0.97, `${view.name}: the light is visible from the start and not yet complete (${early.progress})`)
     await page.screenshot({ path: `${out}/${view.name}-early.png` })
     release()
     // Sample the light while the game loads: it only ever goes forward.
@@ -67,12 +67,12 @@ try {
     // Held until released below: a link as slow as it needs to be. No screenshots here: WebKit
     // cannot take one while the page's module script is pending. The Chrome pass above has them.
     let arrive; const slow = new Promise(resolve => { arrive = resolve })
-    await page.route(/\/src\/main\.ts/, async route => { await slow; await route.continue() })
+    await page.route(/\/(src\/main\.ts|assets\/index-[\w-]+\.js)(\?|$)/, async route => { await slow; await route.continue() })
     await page.goto(`${base}?room=boot-${name.replace(/\W+/g, '-')}-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'loading' && document.querySelector('.boot-status'))
     await page.waitForTimeout(1500)
     const seen = () => page.evaluate(() => {
-      const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: el.textContent.trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
+      const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: (el.dataset.numbers || el.textContent).trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
       return { wordmark: document.querySelector('.boot-veil svg[aria-label="Mira"], .boot-wordmark') !== null, point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.mira) }
     })
     const first = await seen()

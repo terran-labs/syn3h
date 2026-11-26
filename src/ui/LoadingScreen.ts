@@ -10,15 +10,27 @@ export const phaseSteps: Record<string, string> = {
   physics: 'Starting the physics engine',
   renderer: 'Starting the renderer',
   world: 'Building your first world',
+  terrain: 'Preparing the graphics',
   ready: 'Ready to explore',
 }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
 /** Keeps the veil up once loading is done, and calls `lift` when it may go. */
 export type VeilHold = (lift: () => void) => void
-/** The progress meter the bootstrap script in index.html puts on `window`. */
-interface BootMeter { set(value: number): void; value(): number; stop(): void }
+/**
+ * The progress meter the bootstrap script in index.html puts on `window`. `stage` marks a phase
+ * done; the stages and their shares of the bar are that script's one table.
+ */
+interface BootMeter { set(value: number): void; stage(phase: string): void; value(): number; stop(): void }
 const meter = (): BootMeter | undefined => (window as unknown as { __boot?: BootMeter }).__boot
+/**
+ * Once the loading lines have appeared (index.html sets html[data-boot-late] three seconds into a
+ * load whose veil is still up and loading, and window.__bootLateAt), the veil stays at least this
+ * long, so they are never seen for only a few frames.
+ */
+export const LATE_MIN_MS = 800
+/** The earliest the veil may lift, given when the loading lines appeared (if they did). */
+export const earliestLift = (lateAt: unknown): number => (typeof lateAt === 'number' && Number.isFinite(lateAt) ? lateAt + LATE_MIN_MS : 0)
 /** However slow the device, the veil never stays longer than this. */
 const LIMIT_MS = 45000
 
@@ -32,8 +44,9 @@ const LIMIT_MS = 45000
  *
  * The veil's status line (.boot-status) shows one dry joke about what is loading, picked by
  * index.html and kept until loading ends: no rotation. Three seconds into a load still going,
- * it fades in with index.html's second line (.boot-still), which is numbers only: the
- * seconds and the megabytes received. Both lines are aria-hidden: screen readers hear the
+ * it fades in with index.html's second line (.boot-still), the progress bar: the startup
+ * download by its bytes, then the stages the game reports (index.html's bootstrap holds the
+ * table), with the seconds and megabytes as its title. Both lines are aria-hidden: screen readers hear the
  * plain step once per phase (phaseSteps) from this module's polite live region,
  * .mira-loading, never the ticking numbers.
  */
@@ -61,8 +74,7 @@ export class LoadingScreen {
     this.element.setAttribute('aria-live', 'polite')
     this.element.innerHTML = '<p class="loading-phase"></p>'
     document.body.append(this.element)
-    // The bundle has arrived and is running. index.html's own rotation hands over here.
-    meter()?.set(0.45); this.announce('Loading Mira')
+    this.announce('Loading Mira')
     window.addEventListener('mira:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.limit = setTimeout(() => this.finish(), LIMIT_MS)
     // The physics engine's download is being retried, or waits for Try again (physicsWasm.ts):
@@ -99,8 +111,8 @@ export class LoadingScreen {
       const step = phaseSteps[detail.phase] ?? detail.phase
       this.announce(step)
     }
-    // The game's own progress takes the light from where the bundle left it to nearly round.
-    if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) meter()?.set(0.45 + 0.47 * Math.min(1, Math.max(0, detail.progress)))
+    // Each phase ends a stage of the veil's bar (index.html), which only ever moves forward.
+    if (typeof detail.phase === 'string') meter()?.stage(detail.phase)
   }
   private status(): HTMLElement | null { return document.querySelector<HTMLElement>('.boot-status') }
   /** The plain phase, for screen readers. Only a change is written, so each is heard once. */
@@ -119,8 +131,10 @@ export class LoadingScreen {
     meter()?.set(1)
     const started = performance.now()
     const settle = () => {
-      const current = meter()
-      if (!current || current.value() > 0.985 || performance.now() - started > 700) this.lift(hold)
+      // Read on every frame: the lines may appear while this waits (a busy phone can take seconds
+      // to draw the frames it needs), and they must then have their time too.
+      const current = meter(), now = performance.now(), notBefore = earliestLift((window as unknown as { __bootLateAt?: number }).__bootLateAt)
+      if ((!current || current.value() > 0.985 || now - started > 700) && now >= notBefore) this.lift(hold)
       else requestAnimationFrame(settle)
     }
     settle()

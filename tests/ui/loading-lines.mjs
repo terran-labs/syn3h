@@ -15,7 +15,7 @@ const out = 'tests/ui/artifacts/loading-lines'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const errors = [], report = {}
-const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: document.documentElement.hasAttribute('data-boot-late') ? still.textContent : '', funShown: +getComputedStyle(document.querySelector('.boot-status')).opacity > 0.05, secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.mira-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
+const read = page => page.evaluate(() => { const still = document.querySelector('.boot-still'); return { boot: document.documentElement.dataset.boot, line: document.querySelector('.boot-status').textContent, height: document.querySelector('.boot-status').getBoundingClientRect().height, still: still.getBoundingClientRect().top, second: document.documentElement.hasAttribute('data-boot-late') ? (still.dataset.numbers || still.textContent) : '', funShown: +getComputedStyle(document.querySelector('.boot-status')).opacity > 0.05, secondHidden: still.getAttribute('aria-hidden'), phase: document.querySelector('.mira-loading .loading-phase')?.textContent ?? null, at: performance.now() } })
 try {
   for (const view of [{ name: 'desktop', options: { viewport: { width: 1280, height: 720 } } }, { name: 'iphone14', options: { ...devices['iPhone 14'], defaultBrowserType: undefined } }]) {
     const context = await browser.newContext(view.options), page = await context.newPage(), cdp = await context.newCDPSession(page)
@@ -26,7 +26,10 @@ try {
     // Physics arrives late, as on a slow phone, so loading passes several seconds.
     await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
     await page.goto(`${base}?room=lines-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
-    await page.waitForFunction(() => document.querySelector('.boot-status'))
+    // From when the veil's own script has run (the canvas after it is parsed): on a slow link the
+    // document arrives in pieces, and before that script the status line holds its no-script
+    // default, which is never seen (the line is transparent for the first three seconds).
+    await page.waitForFunction(() => document.querySelector('.boot-status') && document.getElementById('game'))
     const samples = []; let shot = 0, last = '', layout = new Set()
     const started = Date.now()
     while (Date.now() - started < 90000) {
@@ -64,11 +67,16 @@ try {
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 8_000_000 / 8, uploadThroughput: 500_000 })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
+    // The dev server loads hundreds of modules: past the default 250 resource entries the
+    // LoadingScreen module's own entry, which the check finds it by, may not be recorded.
+    await page.addInitScript(() => performance.setResourceTimingBufferSize(5000))
     await page.goto(`${base}?room=lines-markup-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.mira-loading'), null, { timeout: 60000 })
     const markup = await page.evaluate(async () => {
       // The exact URL the app loaded, so this is the app's own instance, not a second one.
       const url = performance.getEntriesByType('resource').map(e => e.name).find(name => name.includes('/src/ui/LoadingScreen.ts'))
+      // Only the dev server serves the module on its own; a production build has no handle on it.
+      if (!url) return { skipped: 'production build: run against the dev server for this case' }
       const { bootLoading } = await import(url)
       if (document.querySelectorAll('.mira-loading').length !== 1) return { instances: document.querySelectorAll('.mira-loading').length }
       if (document.documentElement.dataset.boot !== 'loading') return null
@@ -80,22 +88,39 @@ try {
       bootLoading.setMessages([])
       return result
     })
-    if (markup) { assert.equal(markup.instances, undefined); assert.equal(markup.children, 0); assert.equal(markup.owned, false); assert.match(markup.text, /^<b>Bold<\/b>/) }
+    if (markup && !markup.skipped) { assert.equal(markup.instances, undefined); assert.equal(markup.children, 0); assert.equal(markup.owned, false); assert.match(markup.text, /^<b>Bold<\/b>/) }
     report.markup = markup ?? 'veil lifted before the check could run'
     await page.close()
   }
-  // The fast path: a warm cache. A load that ends before three seconds never shows the line.
-  {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+  // The fast path: a warm cache, on a desktop and on a phone at 4x CPU. The rule for the loading
+  // lines (index.html, LoadingScreen LATE_MIN_MS): they appear three seconds into a load only
+  // while the veil is up and loading, and once shown the veil stays at least 800 ms, so they
+  // never flash (a line appearing as the lift began would break the 800 ms too). A load that ends before three seconds never shows them.
+  for (const [name, view, cpu] of [['desktop', { viewport: { width: 1280, height: 720 } }, 1], ['phone 4x CPU', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 }, 4]]) {
+    const context = await browser.newContext(view)
     for (let load = 0; load < 2; load++) {
       const page = await context.newPage()
-      await page.addInitScript(() => { window.__shownAt = null; const watch = () => { const w = document.querySelector('.boot-still'); if (document.documentElement.hasAttribute('data-boot-late') && window.__shownAt === null) window.__shownAt = performance.now(); if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(watch); else window.__doneAt = performance.now() }; requestAnimationFrame(watch) })
+      if (cpu > 1) await (await context.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: cpu })
+      await page.addInitScript(() => {
+        window.__shownAt = null; window.__readyAt = null
+        addEventListener('mira:loading', e => { if (e.detail.phase === 'ready' && window.__readyAt === null) window.__readyAt = performance.now() })
+        new MutationObserver(() => {
+          const root = document.documentElement
+          if (root.hasAttribute('data-boot-late') && window.__shownAt === null) window.__shownAt = performance.now()
+          if (root.dataset.boot === 'done' && window.__doneAt === undefined) window.__doneAt = performance.now()
+        }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-boot-late', 'data-boot'] })
+      })
       await page.goto(`${base}?room=lines-warm-${Date.now()}`)
       await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-      const r = await page.evaluate(() => ({ shownAt: window.__shownAt, doneAt: Math.round(window.__doneAt) }))
+      const r = await page.evaluate(() => ({ shownAt: window.__shownAt && Math.round(window.__shownAt), readyAt: window.__readyAt && Math.round(window.__readyAt), doneAt: Math.round(window.__doneAt) }))
       if (load === 1) {
-        report.warm = r
-        if (r.doneAt < 3000) assert.equal(r.shownAt, null, 'a warm load under three seconds never shows the progress line')
+        report[`warm ${name}`] = r
+        if (r.doneAt < 3000) assert.equal(r.shownAt, null, `${name}: a warm load under three seconds never shows the lines`)
+        if (r.shownAt !== null) {
+          // shownAt >= 3000 and the hold; readyAt is reported only: the lobby can lift the veil before the game's first frame.
+          assert.ok(r.shownAt >= 3000, `${name}: the lines never appear before three seconds (${r.shownAt})`)
+          assert.ok(r.doneAt - r.shownAt >= 800, `${name}: once shown, the lines stay at least 800 ms (${JSON.stringify(r)})`)
+        }
       }
       await page.close()
     }
@@ -105,7 +130,7 @@ try {
   {
     const { loadingMessages, phaseMessages } = await import('../../src/ui/data/loadingMessages.ts').catch(() => ({}))
     const page = await browser.newPage({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
-    await page.route(/\/src\/main\.ts/, () => {})
+    await page.route(/\/(src\/main\.ts|assets\/index-[\w-]+\.js)(\?|$)/, () => {})
     await page.goto(`${base}?room=lines-narrow-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.boot-status'))
     await page.waitForTimeout(1500)

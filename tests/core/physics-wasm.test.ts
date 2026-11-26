@@ -102,6 +102,16 @@ describe('physics WebAssembly loading', () => {
     expect(requests).toEqual(['reload'])
   })
 
+  // Bug: a stalled early request left running, and counting into the veil's bytes, beside the retry.
+  it('ends the page\'s stalled download when it gives up on it, then retries from the network', async () => {
+    const requests: Array<RequestCache | undefined> = []
+    let aborted = 0
+    vi.stubGlobal('fetch', async (_u: string, init: RequestInit) => { requests.push(init.cache); return wasm() })
+    vi.stubGlobal('window', { __miraPhysicsWasm: { url: '/assets/x.wasm', abort: () => { aborted++ }, response: new Promise(() => {}) } })
+    expect(await loadPhysicsWasm('/assets/x.wasm', { ...quick, timeoutMs: 30, notice: null })).toBeInstanceOf(WebAssembly.Module)
+    expect(aborted).toBe(1); expect(requests).toEqual(['reload'])
+  })
+
   // Bug: a flaky download in the production build gives no engine, or initialises it twice.
   // The Rapier module as the build rewrites it (tools/rapier-wasm.mjs), loading through this file.
   it('the built engine survives a failed first download: one initialisation, and a world that simulates', async () => {
