@@ -13,11 +13,12 @@
 import { params, worldSeed } from '../../shared/params'
 import { applyPlanet, decodeWorld, randomSeed } from '../world/planets'
 import { prepareResume, type ResumeSnapshot } from './resume'
+import { sessionStore } from './safeStorage'
 
 export type StartSource = 'link' | 'resume' | 'fresh'
 
 export function applyStartWorld(
-  query: URLSearchParams, storage: Pick<Storage, 'getItem'> = sessionStorage, random: () => number = randomSeed,
+  query: URLSearchParams, storage: Pick<Storage, 'getItem'> | null = sessionStore(), random: () => number = randomSeed,
 ): { saved: ResumeSnapshot | null; source: StartSource } {
   let source: StartSource = 'link'
   // ?world=... opens a shared world exactly; ?planet=alpine picks a kind (with ?seed= or a

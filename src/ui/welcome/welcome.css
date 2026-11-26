@@ -66,7 +66,7 @@
   /* The front picture is one element among the guide's, with air round it (the owner, 25 November
      2026: "smaller and more tasteful and show other contents below without scrolling"): 58 % of
      the column, less on a screen short enough that the next section would not show. */
-  --w: clamp(300px, (100dvh - 590px) * 16 / 9, 58cqi); --gap: clamp(6px, 1.4cqi, 12px);
+  --w: clamp(280px, (100dvh - 650px) * 16 / 9, 58cqi); --gap: clamp(6px, 1.4cqi, 12px);
   --turn: 35deg; --side-scale: 1; --dim: .42; --ease: cubic-bezier(.22, 1, .36, 1);
   position: relative; display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: visible;
   /* How far past the column the pictures may show either side: to the screen's edges in a lobby
@@ -77,7 +77,16 @@
 /* A narrow column (a phone held upright): 72 % of it, so the neighbours still peek in. */
 @container welcome (max-width: 520px) { .welcome-body .welcome-ring { --w: 72cqi; } }
 /* The narrowest (a 320 px phone): smaller still, so the caption and dots show without scrolling. */
-@container welcome (max-width: 300px) { .welcome-body .welcome-ring { --w: 60cqi; } .welcome-ring-foot { gap: 8px; } .welcome-ring-caption strong { font-size: 15px; } }
+@container welcome (max-width: 300px) {
+  .welcome-body .welcome-ring { --w: 44cqi; margin-top: -8px; }
+  .mira-shell .welcome-body.welcome-body .welcome-ring p.welcome-ring-caption, .welcome-body .welcome-ring p.welcome-ring-caption { height: calc(14px * 1.5 + 2px + 13px * 1.35 * 3); }
+  .welcome-ring .welcome-ring-caption span { font-size: 13px; line-height: 1.35; }
+  .welcome-ring-stage { padding-bottom: 6px; }
+  .welcome-ring .welcome-ring-foot { gap: 6px; }
+  .welcome-ring .welcome-ring-caption strong { font-size: 14px; }
+  .mira-shell .welcome-body .welcome-ring .welcome-ring-dot.welcome-ring-dot { height: 36px; }
+  .welcome-ring .welcome-ring-dots { margin-top: 0; }
+}
 /* A short screen (a phone on its side): sized by the height, and kept inside the column. */
 @media (max-height: 500px) { .welcome-body .welcome-ring { --w: min(58cqi, (100dvh - 270px) * 16 / 9); --reach-left: 0px; --reach-right: 0px; } }
 .welcome-ring-stage { position: relative; width: 100%; padding: 2px 0 10px; }
@@ -149,6 +158,8 @@
 }
 .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot[aria-current]::before { background: var(--w-ink); opacity: 1; transform: scale(1.45); }
 .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :focus-visible)::before { opacity: 1; }
+/* No shade round the dot: the generic button hover and press are for pill buttons. */
+html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :active, :focus) { background: none; box-shadow: none; }
 .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:focus-visible { outline: 2px solid var(--w-ink); outline-offset: -8px; }
 /* With a mouse the dots' row is shorter; a finger keeps 44 px. */
 @media (pointer: fine) { .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot { height: 32px; width: 32px; } }

@@ -1,0 +1,23 @@
+/*
+ * The room line (Shell.showRoomNotice): where the player is when a full room sent them to a
+ * parallel universe, or they chose one. A child of the bottom stack (bottom-stack.css, order 0),
+ * which places it; this file only gives it the running-slow offer's look and round pills. It fades
+ * in and does not slide.
+ */
+.mira-shell.exploration-ui .bottom-stack > .room-notice {
+  box-sizing: border-box; width: min(360px, calc(100vw - 32px)); padding: 12px 16px; color: white; font-size: 13px;
+  border: 1px solid var(--s3-line, rgb(255 255 255 / .25)); border-radius: var(--halo-r, var(--glass-control-radius, 14px));
+  background: var(--halo-fill, rgb(22 23 26 / .82)); box-shadow: var(--halo-glow, none), var(--halo-spread, none);
+  animation: room-notice-in .3s ease-out both;
+}
+.mira-shell.exploration-ui .bottom-stack > .room-notice p { margin: 0; }
+.mira-shell.exploration-ui .bottom-stack > .room-notice .room-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mira-shell.exploration-ui .bottom-stack > .room-notice button {
+  min-height: 44px; padding: 5px 14px; font: inherit; font-size: 12px; letter-spacing: .04em; color: inherit;
+  background: none; border: 1px solid var(--s3-line-quiet, rgb(255 255 255 / .35)); border-radius: 999px; cursor: pointer;
+}
+.mira-shell.exploration-ui .bottom-stack > .room-notice button:hover { background: rgb(205 205 205 / .07); border-color: var(--s3-line, rgb(255 255 255 / .55)); }
+@keyframes room-notice-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .mira-shell.exploration-ui .bottom-stack > .room-notice { animation: none; } }
+/* The Players & session card's room block. */
+.rail-universe .rail-universe-note { margin: 6px 0 10px; font-size: 12px; opacity: .8; }

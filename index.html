@@ -223,6 +223,12 @@
       html[data-intro] .boot-retry { position: fixed; left: 50%; top: calc(var(--boot-under) + 5.6em); translate: -50% 0; margin: 0; }
       @keyframes boot-retry-in { from { opacity: 0; } }
       @media (prefers-reduced-motion: reduce) { .boot-retry { animation: none; } }
+      /* A room move (src/ui/parallelUniverse.ts, a full room's parallel universe and the moves
+         between rooms): from the navigation until the game is on screen the veil stays up, whatever
+         data-boot says and in every motion setting, so the lobby never shows between, and its status
+         line says what is happening. Removing the attribute lets the veil fade as usual. */
+      html[data-room-move] .boot-veil { opacity: 1 !important; visibility: visible !important; pointer-events: auto !important; animation: none !important; }
+      html[data-room-move] .boot-status, html[data-room-move] .boot-still { opacity: 1 !important; }
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
       /* ---- The continuous opening (?intro=, src/ui/galaxy/opening.ts). The veil is black
          space and one point of light at the very centre, where the lobby's sun is drawn at
@@ -432,6 +438,37 @@
           a = ["Checking which way is down.", "Counting wheels. Recounting wheels.", "Asking gravity to hold this for a moment.", "Tightening the imaginary bolts.", "Packing a spare atmosphere.", "Confirming that the sky is attached.", "Giving the moon some personal space.", "Moving the mountain slightly to the left.", "Reminding every object that it has mass.", "Setting gravity to roughly one gravity."];
           if (!s || !w) return;
           s.textContent = a[Math.floor(Math.random() * a.length)];
+          // A page opened by a move between rooms (src/ui/parallelUniverse.ts moveVeilLine, the same
+          // words): say what is happening, and hold the veil, from the first paint, not from when the
+          // game's script arrives. The game reads and clears the note itself.
+          try {
+            var move = JSON.parse(sessionStorage.getItem("mira.roomMove") || "null");
+            if (move && typeof move.reason === "string" && Date.now() - move.at < 120000) {
+              var main = move.asked === "lobby";
+              var line = { full: "This world is full. Opening a parallel universe of it.", chosen: "Opening a parallel universe of this planet.",
+                returning: main ? "Trying the main world." : "Trying that world again.",
+                "still-full": main ? "The main world is still full. Back to your parallel universe." : "That world is still full. Back to your parallel universe." }[move.reason];
+              if (line) {
+                var root = document.documentElement, since = Date.now();
+                s.textContent = line; root.dataset.roomMove = ""; root.dataset.bootLate = "";
+                // What sets the hold owns its end, whether or not the game's script ever arrives or
+                // still finds the note fresh: the hold goes the moment the game is on screen or the
+                // page's failure shows; after 45 s the line says so plainly and offers a reload.
+                var watch = setInterval(function () {
+                  var shell = document.querySelector(".mira-shell"), fatal = document.getElementById("fatal");
+                  var playing = shell && shell.classList.contains("is-playing") && !shell.classList.contains("is-descending") && root.dataset.boot !== "ready";
+                  if (playing || (fatal && fatal.style.display && fatal.style.display !== "none")) { delete root.dataset.roomMove; clearInterval(watch); return; }
+                  if (Date.now() - since > 45000 && !document.getElementById("move-reload")) {
+                    s.textContent = "This is taking a while.";
+                    var reload = document.createElement("button");
+                    reload.id = "move-reload"; reload.type = "button"; reload.className = "boot-retry"; reload.textContent = "Reload";
+                    reload.addEventListener("click", function () { location.reload(); });
+                    s.parentNode.appendChild(reload);
+                  }
+                }, 200);
+              }
+            }
+          } catch (error) {}
           var root = document.documentElement;
           // Bytes received: every finished file's body (the document included), and the physics
           // engine's file as it streams in, counted on its way to the loader (tools/rapier-wasm.mjs)
