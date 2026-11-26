@@ -115,7 +115,13 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-ch
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close {
   background: none !important; border: 0 !important; box-shadow: none !important;
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
-  color: var(--s3-ink, #f4f4f4); filter: drop-shadow(0 1px 2px rgb(0 0 0 / .65)) drop-shadow(0 0 6px rgb(0 0 0 / .35));
+  color: var(--s3-ink, #f4f4f4); filter: none;
+  /* The gear list names' own shadow (--float-under, exploration.css), on the words and the
+     chevrons alike, so the bare label reads over a bright sky (the owner, 26 November 2026). */
+  text-shadow: var(--float-under, 0 1px 3px rgb(0 0 0 / .4), 0 0 8px rgb(0 0 0 / .4));
+}
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close .nav-chevrons {
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / .4)) drop-shadow(0 0 8px rgb(0 0 0 / .4)) drop-shadow(0 0 18px rgb(0 0 0 / .36));
 }
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::before,
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::after { display: none; }
