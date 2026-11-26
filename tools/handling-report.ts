@@ -446,9 +446,9 @@ async function buggyOnWater(): Promise<Figure[]> {
   }
   const skim = await at(() => {
     const run = skip.skipLaunch('buggy', top, angle, { throttle: 1 })
-    try { skip.coastFor(run, 30); return run.trace[run.trace.length - 1].speed } finally { run.dispose() }
+    try { skip.coastFor(run, 20); return run.trace[run.trace.length - 1].speed } finally { run.dispose() }
   })
-  out.push(fig(`Flat out in at top speed (${top.toFixed(0)} m/s): speed after 30 s (skims on above water.buggy.skimAbove of top)`, 'm/s', skim))
+  out.push(fig(`Flat out in at top speed (${top.toFixed(0)} m/s): speed after 20 s (skims on above water.buggy.skimAbove of top; the 2.4 km basin ends soon after)`, 'm/s', skim))
   // Full lock right for 3 s: skimming from 50 m/s (4 s after the first touch, past the first hops) and wallowing.
   for (const [what, u, settle] of [['skimming in from 50 m/s, flat out', 50, 4], ['wallowing, flat out', 0, 20]] as const) {
     const r = await at(() => {

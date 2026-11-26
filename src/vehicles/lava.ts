@@ -163,7 +163,7 @@ export const BUGGY_TOP_PER_SPEED=101.8/30
 const skipKeel:SkipKeel={grip:0,front:1,steer:0}
 /** Seconds a skim is held after the tyres last touched; the speed hold's gain (1/s) and its most pull (m/s²). */
 const SKIM_HOLD=.5,SKIM_GAIN=2,SKIM_MAX_PULL=30
-export const waterPaddleLift=defineParam({...W,id:'water.buggy.paddleLift',label:'Buggy: paddle wheel lift / weight at full churn',default:.5,min:0,max:2,step:.05})
+export const waterPaddleLift=defineParam({...W,id:'water.buggy.paddleLift',label:'Buggy: paddle wheel lift / weight at full churn',default:.7,min:0,max:2,step:.05})
 export const waterPaddleSpin=defineParam({...W,id:'water.buggy.paddleSpin',label:'Buggy: wheel churn for full paddle lift (m/s)',default:10,min:1,max:60,step:.5})
 export const waterPaddleBob=defineParam({...W,id:'water.buggy.paddleBob',label:'Buggy: paddle wheel bob (0 to 1)',default:.5,min:0,max:1,step:.05})
 /** Speed (m/s) up to which the wet tyres' keel turns through the paddles' whole lock; faster, it narrows in proportion. */
