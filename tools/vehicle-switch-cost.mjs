@@ -49,8 +49,11 @@ try {
         const game = mira.game, camera = game.camera
         const angles = () => { const e = new (camera.rotation.constructor)().setFromQuaternion(camera.quaternion, 'YXZ'); return [e.y, e.x] }
         const frame = () => new Promise(r => requestAnimationFrame(() => r()))
-        // Orbit away from behind first, as a player looking around would.
-        mira.camera.look(300, -40); await frame(); await frame()
+        // Orbit away from behind first, as a player looking around would, and let the view
+        // finish easing there: the angles compared below are the drawn camera's, which follow the
+        // orbit through a short slerp. Settled means under 0.05° of change between frames.
+        mira.camera.look(300, -40)
+        for (let i = 0, last = angles(); i < 180; i++) { await frame(); const now = angles(); if (Math.abs(now[0] - last[0]) + Math.abs(now[1] - last[1]) < 0.05 * Math.PI / 180) break; last = now }
         const from = mira.player.kind, cursor = longFrames.read().cursor, made = game.pipelineCounter.created, before = angles()
         const t0 = performance.now()
         mira.swapVehicle(kind)
