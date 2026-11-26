@@ -106,6 +106,15 @@ export function fireworkShape(seed: number): FireworkShape {
   return FIREWORK_SHAPES[seed % FIREWORK_SHAPES.length]
 }
 
+/**
+ * A Plasma Thunder bolt's life: its airburst time, but never longer than a tag beam's (the room
+ * checks a shot's reports against that). A bolt still flying at the end bursts in the air ('end');
+ * one quenched under water or lava dies quietly instead (thunderEnding).
+ */
+export function thunderLife(laserLife: number, airburst: number): number {
+  return Math.min(laserLife, Math.max(0, airburst))
+}
+
 /** Metres of slack around the world for a reported burst point (thunder detonations). */
 export const BURST_MARGIN = 200
 
@@ -114,10 +123,12 @@ export const BURST_MARGIN = 200
  * the world's tile (positions arrive canonical, within half a tile of its centre) and no higher
  * than the planet's radius plus the flare height, with BURST_MARGIN to spare either way. The room
  * refuses any other, so a report cannot hang a firework at 1e30. The radius is the one the world
- * is drawn with (src/world/curve.ts planetRadius: size / (2 sqrt(pi))).
+ * is drawn with (src/world/curve.ts planetRadius: size / (2 sqrt(pi))). `reach` adds the farthest a
+ * bolt flies before its airburst (its speed times its life), so a bolt fired upward from a peak or
+ * a jet bursts where everyone accepts it.
  */
-export function burstPointPlausible(at: V3, size: number, flareHeight: number): boolean {
-  const half = size / 2 + BURST_MARGIN, ceiling = size / (2 * Math.sqrt(Math.PI)) + flareHeight + BURST_MARGIN
+export function burstPointPlausible(at: V3, size: number, flareHeight: number, reach = 0): boolean {
+  const half = size / 2 + BURST_MARGIN, ceiling = size / (2 * Math.sqrt(Math.PI)) + flareHeight + Math.max(0, reach) + BURST_MARGIN
   return at.every(Number.isFinite) && Math.abs(at[0]) <= half && Math.abs(at[2]) <= half && at[1] >= -BURST_MARGIN && at[1] <= ceiling
 }
 

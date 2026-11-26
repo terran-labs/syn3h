@@ -28,8 +28,8 @@ import { warmGear } from './warm'
 import { ImpactPulses } from './pulse'
 import { ImpactFx, viewHeight, type ImpactTerrain } from './impact/ImpactFx'
 import { CLIMB_SECONDS, Fireworks } from './fireworks/Fireworks'
-import { thunderFlareHeight, thunderFuseAir, thunderFuseAirHeight, thunderFuseArm, thunderFuseGround, thunderSkipAngle, thunderSkipBounce, thunderSkipGravity, thunderSkipKeep, thunderSkipPush, thunderSkips } from './thunderParams'
-import { QUENCH_LENGTH, burstKept, fireworkSeed, fuseArmed, fuseRadius, fuseSenses, nearestOnSegment, skipOff, submergedAt, type ThunderCause, type V3 } from './thunderRules'
+import { thunderFlareHeight, thunderFuseAir, thunderFuseAirHeight, thunderFuseArm, thunderFuseGround, thunderSkipAngle, thunderSkipBounce, thunderSkipGravity, thunderSkipKeep, thunderSkipPush, thunderSkips, thunderLife as thunderLifeParam } from './thunderParams'
+import { QUENCH_LENGTH, burstKept, thunderLife, fireworkSeed, fuseArmed, fuseRadius, fuseSenses, nearestOnSegment, skipOff, submergedAt, type ThunderCause, type V3 } from './thunderRules'
 import { thunderBlastRadius } from './blastParams'
 
 export interface LaserHooks {
@@ -272,7 +272,7 @@ export class Lasers implements System {
       vel: new THREE.Vector3(...shot.d).normalize().multiplyScalar(speed),
       age: 0,
       // The room checks hits against this same lifetime, so Big Red keeps it too.
-      life: laserLifetime(laserSpeed.value),
+      life: red ? thunderLife(laserLifetime(laserSpeed.value), thunderLifeParam.value) : laserLifetime(laserSpeed.value),
       mesh: new THREE.Group(),
       red,
       tied: true,

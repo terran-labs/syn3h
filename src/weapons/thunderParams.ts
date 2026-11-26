@@ -9,6 +9,13 @@ import { defineParam } from '../../shared/params'
 
 const group = 'Gear: Plasma Thunder', scope = 'world' as const
 
+/**
+ * Seconds after firing that a bolt which has hit, fused and skipped nothing bursts in the air (the
+ * owner, 26 November 2026: "The red laser should also detonate within 5 seconds of being fired
+ * into the sky"). Before this it lived as long as a tag beam (laserLifetime, 8.7 s at the
+ * default speed) and burst about a kilometre up, out of sight and above what the room accepted.
+ */
+export const thunderLife = defineParam({ id: 'thunder.life', label: 'Airburst after (s)', group, scope, default: 5, min: 1, max: 10, step: 0.1 })
 /** Skips off the ground before the next contact detonates it. */
 export const thunderSkips = defineParam({ id: 'thunder.skips', label: 'Skips off the ground', group, scope, default: 3, min: 0, max: 6, step: 1 })
 /** It skips only off ground met at less than this angle (degrees from the surface); steeper detonates. */
