@@ -10,6 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { chromium, devices } from 'playwright-core'
+import sharp from 'sharp'
 
 const url = new URL(process.env.MIRA_URL ?? 'http://127.0.0.1:5317/')
 const out = resolve(process.env.MIRA_PANEL_EVIDENCE ?? 'tests/ui/artifacts/player-panel')
@@ -68,6 +69,48 @@ async function insideBand(page, touch) {
     return { top: panel.top, bottom: panel.bottom, min: top, max: bottom }
   })
   assert.ok(r.top >= r.min && r.bottom <= r.max, `panel outside its band: ${JSON.stringify(r)}`)
+}
+
+/**
+ * Legibility over the brightest, busiest backdrop (the Foreman, 25 November 2026: no world text
+ * may read through the panel). A fixture goes behind the panel: white and sky-blue stripes with
+ * a copy of a real vehicle nameplate over them. For each text (the section label, a hint line),
+ * the backdrop behind it is captured with that text made transparent, and its brightest pixel
+ * must still leave the text's colour at 4.5:1 or better.
+ */
+async function contrastOverBusy(page, file) {
+  await page.evaluate(() => {
+    const panel = document.querySelector('#player-panel'), r = panel.getBoundingClientRect()
+    const fixture = document.createElement('div'); fixture.id = 'pp-fixture'
+    Object.assign(fixture.style, { position: 'fixed', left: `${r.left}px`, top: `${r.top}px`, width: `${r.width}px`, height: `${r.height}px`, zIndex: '58', pointerEvents: 'none',
+      background: 'repeating-linear-gradient(90deg, #fff 0 36px, #8fc3ee 36px 70px, #ffffff 70px 90px, #3d6e3a 90px 120px)' })
+    const plate = document.querySelector('.vehicle-nameplate')?.cloneNode(true) ?? Object.assign(document.createElement('div'), { textContent: 'MIBIWISE' })
+    plate.hidden = false
+    Object.assign(plate.style, { position: 'absolute', left: '10px', top: '90px', transform: 'none', font: '600 22px Barlow, sans-serif', color: '#fff' })
+    for (let i = 0; i < 4; i++) { const p = plate.cloneNode(true); p.style.top = `${60 + i * 110}px`; fixture.append(p) }
+    panel.parentElement.insertBefore(fixture, panel)
+  })
+  await page.waitForTimeout(200)
+  await page.screenshot({ path: file })
+  const lum = ([r, g, b]) => { const c = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4 }; return 0.2126 * c(r) + 0.7152 * c(g) + 0.0722 * c(b) }
+  const results = []
+  for (const selector of ['#player-panel .pp-traits-head .pp-line-title', '#player-panel .pp-trait .pp-why']) {
+    const target = page.locator(selector).first()
+    const color = await target.evaluate(el => getComputedStyle(el).color)
+    const rgb = color.match(/\d+(\.\d+)?/g).slice(0, 3).map(Number)
+    await target.evaluate(el => { el.dataset.was = el.style.color; el.style.color = 'transparent' })
+    const box = await target.boundingBox()
+    const png = await page.screenshot({ clip: { x: box.x, y: box.y, width: Math.max(1, box.width), height: Math.max(1, box.height) }, scale: 'css' })
+    await target.evaluate(el => { el.style.color = el.dataset.was })
+    const { data, info } = await sharp(png).removeAlpha().raw().toBuffer({ resolveWithObject: true })
+    let brightest = 0
+    for (let i = 0; i < data.length; i += info.channels) brightest = Math.max(brightest, lum([data[i], data[i + 1], data[i + 2]]))
+    const ratio = (Math.max(lum(rgb), brightest) + 0.05) / (Math.min(lum(rgb), brightest) + 0.05)
+    results.push([selector, Math.round(ratio * 100) / 100])
+  }
+  await page.evaluate(() => document.querySelector('#pp-fixture')?.remove())
+  for (const [selector, ratio] of results) assert.ok(ratio >= 4.5, `${selector} reads at ${ratio}:1 over a busy backdrop`)
+  return results
 }
 
 /** Every name in the card starts at the same x, people and bots alike. */
@@ -202,6 +245,7 @@ try {
       await noOverlap(host)
       await insideBand(host, touch)
       await host.screenshot({ path: resolve(out, `${size}-host-bot.png`) })
+      if (!touch) console.log(`${size} contrast over a busy backdrop:`, JSON.stringify(await contrastOverBusy(host, resolve(out, `${size}-host-bot-busy.png`))))
       await host.locator('#player-panel .pp-reset-all').click(); await host.locator('#player-panel .pp-reset-all').click()
       await bold.locator('.reset-control:not(.is-live)').waitFor({ timeout: 15000 })
       assert.equal(Number(await bold.locator('input').inputValue()), before, 'the set reset did not return Boldness to its nature')
