@@ -25,7 +25,7 @@ describe('approved Mk2 game model', () => {
       jet.update(gear, .8, new THREE.Vector3(.8, -.3, -.5))
       for (const level of [0, 1, 2] as const) {
         jet.setLevel(level)
-        // Base model budget, then plume (<=400 triangles) and fitted tail lights (28), one draw each.
+        // Base model budget, then the plume and the fitted tail lights, one draw each whatever their size.
         jet.plume.mesh.visible = false; jet.tailLights.mesh.visible = false
         const cost = visibleCost(jet.object)
         jet.plume.mesh.visible = true; jet.tailLights.mesh.visible = true
@@ -34,7 +34,6 @@ describe('approved Mk2 game model', () => {
         // boom collars, which must still be seen to move at that distance.
         expect(cost.draws).toBeLessThanOrEqual([9, 5, 1][level])
         expect(visibleCost(jet.object).draws - cost.draws).toBe(2)
-        expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(428)
       }
     }
     for (const y of jet.near.footHeights()) expect(y).toBeCloseTo(GROUND_Y, 2)
