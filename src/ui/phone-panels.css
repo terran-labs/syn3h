@@ -115,7 +115,18 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-ch
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close {
   background: none !important; border: 0 !important; box-shadow: none !important;
   -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
-  color: var(--s3-ink, #f4f4f4); filter: drop-shadow(0 1px 2px rgb(0 0 0 / .65)) drop-shadow(0 0 6px rgb(0 0 0 / .35));
+  color: var(--s3-ink, #f4f4f4); filter: none;
+}
+/* The gear list names' own shadow (--float-under, exploration.css), on the words and the chevrons
+   alike, so the bare label reads over a bright sky or a white cloud (the owner, 26 November 2026).
+   !important because glass.css clears shadows on glass buttons and their ink with !important, and
+   Close panels is no longer glass; this selector is the more specific. */
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close,
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close span {
+  text-shadow: var(--float-under, 0 1px 3px rgb(0 0 0 / .4), 0 0 8px rgb(0 0 0 / .4)) !important;
+}
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close .nav-chevrons {
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / .5)) drop-shadow(0 0 8px rgb(0 0 0 / .45)) drop-shadow(0 0 18px rgb(0 0 0 / .36)) !important;
 }
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::before,
 html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::after { display: none; }
@@ -150,6 +161,11 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-
   html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { rotate: -90deg; }
   /* The list runs to the bottom edge of the screen (the safe-area edge), rows scrolling off under
      it with no fade (the owner: "extend all the way down to the very bottom of the screen"). */
-  html .mira-shell.exploration-ui.has-touch .world-inspector { bottom: env(safe-area-inset-bottom, 0px); height: calc(100dvh - var(--edge-top) - env(safe-area-inset-bottom, 0px)); padding-bottom: 0; }
+  /* To the physical bottom edge, through the home-indicator strip (the owner's iPhone: Chat was
+     cut 45 px above it); the scroll content ends with that strip's height of padding, so the last
+     row can always be scrolled fully into view above the indicator. --safe-bottom lets a check
+     simulate the inset. */
+  html .mira-shell.exploration-ui.has-touch .world-inspector { bottom: 0; height: calc(100dvh - var(--edge-top)); padding-bottom: 0; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards { padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px)); scroll-padding-bottom: var(--safe-bottom, env(safe-area-inset-bottom, 0px)); }
   html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards { flex: 1 1 auto; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 }
