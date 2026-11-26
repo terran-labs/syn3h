@@ -12,6 +12,7 @@
 // to run without --yes-publish, and --dry-run prints every command it would run instead.
 
 import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
+import { bannedWords, PLAYER_WORDS } from './lib/public-words.mjs'
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -173,8 +174,8 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   if (row.channel !== 'production' && found.includes('Play')) problems.push('"### Play" belongs only in production notes')
   if (/\bTODO\b/.test(notes)) problems.push('the notes still contain TODO')
   if (/[–—]/.test(notes)) problems.push('the notes contain an en or em dash')
-  const banned = notes.match(/\b(lasers?|fire[sd]?|firing|shoot\w*|shot|weapons?|hit|hits|kill\w*|destroy\w*|death|dies?|died)\b/gi)
-  if (banned) problems.push(`wording rule: ${[...new Set(banned.map((w) => w.toLowerCase()))].join(', ')}`)
+  const banned = bannedWords(notes, PLAYER_WORDS)
+  if (banned.length) problems.push(`wording rule: ${banned.join(', ')}`)
   if (problems.length) throw new Error(`Notes for ${tag} are not ready:\n  ${problems.join('\n  ')}`)
   const shots = screenshotSection(tag, manifest)
   // No "(AI Generated)" line on published releases: the owner's exception for release notes
