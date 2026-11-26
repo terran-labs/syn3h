@@ -37,8 +37,7 @@
  */
 @property --rim-angle { syntax: "<angle>"; inherits: false; initial-value: 315deg; }
 :root {
-  /* Keep world labels from showing through floating panels and their pointers. */
-  --floating-panel-fill: rgb(8 12 17);
+  --floating-panel-fill: rgb(20 20 20 / .65);
   /* Clear, matched to the shader's surface (its tint is capped at 6.5 %), so the hand-over
      between the two does not jump. */
   --glass-body: rgb(255 255 255 / .06);
@@ -382,6 +381,12 @@ html:is([data-glass-material="liquid"], [data-glass-material="flat"]) .mira-shel
     text-shadow: none !important;
     filter: none !important;
   }
+}
+
+/* Paint above the material face and below the controls. The panel provides the stacking context. */
+.floating-panel:not(.no-floor)::before {
+  content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  background: var(--floating-panel-fill); pointer-events: none;
 }
 
 /* The CSS face can stand in for the shader over a white scene. Keep this a

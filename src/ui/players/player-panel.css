@@ -39,12 +39,6 @@
   background: var(--panel-material-fill, var(--pp-fill));
   -webkit-backdrop-filter: var(--panel-material-filter, blur(30px) saturate(1.9) brightness(.84)); backdrop-filter: var(--panel-material-filter, blur(30px) saturate(1.9) brightness(.84));
   box-shadow: var(--panel-material-shadow, none); }
-/* TEMPORARY legibility floor, under the content and over the shared face: the player reads and
-   operates this panel over any scene, so small text must keep 4.5:1 over a bright busy one
-   (player-panel.mjs checks every style). Remove when the cards' shared face passes that check
-   alone (the glass lead's legibility change); .no-floor turns it off for that comparison. */
-.mira-shell .player-panel::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: rgb(20 20 20 / .65); pointer-events: none; }
-.mira-shell .player-panel.no-floor::before { content: none; }
 .mira-shell .player-panel[hidden] { display: none; }
 .mira-shell .player-panel .pp-body { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 16px 16px; }
 /* The tooltip's pointer toward its row: a small diamond half outside the right edge, in the
