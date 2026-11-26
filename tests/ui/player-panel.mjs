@@ -147,9 +147,18 @@ try {
       const danger = await host.locator('.eject-go').evaluate(b => getComputedStyle(b).backgroundColor)
       assert.match(danger, /^rgba?\((1[5-9]\d|2\d\d), \d{1,2}, \d{1,2}/, `Eject is not red: ${danger}`)
       await host.screenshot({ path: resolve(out, `${size}-eject-none.png`) })
-      await host.locator('.banish-slider').focus(); await host.keyboard.press('End')
-      assert.equal(await host.locator('.banish-slider').getAttribute('aria-valuetext'), 'Permanently')
-      await host.screenshot({ path: resolve(out, `${size}-eject-permanent.png`) })
+      // Every stop, one arrow press at a time, with its words under the slider.
+      await host.locator('.banish-slider').focus()
+      const STOPS = [['5m', '5 minutes', 'Banished for 5 minutes.'], ['30m', '30 minutes', 'Banished for 30 minutes.'], ['24h', '24 hours', 'Banished for 24 hours.'], ['permanent', 'Permanently', 'Banished permanently.']]
+      for (const [id, words, says] of STOPS) {
+        await host.keyboard.press('ArrowRight')
+        assert.equal(await host.locator('.banish-slider').getAttribute('aria-valuetext'), words)
+        assert.equal(await host.locator('.banish-says').textContent(), says)
+        if (!touch || id === 'permanent') await host.screenshot({ path: resolve(out, `${size}-eject-${id}.png`) })
+      }
+      await host.keyboard.press('Home')
+      assert.equal(await host.locator('.banish-slider').getAttribute('aria-valuetext'), 'None')
+      await host.keyboard.press('End')
       await host.keyboard.press('Escape')
       assert.equal(await host.locator('.eject-confirm').isHidden(), true)
       assert.equal(await host.evaluate(id => miraNet.players.has(id), guestId), true, 'Escape ejected')
@@ -191,10 +200,18 @@ try {
       await (touch ? row(guest, guestId).tap() : row(guest, guestId).click())
       assert.equal(await guest.locator('#player-panel .pp-eject-go').count(), 0, 'own panel has no Eject')
       await guest.screenshot({ path: resolve(out, `${size}-own-panel.png`) })
+      // The host leaves: the guest becomes host and is told so in the bottom stack.
+      await guest.keyboard.press('Escape')
+      await hostTab.context.close()
+      await guest.waitForFunction(() => miraNet.isHost, null, { timeout: 60000 })
+      const notice = guest.locator('.bottom-stack .room-notice:not([hidden])')
+      await notice.waitFor({ timeout: 30000 })
+      assert.match(await notice.textContent(), /^You are now the host of this world\./)
+      await guest.screenshot({ path: resolve(out, `${size}-new-host.png`) })
       assert.deepEqual(errors, [])
       console.log(`${size}: ok`)
     } finally {
-      await hostTab.context.close(); await guestTab.context.close()
+      await hostTab.context.close().catch(() => {}); await guestTab.context.close()
     }
   }
 } finally {
