@@ -2668,12 +2668,33 @@ export class Shell implements System {
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
     card.hidden = true; card.classList.remove('is-tips', 'is-fading', 'is-full', 'is-hint', 'is-quiet'); this.tipsShown = ''
   }
-  private bandsIn = 0
+  /** The bands need measuring again: something that can move them changed (watchBands). */
+  private bandsDirty = true
+  private bandsWatch?: ResizeObserver
+  /**
+   * Keep the bands current without reading layout on a timer (the frame-cost profile, 26 November
+   * 2026: a 4 Hz read forced an 8 ms whole-document layout, 1.6 to 2 ms a frame). A ResizeObserver
+   * on what the bands are made of (the gear list and its status line, the two readouts) and on the
+   * viewport (resize, orientation) measures from its callback, where layout is already fresh, so it
+   * forces nothing. A change that moves them without resizing them (handedness, the shell's layout
+   * classes: panels, match, focus) only marks them dirty; updateTips reads them once, and only
+   * while tips are drawn.
+   */
+  private watchBands(): void {
+    if (this.bandsWatch || typeof ResizeObserver === 'undefined') return
+    this.bandsWatch = new ResizeObserver(() => { this.bandsDirty = false; this.measureBands() })
+    const gear = this.gearSelector.element
+    for (const el of [gear, ...gear.querySelectorAll('.gs-meter, .gs-drum'), ...this.element.querySelectorAll('.focus-hud .fh-read.fh-left, .focus-hud .fh-read.fh-right'), document.documentElement]) this.bandsWatch.observe(el)
+    const moved = new MutationObserver(() => { this.bandsDirty = true })
+    moved.observe(document.documentElement, { attributes: true, attributeFilter: ['data-touch-hand'] })
+    moved.observe(this.element, { attributes: true, attributeFilter: ['class'] })
+    this.abort.signal.addEventListener('abort', () => { this.bandsWatch?.disconnect(); moved.disconnect() }, { once: true })
+  }
   /**
    * The free bands the tips, chat and full sheet fit between (help.css, chat.css), as CSS
-   * variables on the shell, four times a second: the lowest visible line of the gear list
-   * (a Grapple's cord status included), and the top, centre and bottom of the speed and
-   * altitude readouts (their THRUST line included). Only a change is written.
+   * variables on the shell: the lowest visible line of the gear list (a Grapple's cord status
+   * included), and the top, centre and bottom of the speed and altitude readouts (their THRUST
+   * line included). Called from watchBands, never on a timer. Only a change is written.
    */
   private measureBands(): void {
     const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' ? r : null }
@@ -2694,6 +2715,8 @@ export class Shell implements System {
   readonly tips = new Lessons()
   /** The lines last drawn, to touch the DOM only when they change. */
   private tipsShown = ''
+  /** The controls card, found once (no DOM queries in the frame loop). */
+  private tipsCard?: HTMLElement
   private tipsFade?: ReturnType<typeof setTimeout>
   /**
    * Every frame: draw the tips the lessons give, in the controls card's place, unless the full
@@ -2701,8 +2724,8 @@ export class Shell implements System {
    */
   updateTips(dt: number, input: Omit<TipInput, 'touch' | 'tagAllowed'>): void {
     const touch = this.touch.available
-    this.bandsIn -= dt; if (this.bandsIn <= 0) { this.bandsIn = 0.25; this.measureBands() }
-    const card = this.element.querySelector<HTMLElement>('.spawn-help')!
+    this.watchBands()
+    const card = this.tipsCard ??= this.element.querySelector<HTMLElement>('.spawn-help')!
     // An upright phone in a match: the match HUD (game state) takes the band the tips use, so the
     // tips wait, unseen and with their lessons and cap paused, and come back when it goes
     // (phone-layout.mjs, King of the Hill: they overlapped it).
@@ -2712,9 +2735,12 @@ export class Shell implements System {
     }
     const busy = !card.hidden && !card.classList.contains('is-tips')
     const on = controlTips.value && this.started && this.playing && !this.menuVisible && !busy
-    const lines: TipLine[] = on ? this.tips.update(dt, { ...input, touch, tagAllowed: Boolean(params.get('laser.allowed')?.value ?? true) }) : []
+    const leftHanded = touch && Boolean(params.get('touch.leftHanded')?.value)
+    const lines: TipLine[] = on ? this.tips.update(dt, { ...input, touch, leftHanded, tagAllowed: Boolean(params.get('laser.allowed')?.value ?? true) }) : []
     if (busy) return
-    const key = lines.map(l => `${l.id}${l.learned ? '+' : ''}`).join(' ')
+    // Something moved the bands without resizing them: read them once, and only while tips show.
+    if (this.bandsDirty && lines.length) { this.bandsDirty = false; this.measureBands() }
+    const key = `${leftHanded ? 'L ' : ''}${lines.map(l => `${l.id}${l.learned ? '+' : ''}`).join(' ')}`
     if (key === this.tipsShown) return
     this.tipsShown = key
     if (!lines.length) {

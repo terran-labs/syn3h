@@ -29,6 +29,8 @@ export interface TipInput {
   tagAllowed: boolean
   /** Riding in the Zorb ball: its own controls, nothing here to teach. */
   zorbed?: boolean
+  /** Touch, left-handed: the stick is under the right thumb (src/ui/TouchPreferences.ts). */
+  leftHanded?: boolean
 }
 interface LessonSpec {
   id: string
@@ -78,6 +80,8 @@ export function contextOf(s: Pick<TipInput, 'kind' | 'special' | 'zorbed'>): str
   if (s.kind === 'hovercraft') return 'hovercraft'
   return null
 }
+/** A touch line names the thumb the stick is under: the right one when left-handed. */
+export const thumbed = (text: string, leftHanded: boolean): string => leftHanded ? text.replace(/^Left thumb\b/, 'Right thumb') : text
 /** The box gives up after this long in one vehicle and state, whatever is left. */
 export const CAP_SECONDS = 90
 /** A learned line stays, dimmed, this long before it goes. */
@@ -133,7 +137,7 @@ export class Lessons {
         const left = this.leaving.get(id)! - dt; this.leaving.set(id, left)
         if (left <= 0) continue
       }
-      lines.push({ id, parts: spec.keys, text: s.touch ? spec.touch : spec.keys.map(p => 'key' in p ? keyFor(p.key) : p.text).join(' '), learned: this.learned.has(id) })
+      lines.push({ id, parts: spec.keys, text: s.touch ? thumbed(spec.touch, !!s.leftHanded) : spec.keys.map(p => 'key' in p ? keyFor(p.key) : p.text).join(' '), learned: this.learned.has(id) })
     }
     return lines
   }

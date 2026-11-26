@@ -55,4 +55,10 @@ describe('control tips', () => {
     const store = memory(); store.setItem('mira.tips.learned', '{nope')
     expect(new Lessons(store).update(0.016, jet()).length).toBe(3)
   })
+  it('name the thumb the stick is under, left-handed or not', () => {
+    // Bug: a left-handed player was told "Left thumb" while the stick sat under the right thumb.
+    const touch = (leftHanded: boolean) => new Lessons(memory()).update(0.016, jet({ touch: true, leftHanded })).find(l => l.id === 'jet.hover.move')!.text
+    expect(touch(false)).toBe('Left thumb: move and turn')
+    expect(touch(true)).toBe('Right thumb: move and turn')
+  })
 })
