@@ -77,6 +77,9 @@ try {
       const attached = await page.evaluate(() => ({ ...miraNet.bungee.stats }))
       assert.equal(attached.launched, before.launched + 1, `${name}: one hook launched`)
       assert.equal(attached.attachedGround, before.attachedGround + 1, `${name}: the hook caught terrain`)
+      await waitForState(page, 'visible attached gear status', () =>
+        [...document.querySelectorAll('.gear-selector .gs-status, .gear-selector .gs-held-status')].some(el =>
+          el.textContent.trim() && el.checkVisibility({ opacityProperty: true, visibilityProperty: true })), undefined, 15)
 
       if (touch) {
         await releaseButton.waitFor({ state: 'visible' })
