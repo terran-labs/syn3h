@@ -26,11 +26,13 @@ async function enter(options, label) {
   await page.addInitScript((groups) => {
     // From the first frame of play: each group's drawn state, and whether a tap at its centre reaches it.
     const frames = window.__reveal = []
-    const look = () => [...document.querySelectorAll(groups)].map((e) => {
+    const look = () => [...document.querySelectorAll(groups)].map((e, i) => {
       const s = getComputedStyle(e), r = e.getBoundingClientRect()
       const hit = r.width > 0 && r.height > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight
         ? e.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)) : false
-      return { name: e.className.toString().split(' ')[0], display: s.display, opacity: +s.opacity, visibility: s.visibility, box: [r.left, r.top, r.width, r.height].map((v) => +v.toFixed(2)), hit, thumb: !!e.closest('.touch-controls, .gear-actions') || (e.matches('.hud-navigation') && !!e.closest('.has-touch')) }
+      // Named by every class it has: the readouts share their first (fh-read).
+      // (the thumb buttons share theirs too: their label or place tells them apart).
+      return { name: `${e.className.toString().trim().replace(/\s+/g, '.')}#${e.getAttribute('aria-label') ?? e.dataset.action ?? i}`, display: s.display, opacity: +s.opacity, visibility: s.visibility, translate: s.translate, box: [r.left, r.top, r.width, r.height].map((v) => +v.toFixed(2)), hit, thumb: !!e.closest('.touch-controls, .gear-actions') || (e.matches('.hud-navigation') && !!e.closest('.has-touch')) }
     }).filter((g) => g.display !== 'none' && g.box[2] > 0)
     const tick = () => {
       const shell = document.querySelector('.mira-shell')
@@ -48,6 +50,8 @@ async function enter(options, label) {
   return { context, page, frames, total }
 }
 
+/** A translate of zero, however written ("none", "0px", "0px 0px"), is no translate. */
+const place = (t) => (t === 'none' || /^(\s*-?0(px)?\s*)+$/.test(t ?? '') ? 'none' : t)
 const final = (frames) => new Map(frames.at(-1).groups.map((g) => [g.name, g]))
 
 try {
@@ -65,14 +69,16 @@ try {
     const after = frames.filter((f) => !f.on).slice(-20)
     for (const f of after) for (const g of f.groups) {
       const e = end.get(g.name); if (!e) continue
-      assert.deepEqual([g.box, g.opacity], [e.box, e.opacity], `${label}: ${g.name} stays put after the reveal`)
+      // What the reveal moves is translate and opacity; a box can still change with its content
+      // (a readout's digits).
+      assert.deepEqual([place(g.translate), g.opacity], [place(e.translate), e.opacity], `${label}: ${g.name} stays put after the reveal`)
     }
     for (const f of frames.filter((f) => f.on)) for (const g of f.groups) {
       // Never hit-testable while it cannot be seen; thumb controls never below a third.
       if (g.hit && g.visibility === 'visible') assert.ok(g.opacity > 0 || g.name === 'chat-strip', `${label}: ${g.name} takes a tap while invisible ${JSON.stringify(g)}`)
       if (g.thumb && g.visibility === 'visible') assert.ok(g.opacity >= .3, `${label}: thumb control ${g.name} faint ${JSON.stringify(g)}`)
       // Reduced motion: every box during the reveal is its final box.
-      if (label === 'reduced') { const e = end.get(g.name); if (e) assert.deepEqual(g.box, e.box, `${label}: ${g.name} moved under reduced motion`) }
+      if (label === 'reduced') { const e = end.get(g.name); if (e) assert.equal(place(g.translate), place(e.translate), `${label}: ${g.name} moved under reduced motion`) }
     }
     // Pause and resume: no replay.
     await page.evaluate(() => { window.mira.shell.openMenu(); window.mira.shell.closeMenu() })
