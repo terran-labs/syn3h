@@ -700,6 +700,9 @@ export class MiraBuggy extends Vehicle {
     this.liquidState.wheel.x = this.hubX
     this.liquidState.wheel.z = this.hubZ
     this.liquidState.wheel.radius = this.wheelRadius
+    // The wheels' steer, for their sideways grip on water (skip.ts applyWetGrip).
+    this.liquidState.wheel.steerFront = this.steer[0]
+    this.liquidState.wheel.steerRear = this.steer[2]
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0

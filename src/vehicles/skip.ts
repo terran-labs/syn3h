@@ -93,11 +93,11 @@ export interface SkipContact {
   keep?: number
 }
 /** Force per unit of the hull's whole mass, and the lift over weight it came from (0 when none). */
-export interface SkipForce { x: number; y: number; z: number; q: number }
+export interface SkipForce { x: number; y: number; z: number; q: number; /** The friction part of it, along the surface. */ fx?: number; fy?: number; fz?: number }
 
 /** The planing lift at one contact, per unit of the hull's mass. Writes into and returns `out`. */
 export function skipForce(c: SkipContact, out: SkipForce): SkipForce {
-  out.x = out.y = out.z = out.q = 0
+  out.x = out.y = out.z = out.q = out.fx = out.fy = out.fz = 0
   if (!(c.wet > 0) || !(c.share > 0) || !(c.full > 0) || !(c.g > 0) || !(c.planing > 0) || !Number.isFinite(c.planing)) return out
   const un = c.vx * c.nx + c.vy * c.ny + c.vz * c.nz
   const tx = c.vx - un * c.nx, ty = c.vy - un * c.ny, tz = c.vz - un * c.nz
@@ -123,6 +123,7 @@ export function skipForce(c: SkipContact, out: SkipForce): SkipForce {
   out.y = c.ny * push - ty * drag
   out.z = c.nz * push - tz * drag
   out.q = q
+  out.fx = -tx * drag; out.fy = -ty * drag; out.fz = -tz * drag
   return out
 }
 
@@ -240,12 +241,24 @@ export interface SkipBody extends PatchBody {
   angvel(): { x: number; y: number; z: number }
   principalInertia(): { x: number; y: number; z: number }
   addTorque(t: { x: number; y: number; z: number }, wake: boolean): void
+  addForceAtPoint?(f: { x: number; y: number; z: number }, p: { x: number; y: number; z: number }, wake: boolean): void
 }
+/**
+ * A planing hull's keel (the buggy's tyres): sideways grip at each planing corner in proportion
+ * to that corner's planing push, as a tyre's grip on the ground follows its load. `grip` is the
+ * side force over the push at full slip, `front` the front corners' share of it, `steer` the
+ * front keel's angle (radians about up).
+ */
+export interface SkipKeel { grip: number; front: number; steer: number; /** The rear keel's angle (radians about up), counter to the front's: a skimming hull rides on its stern. */ rearSteer?: number; /** The step, s. */ dt?: number }
+/** Sideways slip (m/s) at a planing corner at which its keel grip is full. */
+export const KEEL_SLIP = 2
 
-const corner = new THREE.Vector3(), rq = new THREE.Quaternion(), n = { x: 0, y: 1, z: 0 }, flow = { x: 0, z: 0 }
+const kl = new THREE.Vector3(), corner = new THREE.Vector3(), rq = new THREE.Quaternion(), n = { x: 0, y: 1, z: 0 }, flow = { x: 0, z: 0 }
 const contact: SkipContact = { wet: 0, full: SKIP_FULL_DEPTH, share: 0.25, nx: 0, ny: 1, nz: 0, vx: 0, vy: 0, vz: 0, planing: Infinity, g: 9.81 }
-const force: SkipForce = { x: 0, y: 0, z: 0, q: 0 }
+const force: Required<SkipForce> = { x: 0, y: 0, z: 0, q: 0, fx: 0, fy: 0, fz: 0 }
 const fsum = { x: 0, y: 0, z: 0 }
+/** The friction along the surface `applySkip` applied in its last call, N (zero when none). */
+export const skipFrictionApplied = { x: 0, y: 0, z: 0 }
 
 /** Surface height at (x, z) when it is water there, else NaN. */
 function waterAt(terrain: SkipTerrain, x: number, z: number): number {
@@ -265,7 +278,7 @@ function waterAt(terrain: SkipTerrain, x: number, z: number): number {
  * `kindFactors` are the vehicle kind's factors on the shared friction and energy kept.
  * Returns the largest lift over weight at any corner this step, 0 when it is not planing.
  */
-export function applySkip(body: SkipBody, terrain: SkipTerrain, g: number, buoyancy: number, factor = 1, bottom?: number, atSurface?: number, kindFactors?: { friction: number; keep: number }): number {
+export function applySkip(body: SkipBody, terrain: SkipTerrain, g: number, buoyancy: number, factor = 1, bottom?: number, atSurface?: number, kindFactors?: { friction: number; keep: number }, keel?: SkipKeel): number {
   if (!(buoyancy > 0) || body.isKinematic()) return 0
   const patch = planingPatch(body)
   if (!patch) return 0
@@ -278,6 +291,7 @@ export function applySkip(body: SkipBody, terrain: SkipTerrain, g: number, buoya
   contact.friction = kindFactors?.friction ?? 1; contact.keep = kindFactors?.keep ?? 1
   let most = 0
   fsum.x = fsum.y = fsum.z = 0
+  skipFrictionApplied.x = skipFrictionApplied.y = skipFrictionApplied.z = 0
   for (let i = 0; i < 4; i++) {
     corner.set(i & 1 ? patch.maxX : patch.minX, bottom ?? patch.bottom, i & 2 ? patch.maxZ : patch.minZ).applyQuaternion(rq)
     corner.x += p.x; corner.y += p.y; corner.z += p.z
@@ -311,6 +325,28 @@ export function applySkip(body: SkipBody, terrain: SkipTerrain, g: number, buoya
     // hull's own buoyancy (its columns or corners) keeps its attitude on the water; a push at the
     // corner pitched a light buggy nose-up on its tail while the tail went on planing.
     fsum.x += force.x * mass; fsum.y += force.y * mass; fsum.z += force.z * mass
+    if (keel && keel.grip > 0 && body.addForceAtPoint) {
+      // Sideways along the corner's keel (front corners turned by the steer), in the surface's
+      // plane, opposing the corner's slip: it turns and slows the hull, never speeds it.
+      const front = i < 2, a = front ? keel.steer : keel.rearSteer ?? 0
+      kl.set(Math.cos(a), 0, -Math.sin(a)).applyQuaternion(rq)
+      const kn = kl.x * n.x + kl.y * n.y + kl.z * n.z
+      kl.x -= kn * n.x; kl.y -= kn * n.y; kl.z -= kn * n.z
+      const ll = Math.hypot(kl.x, kl.y, kl.z)
+      const pushN = force.x * n.x + force.y * n.y + force.z * n.z
+      if (ll > 1e-6 && pushN > 0) {
+        kl.multiplyScalar(1 / ll)
+        const slip = contact.vx * kl.x + contact.vy * kl.y + contact.vz * kl.z
+        // No more than would stop this corner's quarter of the hull slipping within the step: a
+        // touchdown's push (up to SKIP_MAX_RATIO squared times its weight) overshot in one step,
+        // and the hull pirouetted from touch to touch.
+        const cap = 0.5 * (mass / 4) * Math.abs(slip) / Math.max(keel.dt ?? 1 / 60, 1e-3)
+        const side = -Math.sign(slip) * Math.min(cap, keel.grip * (front ? keel.front : 1) * pushN * mass * Math.min(1, Math.abs(slip) / KEEL_SLIP))
+        // At the centre of mass's height, so it yaws the hull without rolling it over its tyres.
+        if (Number.isFinite(side) && side !== 0) body.addForceAtPoint({ x: kl.x * side, y: kl.y * side, z: kl.z * side }, { x: corner.x, y: p.y, z: corner.z }, true)
+      }
+    }
+    skipFrictionApplied.x += force.fx * mass; skipFrictionApplied.y += force.fy * mass; skipFrictionApplied.z += force.fz * mass
     most = Math.max(most, force.q)
   }
   if (most > 0) {
@@ -324,4 +360,80 @@ export function applySkip(body: SkipBody, terrain: SkipTerrain, g: number, buoya
     if (Number.isFinite(k + w.x + w.z) && k > 0) body.addTorque({ x: -w.x * k, y: 0, z: -w.z * k }, true)
   }
   return most
+}
+
+// ---------------------------------------------------------------------------------------
+// Wet tyres grip the water sideways: steering a buggy on the water.
+// ---------------------------------------------------------------------------------------
+//
+// The owner, 26 November 2026: "If it's skipping on the top of the tires or if it's wallowing,
+// it should have good directional control as I turn the wheels left and right. Right now the
+// skip has essentially no directional control." The planing contact above drags equally in every
+// direction along the surface, so a skipping buggy's steered wheels turned its nose and not its
+// path. A wet tyre is a keel: the water resists it moving sideways, along its own axle, in
+// proportion to how much of it is wet. The steered wheels' axles turn with them, so lock turns the
+// path. Strong while paddling (`wetGripWallow`, by wet depth); while the planing lift carries the hull
+// the tyres grip by their planing push instead (`SkipKeel`, `wetGripSkip`: the owner, tight
+// turns wallowing, wide arcs skipping), the two handing over by that lift's share (`hullGiveWay`).
+//
+// It only opposes the tyre's sideways slip, so it can turn and slow the hull but never give it
+// speed. A pure function of the body's state, its wheels' steer and the water, as the skip is.
+
+const WG = { group: 'Water', scope: 'world' as const }
+/** Sideways grip of a wholly wet tyre while paddling (1/s): how quickly it kills its sideways slip. */
+export const wetGripWallow = defineParam({ ...WG, id: 'water.buggy.wallowGrip', label: 'Buggy: wet tyre side grip, wallowing (1/s)', default: 3, min: 0, max: 20, step: 0.1 })
+/**
+ * Sideways grip of the tyres while the planing lift carries the hull (a skip or a skim), over
+ * their planing push (`SkipKeel`): about 1 is the push's own size, wide arcs; lower is wider.
+ */
+export const wetGripSkip = defineParam({ ...WG, id: 'water.buggy.skipGrip', label: 'Buggy: tyre side grip while skipping (× planing push)', default: 1, min: 0, max: 3, step: 0.05 })
+
+/**
+ * The front tyres' share of the side grip, against the rear's 1. A hull grips the water hardest
+ * aft, as a boat's keel and skeg do, so it weathervanes into its path; a front gripping as hard as
+ * the rear (wetter, as the nose dips at a touchdown) turned a skipping buggy round on itself.
+ */
+/**
+ * The rear tyres' share of the keel's steer, turned against the front's as the buggy's four-wheel
+ * steer turns them slow. At speed a skimming buggy rides nose up on its rear tyres alone, so a
+ * front-only keel steered nothing and the rear held the hull straight as a rail.
+ */
+export const wetGripRear = defineParam({ ...WG, id: 'water.buggy.keelRear', label: 'Buggy: rear tyres\' counter-steer on water (share of the lock)', default: 0.5, min: 0, max: 1, step: 0.05 })
+export const wetGripFront = defineParam({ ...WG, id: 'water.buggy.keelFront', label: 'Buggy: front tyres\' share of the wet side grip', default: 0.4, min: 0, max: 1.5, step: 0.05 })
+
+/** A wheeled hull's wheels for the wet grip: hub half track and half wheelbase, tyre radius, steer (radians, about up; front and rear axles). */
+export interface WetWheels { x: number; z: number; radius: number; steerFront?: number; steerRear?: number }
+
+const wp = new THREE.Vector3(), hub = new THREE.Vector3(), lat = new THREE.Vector3(), wq = new THREE.Quaternion(), wflow = { x: 0, z: 0 }
+/**
+ * Sideways grip of each wet tyre (see above). `bottom` is the tyres' bottom in the body frame
+ * (liquidHull.ts `hullBottom`), `skipping` this step's planing lift over weight (`applySkip`).
+ * Applied at the hub, so it steers the hull without rolling it over its tyres.
+ */
+export function applyWetGrip(body: SkipBody & { addForceAtPoint(f: { x: number; y: number; z: number }, p: { x: number; y: number; z: number }, wake: boolean): void }, terrain: SkipTerrain, wheels: WetWheels, bottom: number, skipping: number, dt: number): void {
+  if (body.isKinematic()) return
+  const k = Math.min(0.5 / Math.max(dt, 1e-3), wetGripWallow.value * (1 - hullGiveWay(skipping)))
+  if (!(k > 0) || !(wheels.radius > 0)) return
+  const p = body.translation(), r = body.rotation(), share = body.mass() / 4
+  wq.set(r.x, r.y, r.z, r.w)
+  for (let i = 0; i < 4; i++) {
+    const front = i < 2, a = (front ? wheels.steerFront : wheels.steerRear) ?? 0
+    wp.set(i & 1 ? wheels.x : -wheels.x, bottom, front ? -wheels.z : wheels.z).applyQuaternion(wq)
+    wp.x += p.x; wp.y += p.y; wp.z += p.z
+    const surface = waterAt(terrain, wp.x, wp.z)
+    if (!Number.isFinite(surface)) continue
+    // Wet from the tyre's bottom up to its hub, then wholly.
+    const wet = THREE.MathUtils.clamp((surface - wp.y) / wheels.radius, 0, 1)
+    if (!(wet > 0)) continue
+    lat.set(Math.cos(a), 0, -Math.sin(a)).applyQuaternion(wq)
+    // At the hub: a tyre radius up the body's own up axis from its bottom.
+    wp.add(hub.set(0, wheels.radius, 0).applyQuaternion(wq))
+    const v = body.velocityAtPoint(wp)
+    wflow.x = wflow.z = 0
+    terrain.liquidFlowAt?.(wp.x, wp.z, wflow)
+    const slip = (v.x - (Number.isFinite(wflow.x) ? wflow.x : 0)) * lat.x + v.y * lat.y + (v.z - (Number.isFinite(wflow.z) ? wflow.z : 0)) * lat.z
+    const f = -k * (front ? wetGripFront.value : 1) * slip * wet * share
+    if (!Number.isFinite(f) || f === 0) continue
+    body.addForceAtPoint({ x: lat.x * f, y: lat.y * f, z: lat.z * f }, wp, true)
+  }
 }

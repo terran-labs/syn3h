@@ -32,7 +32,7 @@ export interface SkipSample {
   z: number
   finite: boolean
 }
-export interface SkipRun { v: Vehicle; kind: SkipKind; trace: SkipSample[]; step(n?: number): void; dispose(): void; planing: number; clock: { t: number } }
+export interface SkipRun { v: Vehicle; kind: SkipKind; trace: SkipSample[]; step(n?: number): void; dispose(): void; planing: number; clock: { t: number }; /** Throttle held each step (input y); 0 or unset leaves the input alone. */ throttle?: number }
 
 const corner = new THREE.Vector3(), q = new THREE.Quaternion(), w = new THREE.Vector3(), inertia = new THREE.Vector3()
 
@@ -70,10 +70,10 @@ export function skipLaunch(kind: SkipKind, speed: number | ((planing: number) =>
   v.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   const trace: SkipSample[] = []
   const run: SkipRun = {
-    v, kind, trace, planing, clock,
+    v, kind, trace, planing, clock, throttle: opts.throttle,
     step(n = 1) {
       for (let i = 0; i < n; i++) {
-        if (opts.throttle) v.input.y = opts.throttle
+        if (run.throttle) v.input.y = run.throttle
         h.step(v)
         clock.t += FIXED_DT
         const p = v.body.translation(), r = v.body.rotation(), l = v.body.linvel(), av = v.body.angvel()

@@ -12,6 +12,8 @@ import { emptyInput } from '../../src/core/Input'
 import {
   type SkipForce, SKIP_ANGLE_FADE, applySkip, planingSpeed, skipAngle, skipForce, skipMinSpeed, skipPlaningScale,
 } from '../../src/vehicles/skip'
+import { BUGGY_TOP_PER_SPEED } from '../../src/vehicles/lava'
+import { buggySpeed } from '../../src/vehicles/buggyParams'
 import { SKIP_KINDS, airborneEnergies, coastFor, planingEndsWithin, skipCount, skipLaunch } from './waterSkipScenarios'
 
 beforeAll(initPhysics)
@@ -90,7 +92,8 @@ describe('vehicles skipping on water', () => {
 
   it('skipping ends: coasting or at full throttle, a buggy drops below its planing speed for good within a bound', () => {
     // The owner: buggies "skip at least a few times before they sink past their planing zone and
-    // wallow through on the surface". Drive on the water cannot hold a hull up past its planing
+    // wallow through on the surface". Below its skim speed (water.buggy.skimAbove; four times the
+    // planing speed is well below) drive on the water cannot hold a hull up past its planing
     // speed, so the bound is the skip friction's alone (planingEndsWithin, from the registry).
     for (const throttle of [0, 1]) {
       const r = skipLaunch('buggy', (p) => p * 4, shallow(), { throttle })
@@ -107,6 +110,24 @@ describe('vehicles skipping on water', () => {
         if (throttle) { expect(end.gap).toBeGreaterThan(-1); expect(end.skipping).toBeLessThan(1) }
       } finally { r.dispose() }
     }
+  })
+
+  it('lifting off ends a skim: flat out from top speed, then the throttle let go, it drops below its planing speed within the bound', () => {
+    // The owner: a buggy "skims only near top speed" and only while flat out; let go, it decays.
+    const top = BUGGY_TOP_PER_SPEED * buggySpeed.value
+    const r = skipLaunch('buggy', top, shallow(), { throttle: 1 })
+    try {
+      coastFor(r, 5)
+      r.throttle = 0; r.v.input.y = 0
+      const n0 = r.trace.length, from = r.trace[n0 - 1].speed
+      const bound = planingEndsWithin(from, r.planing)
+      coastFor(r, bound + 10)
+      const after = r.trace.slice(n0), t0 = after[0].t
+      const i = after.findIndex((s, k) => after.slice(k).every((x) => x.speed < r.planing))
+      expect(i).toBeGreaterThanOrEqual(0)
+      expect(after[i].t - t0).toBeLessThanOrEqual(bound)
+      expect(r.trace.every((s) => s.finite)).toBe(true)
+    } finally { r.dispose() }
   })
 
   it('the tank never leaves the water, at any speed or shallow angle in its range', () => {
@@ -185,7 +206,8 @@ describe('vehicles skipping on water', () => {
     // 20 a second, sets its position, rotation and velocity from the wire; its own physics,
     // this skip included, runs between. The buggy's hull lag and wheel spin are not on the wire,
     // so a proxy left to run free drifts a little; fed snapshots, it must follow the skips.
-    const a = skipLaunch('buggy', fast, shallow(), { waves: 'sea' })
+    // Five times its planing speed: fast enough that the owner's buggy skips within the 3 s.
+    const a = skipLaunch('buggy', (p) => p * 5, shallow(), { waves: 'sea' })
     const c = skipLaunch('buggy', 0, 0, { waves: 'sea' })
     try {
       const send = () => {

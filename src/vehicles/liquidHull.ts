@@ -78,6 +78,16 @@ export interface HullProfile {
   tyreLift?: number
   tyrePull?: number
   tyreSpeed?: number
+  /**
+   * Paddle wheels (water): wheels spinning faster than the hull moves churn the water and lift
+   * their corner, `paddleLift` over weight at `paddleSpin` m/s of churn, so at full throttle the
+   * buggy rides up on its tyres. `paddleBob` (0..1) of that lift rises and falls with the churn's
+   * own rhythm, so it bobs as it goes, faster and harder the harder the wheels spin; easing off
+   * settles it back down. Unset, no paddle lift (lava).
+   */
+  paddleLift?: number
+  paddleSpin?: number
+  paddleBob?: number
 }
 
 export interface HullState {
@@ -145,6 +155,12 @@ export interface HullInput {
    * `ploughGiveWay`): without that, a coasting skip dug in on its second touchdown.
    */
   plough?: number
+  /**
+   * 0..1, default 1: how much of the steered wheels' rudder acts. In water the wet tyres' own
+   * sideways grip steers instead (skip.ts `applyWetGrip`): the rudder pushes by speed times lock
+   * whatever the tyre's slip, so at skipping speed each touch spun the nose and not the path.
+   */
+  rudder?: number
 }
 /** Body-frame height of the buggy hull's lowest point in a liquid: its tyres, reaching down with their size (as the columns do). */
 export function hullBottom(wheel?: { radius: number }): number {
@@ -174,7 +190,10 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
   const throttle = THREE.MathUtils.clamp(input.throttle, -1, 1)
   // Gait: the wheels' own spin sets the rhythm, so it fades as they stop.
   const effort = Math.abs(throttle)
-  s.phase = (s.phase + 2 * Math.PI * p.gait * effort * dt) % (2 * Math.PI)
+  // Churn: how much faster the wheels turn than the hull moves (paddle wheels, water).
+  const churn = p.paddleLift ? THREE.MathUtils.clamp((input.wheelSpeed - forward) / Math.max(0.5, p.paddleSpin ?? 10), 0, 1) * (throttle > 0 ? 1 : 0) : 0
+  // The gait follows the wheels' own spin where they paddle, else the throttle.
+  s.phase = (s.phase + 2 * Math.PI * p.gait * (p.paddleLift ? churn : effort) * dt) % (2 * Math.PI)
   // Left and right bite in turn (sway); front and rear a quarter cycle later (pitch), so
   // the hull walks in a slow circle of roll and pitch, as a swimmer does.
   const sway = Math.sin(s.phase), surge = Math.cos(s.phase)
@@ -249,7 +268,7 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     f.y = buoyancy * g * share * s.wet[i] - (v.y - (Number.isFinite(rise) ? rise : 0)) * heave * share
     // Turned wheels moving through the liquid act as a rudder too, a little, even coasting.
     if (front && steerSin !== 0) {
-      const rudder = STEER.rudder * p.steer * share * forward * Math.min(1, sub * 1.5) * steerSin
+      const rudder = STEER.rudder * (input.rudder ?? 1) * p.steer * share * forward * Math.min(1, sub * 1.5) * steerSin
       f.x += side.x * rudder
       f.z += side.z * rudder
     }
@@ -278,6 +297,8 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
         f.z += fwd.z * (p.tyrePull ?? 0) * share * k
       }
     }
+    // Paddle wheels: churning tyres lift their corner, bobbing with the churn's rhythm.
+    if (churn > 0) f.y += (p.paddleLift ?? 0) * g * share * churn * Math.min(1, sub * 3) * (1 + (p.paddleBob ?? 0) * Math.sin(2 * s.phase)) * (1 - THREE.MathUtils.smoothstep(sub, 0.85, 1))
     // Paddle: rear and front wheels alike, alternating left and right bite.
     if (effort > 0) {
       // In a turn the outside wheels dig in harder and the inside ones ease off.

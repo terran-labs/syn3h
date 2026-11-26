@@ -1,12 +1,13 @@
 /** Indestructible vehicles: viscous lava, cooling paint and legacy water buoyancy. */
 import * as THREE from 'three/webgpu'
 import { applyWaterForces, waterSinking, hasWaterContact, waterProfiles, waterProfileOf, planingFactor, skipFactors } from './buoyancy'
-import { applySkip, hullGiveWay, planingPatch, planingSpeed, ploughGiveWay } from './skip'
+import { applySkip, applyWetGrip, skipFrictionApplied, wetGripFront, wetGripRear, wetGripSkip, type SkipKeel, hullGiveWay, planingPatch, planingSpeed, ploughGiveWay } from './skip'
 import { defineParam } from '../../shared/params'
+import { buggySpeed } from './buggyParams'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { type UnityBody, signedAngle, unityEulerAngles } from './unityBody'
-import { applyHull, applyWings, createHullState, hullBottom, type HullInput, type HullProfile, type HullState, type WingProfile } from './liquidHull'
+import { STEER, applyHull, applyWings, createHullState, hullBottom, type HullInput, type HullProfile, type HullState, type WingProfile } from './liquidHull'
 
 export const buggyLavaFloat = defineParam({
   id: 'buggy.lavaFloat', label: 'Float on water', group: 'Buggy', scope: 'world',
@@ -150,6 +151,23 @@ export const waterWaddle=defineParam({...W,id:'water.waddle',label:'Buggy: waddl
 export const waterSunkDrag=defineParam({...W,id:'water.sunkDrag',label:'Buggy: vertical drag once under (1/s, lower sinks faster)',default:1.2,min:.2,max:6,step:.05})
 export const waterTyreLift=defineParam({...W,id:'water.tyreLift',label:'Buggy: skimming tyre lift / weight',default:.5,min:0,max:1.5,step:.05})
 export const waterTyrePull=defineParam({...W,id:'water.tyrePull',label:'Buggy: skimming tyre pull (m/s²)',default:10,min:0,max:20,step:.5})
+/**
+ * Skimming near top speed: the owner, 26 November 2026, "skims only near top speed". Above this
+ * share of the buggy's top speed, flat out, the tyres hold the skim: they cancel the skip's
+ * friction and pull toward top speed, so it skims as long as it stays flat out. Below it, off the
+ * throttle or slower, the skip decays into the wallow. A share, so retuning buggy.speed moves it.
+ */
+export const waterSkimAbove=defineParam({...W,id:'water.buggy.skimAbove',label:'Buggy: skims on flat out above this share of top speed',default:.85,min:.3,max:1.2,step:.01})
+/** The buggy's top speed on the flat per unit of buggy.speed (the handling report: 101.8 m/s at 30). */
+export const BUGGY_TOP_PER_SPEED=101.8/30
+const skipKeel:SkipKeel={grip:0,front:1,steer:0}
+/** Seconds a skim is held after the tyres last touched; the speed hold's gain (1/s) and its most pull (m/s²). */
+const SKIM_HOLD=.5,SKIM_GAIN=2,SKIM_MAX_PULL=30
+export const waterPaddleLift=defineParam({...W,id:'water.buggy.paddleLift',label:'Buggy: paddle wheel lift / weight at full churn',default:.5,min:0,max:2,step:.05})
+export const waterPaddleSpin=defineParam({...W,id:'water.buggy.paddleSpin',label:'Buggy: wheel churn for full paddle lift (m/s)',default:10,min:1,max:60,step:.5})
+export const waterPaddleBob=defineParam({...W,id:'water.buggy.paddleBob',label:'Buggy: paddle wheel bob (0 to 1)',default:.5,min:0,max:1,step:.05})
+/** Speed (m/s) up to which the wet tyres' keel turns through the paddles' whole lock; faster, it narrows in proportion. */
+export const waterKeelSpeed=defineParam({...W,id:'water.buggy.keelSpeed',label:'Buggy: wet tyre steer narrows above (m/s)',default:20,min:2,max:100,step:1})
 export const waterTyreSpeed=defineParam({...W,id:'water.tyreSpeed',label:'Buggy: speed from which skimming tyres lift (m/s)',default:12,min:3,max:40,step:.5})
 export const waterGrip=defineParam({...W,id:'water.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.6,min:0,max:1,step:.05})
 const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:0,deep:0,steer:.55}
@@ -165,7 +183,7 @@ function waterProfile(body:RAPIER.RigidBody,g:number):HullProfile{
  waterHull.buoyancy=w.buoyancy.value;waterHull.thickness=waterThickness.value;waterHull.paddle=waterPaddle.value
  waterHull.planing=patch?planingSpeed(body.mass(),patch.area,g,w.planing.value):Infinity
  waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=0;waterHull.steer=waterSteer.value;waterHull.liftSpeed=waterLiftSpeed.value;waterHull.coast=waterCoast.value
- waterHull.sunkHeave=waterSunkDrag.value;waterHull.tyreLift=waterTyreLift.value;waterHull.tyrePull=waterTyrePull.value;waterHull.tyreSpeed=waterTyreSpeed.value
+ waterHull.sunkHeave=waterSunkDrag.value;waterHull.tyreLift=waterTyreLift.value;waterHull.tyrePull=waterTyrePull.value;waterHull.tyreSpeed=waterTyreSpeed.value;waterHull.paddleLift=waterPaddleLift.value;waterHull.paddleSpin=waterPaddleSpin.value;waterHull.paddleBob=waterPaddleBob.value
  return waterHull
 }
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
@@ -197,14 +215,16 @@ export interface LiquidState {
  /** Wheel surface speed along the nose, m/s, set by a wheeled controller each step. */
  wheelSpeed:number
  /** Live wheel geometry, set by a wheeled controller: hub half track, half wheelbase, tyre radius. */
- wheel:{x:number;z:number;radius:number}
+ wheel:{x:number;z:number;radius:number;steerFront?:number;steerRear?:number}
  /** Velocity and spin before this step's controller ran. */
  preV:THREE.Vector3
  preW:THREE.Vector3
  /** Mean wetness of the hull last step, 0..1. */
  hullWet:number
+ /** Seconds left of a skim's hold since the tyres last touched the water (water.buggy.skimAbove). */
+ skimT:number
 }
-export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,skipping:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,wheel:{x:1.1,z:1.3,radius:.5},preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0}}
+export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,skipping:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,wheel:{x:1.1,z:1.3,radius:.5},preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0,skimT:0}}
 const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0)
 
 /**
@@ -259,9 +279,30 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   if(!lava)profile.sink=wingsOpen?undefined:waterSink.value
   // Skipping and planing: the shared planing contact on the buggy's own hull, first, so the
   // hull's drag and heave give way to it once it carries the hull (skip.ts `hullGiveWay`).
-  state.skipping=lava?0:applySkip(body,terrain,-world.gravity.y,profile.buoyancy,planingFactor(kind),hullBottom(state.wheel),lava?1:state.hull.lift,skipFactors(kind))
-  hullInput.bulk=1-hullGiveWay(state.skipping);hullInput.plough=1-ploughGiveWay(state.skipping)
+  // The front keel turns at least as far as the steering input turns the paddles' wash
+  // (liquidHull.ts STEER), narrowing with speed (water.buggy.keelSpeed): the wheels' own angle is
+  // the dry tyres' and their limiter takes it to a fraction of a degree at speed. Slow, the
+  // wheels' four-wheel steer is larger and is kept.
+  const sp=Math.hypot(v.x,v.z),wheel=state.wheel,own=wheel.steerFront??0
+  const keelAngle=lava?0:-STEER.angle*profile.steer*THREE.MathUtils.clamp(input.x,-1,1)*Math.min(1,waterKeelSpeed.value/Math.max(1,sp))
+  const frontSteer=Math.abs(keelAngle)>Math.abs(own)?keelAngle:own
+  skipKeel.grip=wetGripSkip.value;skipKeel.front=wetGripFront.value;skipKeel.steer=frontSteer;skipKeel.rearSteer=-keelAngle*wetGripRear.value;skipKeel.dt=dt
+  state.skipping=lava?0:applySkip(body,terrain,-world.gravity.y,profile.buoyancy,planingFactor(kind),hullBottom(state.wheel),lava?1:state.hull.lift,skipFactors(kind),skipKeel)
+  // Flat out near top speed the tyres hold the skim (water.buggy.skimAbove): they cancel the
+  // skip's friction at each touch and drive toward top speed through the short hops between
+  // (SKIM_HOLD seconds after a touch), as the motor would on land. Coasting it does nothing.
+  if(!lava){
+   state.skimT=state.skipping>0?SKIM_HOLD:Math.max(0,state.skimT-dt)
+   const top=BUGGY_TOP_PER_SPEED*buggySpeed.value,a=waterSkimAbove.value
+   forward.set(0,0,-1).applyQuaternion(liquidQ);const fv=v.x*forward.x+v.z*forward.z
+   const hold=state.skimT>0?THREE.MathUtils.smoothstep(input.y,.9,1)*THREE.MathUtils.smoothstep(fv,(a-.05)*top,a*top):0
+   if(hold>0){const m=body.mass(),pull=m*hold*THREE.MathUtils.clamp((top-fv)*SKIM_GAIN,0,SKIM_MAX_PULL)
+    body.addForce({x:-skipFrictionApplied.x*hold+forward.x*pull,y:-skipFrictionApplied.y*hold,z:-skipFrictionApplied.z*hold+forward.z*pull},true)}
+  }
+  hullInput.bulk=1-hullGiveWay(state.skipping);hullInput.plough=1-ploughGiveWay(state.skipping);hullInput.rudder=lava?1:0
   state.hullWet=applyHull(body,world,terrain,type,profile,state.hull,hullInput,dt)
+  // Wet tyres grip the water sideways while paddling (skip.ts applyWetGrip), the same front keel.
+  if(!lava){wheel.steerFront=frontSteer;applyWetGrip(body,terrain,wheel,hullBottom(wheel),state.skipping,dt);wheel.steerFront=own}
   if(wingsOpen){
    wingProfile.buoyancy=liquidWingBuoyancy.value;wingProfile.authority=liquidWingAuthority.value;wingProfile.density=lava?LAVA_DENSITY.value:1
    applyWings(body,world,terrain,type,wingProfile,state.hull,input,dt)

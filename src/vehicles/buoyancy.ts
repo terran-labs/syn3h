@@ -21,7 +21,7 @@ function tuning(kind:string, buoyancy:number, friction=1, keep=1) {
  }
 }
 // Sealed craft displace more than their weight; dense tracked armour has no reserve lift.
-export const waterProfiles = { buggy:tuning('buggy',1.6), tank:tuning('tank',0), hovercraft:tuning('hovercraft',1.1), jet:tuning('jet',.65), zorb:tuning('zorb',2,.2,.5/.7) }
+export const waterProfiles = { buggy:tuning('buggy',1.6,2.5,.3), tank:tuning('tank',0), hovercraft:tuning('hovercraft',1.1), jet:tuning('jet',.65), zorb:tuning('zorb',2,.2,.5/.7) }
 /** A vehicle kind's water profile; a kind with no entry floats like a hovercraft and plans at factor 1. */
 export function waterProfileOf(kind:string){return kind.includes('buggy')?waterProfiles.buggy:waterProfiles[kind as keyof typeof waterProfiles]??waterProfiles.hovercraft}
 /** A vehicle kind's factors on the shared skip friction and energy kept: its own settings, or 1 for a kind with none. */

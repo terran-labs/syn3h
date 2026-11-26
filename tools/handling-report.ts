@@ -27,6 +27,8 @@ import * as liquid from '../tests/vehicles/liquidScenarios'
 import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
 import * as skip from '../tests/vehicles2/waterSkipScenarios'
 import { skipAngle } from '../src/vehicles/skip'
+import { BUGGY_TOP_PER_SPEED } from '../src/vehicles/lava'
+import { buggySpeed } from '../src/vehicles/buggyParams'
 import { harness } from '../tests/vehicles2/harness'
 import { MiraBuggy } from '../src/vehicles/MiraBuggy'
 
@@ -421,6 +423,68 @@ async function waterSkipping(): Promise<Figure[]> {
   return out
 }
 
+/**
+ * The buggy on water (src/vehicles/skip.ts, liquidHull.ts, lava.ts): how far a skip runs, the
+ * skim near top speed, steering skimming and wallowing, and the paddle wheels' ride and bob.
+ */
+async function buggyOnWater(): Promise<Figure[]> {
+  const out: Figure[] = []
+  const angle = skipAngle.value / 3, top = BUGGY_TOP_PER_SPEED * buggySpeed.value
+  const course = (l: { x: number; z: number }) => Math.atan2(l.x, -l.z)
+  const wrap = (d: number) => { while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d }
+  for (const u of [30, 50, top]) {
+    const r = await at(() => {
+      const run = skip.skipLaunch('buggy', u, angle)
+      try {
+        skip.coastFor(run, 90)
+        const tr = run.trace, first = tr.find((x) => x.gap <= 0) ?? tr[0]
+        const below = tr.findIndex((x, i) => tr.slice(i).every((y) => y.speed < run.planing))
+        return { skips: skip.skipCount(tr), distance: below < 0 ? Infinity : Math.abs(tr[below].z - first.z) }
+      } finally { run.dispose() }
+    })
+    out.push(fig(`Coasting in at ${u.toFixed(0)} m/s: skips`, '', r.skips), fig(`Coasting in at ${u.toFixed(0)} m/s: distance until below its planing speed for good`, 'm', r.distance))
+  }
+  const skim = await at(() => {
+    const run = skip.skipLaunch('buggy', top, angle, { throttle: 1 })
+    try { skip.coastFor(run, 30); return run.trace[run.trace.length - 1].speed } finally { run.dispose() }
+  })
+  out.push(fig(`Flat out in at top speed (${top.toFixed(0)} m/s): speed after 30 s (skims on above water.buggy.skimAbove of top)`, 'm/s', skim))
+  // Full lock right for 3 s: skimming from 50 m/s (4 s after the first touch, past the first hops) and wallowing.
+  for (const [what, u, settle] of [['skimming in from 50 m/s, flat out', 50, 4], ['wallowing, flat out', 0, 20]] as const) {
+    const r = await at(() => {
+      const run = skip.skipLaunch('buggy', u || ((p: number) => p * 1.5), angle, { throttle: 1 })
+      try {
+        skip.coastFor(run, settle)
+        const l0 = run.v.body.linvel(), c0 = course(l0)
+        run.v.input.x = 1
+        let worst = 0, dist = 0
+        for (let i = 0; i < Math.round(3 / FIXED_DT); i++) {
+          run.step()
+          const l = run.v.body.linvel(), nose = liquid.pitchRoll(run.v).yaw * Math.PI / 180
+          worst = Math.max(worst, Math.abs(wrap(nose - course(l))) * 180 / Math.PI)
+          dist += Math.hypot(l.x, l.z) * FIXED_DT
+        }
+        const turned = Math.abs(wrap(course(run.v.body.linvel()) - c0))
+        return { radius: turned > 1e-4 ? dist / turned : Infinity, worst }
+      } finally { run.dispose() }
+    })
+    out.push(fig(`Full lock ${what}: path radius over 3 s`, 'm', r.radius), fig(`Full lock ${what}: worst nose-to-path angle`, '°', r.worst))
+  }
+  const ride = await at(() => {
+    const run = skip.skipLaunch('buggy', (p) => p * 1.5, angle, { throttle: 1 })
+    try {
+      skip.coastFor(run, 20)
+      const n0 = run.trace.length
+      skip.coastFor(run, 10)
+      const ys = run.trace.slice(n0).map((x) => x.y).sort((a, b) => a - b)
+      const mean = ys.reduce((a, b) => a + b, 0) / ys.length
+      return { hub: mean + 0.1, bob: ys[Math.floor(ys.length * 0.95)] - ys[Math.floor(ys.length * 0.05)] }
+    } finally { run.dispose() }
+  })
+  out.push(fig('Wallowing flat out: wheel centres above the surface', 'm', ride.hub), fig('Wallowing flat out: bob, peak to peak', 'm', ride.bob))
+  return out
+}
+
 // ---- Report ----------------------------------------------------------------------------
 
 /** Each vehicle, its presets (the default first), and how its summary columns were measured. */
@@ -440,6 +504,10 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
   'zorb liquids': {
     run: async () => ({ summary: NO_SUMMARY, detail: await zorbLiquids() }), presets: [{ name: 'default', description: '', values: {} }],
     how: 'A zorbed buggy launched across open water or lava, coasting (tests/vehicles2/zorbSkipScenarios.ts). Skips are the times its base rose 0.15 m clear of the surface. Tune with the shared water.skip.* settings and water.zorb.planing.',
+  },
+  'buggy on water': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await buggyOnWater() }), presets: [BUGGY_PRESETS[0]],
+    how: 'The buggy launched just clear of open water a third of the skip angle window down (tests/vehicles2/waterSkipScenarios.ts), default preset. Skips are the times its tyres rose 0.2 m clear. Tune with water.buggy.skipFriction, skipKeep, skimAbove, skipGrip, wallowGrip, keelFront, keelSpeed, paddleLift, paddleSpin and paddleBob.',
   },
   'water skipping': {
     run: async () => ({ summary: NO_SUMMARY, detail: await waterSkipping() }), presets: [{ name: 'default', description: '', values: {} }],
