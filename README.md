@@ -238,7 +238,7 @@ second player.
 
 ### Interface glass
 
-New visits use Flat at 65% tint. Choose Liquid at Medium graphics or higher for its default 25% tint. Flat lightly blurs the Settings card and expanded panels while the graphics budget allows it. Saved Frost choices open as Flat and keep their saved tint.
+New visits use Flat at 65% tint. Choose Liquid at Medium graphics or higher for its default 25% tint. Flat lightly blurs expanded panels in play while the graphics budget allows it. Saved Frost choices open as Flat and keep their saved tint.
 
 ## Diagnostics
 

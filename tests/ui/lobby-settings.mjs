@@ -93,7 +93,7 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
       }
       return { normal, nested, lowest: toggle(root, 'data-gfx', '0'), shed: toggle(shell, 'data-ui-frost', 'off'), driveShed: toggle(root, 'data-drive-glass', 'shed') }
     })
-    assert.equal(panelFilters.normal, 'blur(4px)', `${mode}: Flat Settings card has light blur`)
+    assert.equal(panelFilters.normal, 'none', `${mode}: Flat Settings card has no backdrop filter at full quality`)
     assert.ok(panelFilters.nested.every(value => value === 'none'), `${mode}: Flat Settings controls carry no additional filter`)
     assert.deepEqual([panelFilters.lowest, panelFilters.shed, panelFilters.driveShed], ['none', 'none', 'none'])
     await page.screenshot({ path: `${out}/${mode}-flat-settings.png` })
