@@ -288,6 +288,12 @@ export class Inspector {
     // on the next frame, not every frame.
     window.addEventListener('resize', () => this.queueFit(null), { signal })
     this.element.addEventListener('scroll', event => { const card = (event.target as Element).closest?.<HTMLElement>('.wi-card.is-clipped'); if (card) this.syncFade(card) }, { capture: true, passive: true, signal })
+    // The stack fades at an edge only while there is more past it (phones, phone-panels.css): under
+    // the search field once scrolled, and at its foot until the end (the owner, 26 November 2026).
+    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
+    const stackEdges = () => { const top = stack.scrollTop > 1, end = stack.scrollHeight - stack.scrollTop - stack.clientHeight < 2; if (stack.classList.contains('is-scrolled') !== top) stack.classList.toggle('is-scrolled', top); if (stack.classList.contains('is-at-end') !== end) stack.classList.toggle('is-at-end', end) }
+    stack.addEventListener('scroll', stackEdges, { passive: true, signal })
+    if (typeof ResizeObserver !== 'undefined') { const edges = new ResizeObserver(stackEdges); edges.observe(stack); signal.addEventListener('abort', () => edges.disconnect()) }
     this.element.addEventListener('toggle', event => { const card = (event.target as Element).closest<HTMLElement>('.wi-card'); this.queueFit(card) }, { capture: true, signal })
     if (typeof ResizeObserver !== 'undefined') { const watch = new ResizeObserver(() => this.queueFit(null)); watch.observe(this.element.querySelector('.wi-cards')!); signal.addEventListener('abort', () => watch.disconnect()) }
     // A card's content changing size (diagnostics lines, a list growing), and a growing region

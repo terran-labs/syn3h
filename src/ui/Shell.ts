@@ -574,7 +574,8 @@ export class Shell implements System {
     // Phones: Close panels, at the foot of the panels under the thumb, back to driving. A tap in
     // the empty space below the last card does the same, but only 12 px or more below it, so a
     // near miss on a header never throws the player back into the drive.
-    const closeAll = document.createElement('button'); closeAll.type = 'button'; closeAll.className = 'panels-close liquid-glass'
+    // No glass: a label and chevrons with the HUD's own drop shadow (the owner, 26 November 2026).
+    const closeAll = document.createElement('button'); closeAll.type = 'button'; closeAll.className = 'panels-close'
     closeAll.innerHTML = `${PANELS_CHEVRONS_DOWN}<span>Close panels</span>`
     this.inspector.element.append(closeAll)
     closeAll.addEventListener('click', () => this.returnToDriving(), { signal })
@@ -584,6 +585,29 @@ export class Shell implements System {
       const last = shown.at(-1)?.getBoundingClientRect().bottom ?? cards.getBoundingClientRect().top
       if ((event as MouseEvent).clientY >= last + 12) this.returnToDriving()
     }, { signal })
+    // Phones: a tap on the open game beside the panels closes them (the owner, 26 November 2026:
+    // "tapping anywhere left of the panels ... should, of course, close the panels"), and does
+    // nothing else: the touch never reaches the game, so no shot and no steer. Only a tap: a
+    // drag, or a touch that started inside the panels, closes nothing.
+    let outside: { id: number; x: number; y: number; at: number } | null = null
+    const panelsUp = () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches && this.playing && this.inspector.open
+    const beside = (target: EventTarget | null) => target instanceof Element && !target.closest('.world-inspector, .wi-tooltip, #player-panel, dialog, .exit-confirm, .chat-menu, .lobby-sheet, .bottom-stack, .pause-veil, .in-play-about, .report-sheet, .join-card')
+    const swallow = (event: Event) => { event.stopImmediatePropagation(); if (event.cancelable) event.preventDefault() }
+    window.addEventListener('pointerdown', event => {
+      outside = panelsUp() && beside(event.target) ? { id: event.pointerId, x: event.clientX, y: event.clientY, at: performance.now() } : null
+      if (outside) swallow(event)
+    }, { capture: true, signal })
+    for (const type of ['pointermove', 'touchstart', 'touchmove', 'touchend', 'mousedown', 'mouseup', 'click'] as const) {
+      window.addEventListener(type, event => { if (outside || (panelsUp() && beside(event.target))) swallow(event) }, { capture: true, passive: false, signal })
+    }
+    window.addEventListener('pointerup', event => {
+      const tap = outside; if (!tap || tap.id !== event.pointerId) return
+      swallow(event)
+      // The click that follows is swallowed too; then the next touch starts fresh.
+      setTimeout(() => { outside = null }, 0)
+      if (Math.hypot(event.clientX - tap.x, event.clientY - tap.y) < 12 && performance.now() - tap.at < 600) this.returnToDriving()
+    }, { capture: true, signal })
+    window.addEventListener('pointercancel', () => { outside = null }, { capture: true, signal })
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     command.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })

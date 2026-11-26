@@ -25,6 +25,7 @@ import { markedName, legibleTint } from '../playerMarks'
 import { chatLink } from './chatLink'
 import { params } from '../../../shared/params'
 import { touchLeftHanded as leftHanded } from '../TouchPreferences'
+import { keycap } from '../keycap'
 import './chat.css'
 
 /** What the card needs from the shell: a place in the stack, and the panels. */
@@ -81,7 +82,11 @@ export class ChatCard {
   private readonly menu = document.createElement('div')
   private readonly live = document.createElement('div')
   private readonly log: HTMLOListElement
-  private readonly field: HTMLInputElement
+  private readonly field: HTMLTextAreaElement
+  private readonly measure: HTMLTextAreaElement
+  private readonly send: HTMLButtonElement
+  private composing = false
+  private shiftReturn = false
   private readonly form: HTMLFormElement
   private readonly status: HTMLElement
   private unread = 0
@@ -100,11 +105,13 @@ export class ChatCard {
       <ol class="chat-log" tabindex="0" aria-label="Chat log" data-card-grow></ol>
       <p class="chat-status" hidden></p>
       <form class="chat-form" autocomplete="off">
-        <input class="chat-field" type="text" enterkeyhint="send" autocomplete="off" autocorrect="on" spellcheck="true" aria-label="Chat" placeholder="Say something nice" maxlength="${MAX_CHAT_LENGTH}">
+        <textarea class="chat-field" rows="1" enterkeyhint="send" autocomplete="off" autocorrect="on" spellcheck="true" aria-label="Chat" placeholder="Say something nice" maxlength="${MAX_CHAT_LENGTH}"></textarea>
+        <textarea class="chat-measure" rows="1" aria-hidden="true" tabindex="-1" readonly></textarea>
         <button type="submit" class="chat-send">Send</button>
       </form>`
     const q = <T extends HTMLElement>(s: string) => this.body.querySelector<T>(s)!
-    this.log = q<HTMLOListElement>('.chat-log'); this.field = q<HTMLInputElement>('.chat-field'); this.form = q<HTMLFormElement>('.chat-form')
+    this.log = q<HTMLOListElement>('.chat-log'); this.field = q<HTMLTextAreaElement>('.chat-field'); this.form = q<HTMLFormElement>('.chat-form')
+    this.measure = q('.chat-measure'); this.send = q('.chat-send')
     this.status = q('.chat-status')
     this.strip.className = 'chat-strip'; this.strip.setAttribute('aria-hidden', 'true')
     this.menu.className = 'chat-menu'; this.menu.setAttribute('role', 'menu'); this.menu.hidden = true
@@ -118,12 +125,39 @@ export class ChatCard {
     const signal = this.abort.signal
     this.form.addEventListener('submit', (e) => { e.preventDefault(); this.submit() }, { signal })
     this.field.addEventListener('focus', () => { options.input.typing = true; this.followKeyboard(true) }, { signal })
-    this.field.addEventListener('blur', () => { options.input.typing = false; this.followKeyboard(false) }, { signal })
-    this.field.addEventListener('keydown', (e) => {
-      // Keys typed here are the line's, not the game's.
-      e.stopPropagation()
-      if (e.key === 'Escape') { e.preventDefault(); this.leave() }
+    this.field.addEventListener('blur', () => {
+      options.input.typing = false
+      this.shiftReturn = false
+      this.followKeyboard(false)
     }, { signal })
+    this.field.addEventListener('input', () => this.resizeComposer(), { signal })
+    this.field.addEventListener('compositionstart', () => { this.composing = true }, { signal })
+    this.field.addEventListener('compositionend', () => { this.composing = false; this.resizeComposer() }, { signal })
+    this.field.addEventListener('keydown', (e) => {
+      // The field owns the draft keys, including Enter and the game shortcuts.
+      e.stopPropagation()
+      if (e.isComposing || this.composing || e.keyCode === 229) return
+      if (e.key === 'Escape') { e.preventDefault(); this.leave() }
+      if (e.key !== 'Enter') return
+      this.shiftReturn = e.shiftKey
+      if (e.shiftKey) return
+      e.preventDefault()
+      if (!e.repeat) this.form.requestSubmit()
+    }, { signal })
+    this.field.addEventListener('keyup', (e) => { if (e.key === 'Enter') this.shiftReturn = false }, { signal })
+    this.field.addEventListener('beforeinput', (e) => {
+      // Some mobile keyboards report Return as an edit without a keydown.
+      if (!['insertLineBreak', 'insertParagraph'].includes(e.inputType) || e.isComposing || this.composing || this.shiftReturn || !e.cancelable) return
+      e.preventDefault()
+      this.form.requestSubmit()
+    }, { signal })
+    const composerWatch = new ResizeObserver(() => this.resizeComposer())
+    composerWatch.observe(this.form)
+    const stack = this.card.closest('.wi-cards')
+    if (stack) composerWatch.observe(stack)
+    signal.addEventListener('abort', () => composerWatch.disconnect())
+    void document.fonts.ready.then(() => { if (!signal.aborted) this.resizeComposer() })
+
     // Pinned to the newest line until the player scrolls away from it themselves: a scroll the
     // card's own resizing causes (the stack easing its height) must not unpin it.
     let handled = 0
@@ -224,7 +258,55 @@ export class ChatCard {
     this.renderLog()
     this.log.scrollTop = this.log.scrollHeight
     this.syncStatus()
+    this.resizeComposer()
     this.readIfSeen()
+  }
+
+  private resizeComposer(): void {
+    if (!this.form.clientWidth) return
+    const field = this.field, form = this.form
+    const fieldStyle = getComputedStyle(field)
+    const lineHeight = parseFloat(fieldStyle.lineHeight)
+    const formWidth = form.clientWidth
+    const gap = parseFloat(getComputedStyle(form).columnGap)
+    const sendStyle = getComputedStyle(this.send)
+    const label = document.createRange()
+    label.selectNodeContents(this.send)
+    const sendWidth = Math.ceil(label.getBoundingClientRect().width
+      + parseFloat(sendStyle.paddingLeft) + parseFloat(sendStyle.paddingRight)
+      + parseFloat(sendStyle.borderLeftWidth) + parseFloat(sendStyle.borderRightWidth))
+
+    // Always classify the draft at the width beside Send. Once expanded, require a little
+    // clearance before returning to one row so rounding and tiny resizes cannot flip it.
+    const wasMultiline = form.classList.contains('is-multiline')
+    this.measure.value = field.value
+    const countLines = (width: number) => {
+      this.measure.style.width = `${Math.max(1, width)}px`
+      return Math.round(this.measure.scrollHeight / lineHeight)
+    }
+    const multiline = !!field.value && countLines(formWidth - sendWidth - gap - (wasMultiline ? 4 : 0)) > 1
+    form.classList.toggle('is-multiline', multiline)
+    if (!multiline) {
+      field.style.removeProperty('height')
+      return
+    }
+
+    const viewport = window.visualViewport
+    const visibleTop = viewport?.offsetTop ?? 0
+    const visibleBottom = visibleTop + (viewport?.height ?? window.innerHeight)
+    const stack = this.card.closest('.wi-cards')?.getBoundingClientRect()
+    const bottom = Math.min(visibleBottom, stack?.bottom ?? visibleBottom)
+    const top = Math.max(visibleTop, this.body.getBoundingClientRect().top)
+    const padding = parseFloat(fieldStyle.paddingTop) + parseFloat(fieldStyle.paddingBottom)
+    // Keep room for Send, the divider and some history before giving more lines to the draft.
+    const historyFloor = 72 // The inspector uses the same minimum for a growing log.
+    const room = bottom - top - this.send.offsetHeight - 2 * gap - historyFloor - padding
+    const cap = Math.max(3, Math.min(5, Math.floor(room / lineHeight)))
+    const lines = Math.min(cap, Math.max(2, countLines(formWidth)))
+    field.style.height = `${Math.ceil(lines * lineHeight + padding)}px`
+    if (document.activeElement === field && field.selectionStart === field.value.length) {
+      field.scrollTop = field.scrollHeight
+    }
   }
 
   /**
@@ -237,13 +319,14 @@ export class ChatCard {
     const panel = this.card.closest<HTMLElement>('.world-inspector')
     panel?.style.removeProperty('max-height')
     const vv = window.visualViewport
-    if (!on || !vv || !panel) return
+    if (!on || !vv || !panel) { this.resizeComposer(); return }
     const sync = () => {
       const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
-      if (!covered) { panel.style.removeProperty('max-height'); return }
+      if (!covered) { panel.style.removeProperty('max-height'); this.resizeComposer(); return }
       const top = panel.getBoundingClientRect().top
       panel.style.maxHeight = `${Math.max(120, vv.offsetTop + vv.height - top - 8)}px`
-      this.field.scrollIntoView({ block: 'nearest' })
+      this.resizeComposer()
+      this.form.scrollIntoView({ block: 'nearest' })
     }
     vv.addEventListener('resize', sync); vv.addEventListener('scroll', sync)
     this.keyboardOff = () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync) }
@@ -272,7 +355,7 @@ export class ChatCard {
     const text = this.field.value
     // Enter on an empty field is the way back to driving, as Escape is.
     if (!text.trim()) { this.leave(); return }
-    if (this.options.channel.send(text)) this.field.value = ''
+    if (this.options.channel.send(text)) { this.field.value = ''; this.resizeComposer() }
     this.syncStatus()
   }
 
@@ -346,7 +429,9 @@ export class ChatCard {
     this.log.replaceChildren(...this.options.channel.visible().map((l) => this.lineElement(l, false)))
     if (!this.log.children.length) {
       const empty = document.createElement('li'); empty.className = 'chat-empty'
-      empty.textContent = 'Nothing said yet. Press Y to say hello.'
+      // A touch screen has no Y key: the field below is the way in there (the owner's iPhone review).
+      if (this.host.element.classList.contains('has-touch')) empty.textContent = 'Nothing said yet. Say hello below.'
+      else empty.append('Nothing said yet. Press ', keycap('Y'), ' to say hello.')
       this.log.append(empty)
     }
   }
@@ -435,7 +520,7 @@ export class ChatCard {
     this.status.hidden = can.ok
     this.status.textContent = can.ok ? '' : can.why
     this.field.disabled = !can.ok
-    this.form.querySelector('button')!.disabled = !can.ok
+    this.send.disabled = !can.ok
   }
 
   private syncHand(): void {

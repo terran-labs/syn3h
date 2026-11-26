@@ -54,7 +54,9 @@ try {
       const items = [...stack.querySelectorAll('.rail-command > :is(input, button), .wi-cards > .wi-card, .panels-close')].filter(el => el.getClientRects().length)
       return { top: Math.round(box.top), right: Math.round(innerWidth - box.right), bottom: Math.round(innerHeight - box.bottom), radii: [...new Set(items.map(radius))] }
     })
-    assert.ok(Math.abs(shape.right - shape.top) <= 1 && Math.abs(shape.bottom - shape.top) <= 1, `${name}: one margin right, top and bottom ${JSON.stringify(shape)}`)
+    // The bottom is no longer the shared margin: the list runs to the screen's bottom edge (the
+    // owner, 26 November 2026); only the right and top margins still match.
+    assert.ok(Math.abs(shape.right - shape.top) <= 1, `${name}: one margin right and top ${JSON.stringify(shape)}`)
     assert.equal(shape.radii.length, 1, `${name}: one corner radius across the stack ${JSON.stringify(shape.radii)}`)
     const close = page.locator('.panels-close'), closeBox = await close.boundingBox(), stackBox = await panels.boundingBox()
     assert.ok(closeBox && closeBox.height >= 44 && closeBox.y + closeBox.height <= stackBox.y + stackBox.height + 1, `${name}: Close panels at the foot of the stack, a finger high ${JSON.stringify([closeBox, stackBox])}`)
