@@ -132,6 +132,8 @@ try {
     await page.evaluate(text => window.miraNet.chat.receive({ type: 'chat', from: 4242, text }), 'race you to the volcano')
     await page.waitForFunction(() => { const l = document.querySelector('.chat-strip .chat-line:last-child'); return l && l.checkVisibility({ visibilityProperty: true }) }, null, { timeout: 10000 })
     await page.waitForTimeout(400)
+    const corners = await page.locator('.chat-strip .chat-line').last().evaluate(el => { const s = getComputedStyle(el); return [s.borderTopLeftRadius, s.borderTopRightRadius, s.borderBottomRightRadius, s.borderBottomLeftRadius] })
+    assert.equal(new Set(corners).size, 1, `${size}: the chat card is round on every corner (${corners})`)
     const after = await page.evaluate(overlaps)
     await page.screenshot({ path: `${shots}/${size}-driving-chat.png` })
     assert.deepEqual(after.found, [], `${size}: with the toast gone, chat and tips touch nothing (${JSON.stringify(after)})`)

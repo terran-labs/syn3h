@@ -38,7 +38,8 @@
 /* Upright, a phone's system toast ("Joined room ...") takes the same band for a moment: the chat
    line waits, unseen but kept, and shows when the toast goes. On its side they never meet. */
 @media (orientation: portrait) { .mira-shell.has-touch:has(.shell-toast:not([hidden])) .chat-strip { visibility: hidden; } }
-.mira-shell.has-touch .chat-strip .chat-line { border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) 0 var(--chat-bubble-radius); }
+/* Phones too: a notification card, round on every corner. */
+.mira-shell.has-touch .chat-strip .chat-line { border-radius: var(--chat-bubble-radius); }
 .mira-shell:not(.is-playing) .chat-strip { display: none; }
 /* A name label or readout passed behind the strip: it steps back until they part. */
 .chat-strip.is-yielding { opacity: .18; }
