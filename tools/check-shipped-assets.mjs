@@ -11,7 +11,7 @@
 //
 // Exits 1 and lists every offending file with its size. `--allow` exists only so a release
 // can name a file another lane is still removing; it prints what it let through.
-import { readdirSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -31,12 +31,34 @@ export const REQUIRED_BITMAPS = ['brand/apple-touch-icon.png', 'brand/icon-192.p
  * discoverability browser checks prove none loads in ordinary play.
  */
 /**
- * Social share cards made by tools/lobby-captures.mjs from the lobby itself. Each is named by its
- * content hash, because a released version keeps loading its own card from the same address
- * (index.html's og:image); earlier cards stay for the frozen versions that name them.
+ * The social share card, rendered by the build (tools/brand/share-card.mjs) and named by its
+ * content hash, because a released version keeps its own card at its own address (index.html's
+ * og:image). Never tracked: tests/ops/no-bitmaps.test.ts keeps it out of the repository.
  */
 export const SHARE_CARDS = /^brand\/share-[0-9a-f]{8}\.png$/
 export const ABOUT_PICTURES = /^welcome\/[a-z0-9-]+-(640|960|1280|1920)\.webp$/
+
+/**
+ * A built site's share card (tools/brand/share-card.mjs, emitted by the build): index.html's
+ * og:image and twitter:image name one file under brand/, it exists in the build, it is a PNG of
+ * the size og:image:width and og:image:height declare, and it is a SHARE_CARDS name. Returns the
+ * problems; none for a folder without an index.html (public/).
+ */
+export function shareCardProblems(dir) {
+  const index = join(dir, 'index.html')
+  if (!existsSync(index)) return []
+  const html = readFileSync(index, 'utf8')
+  const tag = (name) => new RegExp(`<meta (?:property|name)="${name}" content="([^"]*)"`).exec(html)?.[1] ?? ''
+  const urls = ['og:image', 'twitter:image'].map(tag), problems = []
+  if (urls[0] !== urls[1]) problems.push(`og:image and twitter:image differ: ${urls.join(', ')}`)
+  const path = urls[0] ? new URL(urls[0]).pathname.slice(1) : ''
+  if (!SHARE_CARDS.test(path)) return [...problems, `og:image names ${urls[0] || 'nothing'}, not a built share card (brand/share-<hash>.png)`]
+  const file = join(dir, path)
+  if (!existsSync(file)) return [...problems, `the share card ${path} is not in ${dir}`]
+  const png = readFileSync(file), size = [png.readUInt32BE(16), png.readUInt32BE(20)], want = [Number(tag('og:image:width')), Number(tag('og:image:height'))]
+  if (png.subarray(1, 4).toString() !== 'PNG' || size.join() !== want.join()) problems.push(`the share card ${path} is ${size.join(' x ')}, the tags declare ${want.join(' x ')}`)
+  return problems
+}
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -79,6 +101,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   for (const f of found.waived) console.log(`waived by --allow:${line(f)}`)
   if (found.audio.length) console.error(`Shipped audio files are not allowed. Synthesise the sound instead:\n${found.audio.map(line).join('\n')}`)
   if (found.images.length) console.error(`Shipped bitmaps are not allowed unless a platform requires them. Generate them instead:\n${found.images.map(line).join('\n')}`)
-  if (found.audio.length || found.images.length) process.exit(1)
-  console.log(`check-shipped-assets: ${dir} ships no audio files and no unrequired bitmaps`)
+  const card = shareCardProblems(dir)
+  if (card.length) console.error(`The share card is wrong:\n${card.map((p) => `  ${p}`).join('\n')}`)
+  if (found.audio.length || found.images.length || card.length) process.exit(1)
+  console.log(`check-shipped-assets: ${dir} ships no audio files and no unrequired bitmaps${existsSync(join(dir, 'index.html')) ? ', and its share card is built and the declared size' : ''}`)
 }

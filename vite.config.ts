@@ -8,6 +8,7 @@ import { manualReload } from './tools/manual-reload.mjs'
 import { releaseFeed } from './tools/release-feed.mjs'
 import { rapierWasmAsset } from './tools/rapier-wasm.mjs'
 import { devLabel } from './tools/build-label.mjs'
+import { shareCardAsset } from './tools/brand/share-card.mjs'
 
 // When launched by the preview broker, PASEO_PREVIEW_ORIGIN is the HTTPS origin the owner
 // opens. Hot reload has to connect back through it over WSS.
@@ -105,7 +106,7 @@ export default defineConfig({
   },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   // rapierWasmAsset: the physics engine's WebAssembly ships as its own hashed file, preloaded.
-  plugins: [glassNotices(), roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset()],
+  plugins: [glassNotices(), roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset(), shareCardAsset()],
   server: {
     host: '127.0.0.1',
     port: 5173,

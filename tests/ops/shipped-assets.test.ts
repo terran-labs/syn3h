@@ -17,10 +17,27 @@ afterAll(() => rmSync(dir, { recursive: true, force: true }))
 const put = (path: string) => { mkdirSync(join(dir, path, '..'), { recursive: true }); writeFileSync(join(dir, path), 'x') }
 const run = (...args: string[]) => spawnSync(process.execPath, ['tools/check-shipped-assets.mjs', ...args], { encoding: 'utf8' })
 
+// A built page's share tags and the card the build emits (tools/brand/share-card.mjs): a PNG
+// header is all the check reads.
+const PAGE = '<meta property="og:image" content="https://mira.cc/brand/share-0123abcd.png" /><meta property="og:image:width" content="1200" /><meta property="og:image:height" content="630" /><meta name="twitter:image" content="https://mira.cc/brand/share-0123abcd.png" />'
+const pngHeader = (w: number, h: number) => { const b = Buffer.alloc(33); Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).copy(b); b.write('IHDR', 12); b.writeUInt32BE(w, 16); b.writeUInt32BE(h, 20); return b }
+
 it('passes a site that ships only code, vectors, fonts and the required bitmaps', () => {
-  for (const path of ['index.html', 'assets/app.js', 'brand/favicon.svg', 'brand/icon-192.png', 'brand/share.png', 'fonts/barlow-400-latin.woff2', 'models/jet.glb']) put(path)
+  for (const path of ['assets/app.js', 'brand/favicon.svg', 'brand/icon-192.png', 'brand/share.png', 'fonts/barlow-400-latin.woff2', 'models/jet.glb']) put(path)
+  writeFileSync(join(dir, 'index.html'), PAGE); writeFileSync(join(dir, 'brand/share-0123abcd.png'), pngHeader(1200, 630))
   expect(findForbidden(dir)).toEqual({ audio: [], images: [], waived: [] })
   expect(run(dir).status).toBe(0)
+})
+
+it('fails a built site whose share tags name a card it does not ship, or one of another size', () => {
+  const site = mkdtempSync(join(tmpdir(), 'mira-card-'))
+  try {
+    writeFileSync(join(site, 'index.html'), PAGE)
+    expect(run(site).status).toBe(1)
+    mkdirSync(join(site, 'brand')); writeFileSync(join(site, 'brand/share-0123abcd.png'), pngHeader(1200, 600))
+    const result = run(site)
+    expect(result.status).toBe(1); expect(result.stderr).toContain('share-0123abcd.png')
+  } finally { rmSync(site, { recursive: true, force: true }) }
 })
 
 it('fails on any audio file and any bitmap no platform requires, and names them', () => {
