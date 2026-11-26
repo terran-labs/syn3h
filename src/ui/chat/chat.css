@@ -3,27 +3,23 @@
    this file draws what is inside it, and the strip.
 
    The strip, where nothing else lives:
-   desktop  above the controls help, right of the minimap, left of the player's vehicle.
+   desktop  the upper right while driving (below); nothing with the cursor free.
    phone    on the left under the speed readout; it never takes a touch. */
 .chat-strip {
   position: fixed; z-index: 22; left: 242px; bottom: var(--edge-bottom); width: clamp(260px, calc(50vw - 352px), 360px);
   display: flex; flex-direction: column; gap: 3px; pointer-events: none; transition: opacity .4s ease;
   color: var(--s3-ink, #f4f4f4); font: 400 13.5px/1.35 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
 }
-/* Help holds the bottom edge. Chat follows the rendered help height, including vehicle
-   changes and the expanded H list. With no chat, the empty strip takes no space. */
-.help-chat-column {
-  position: fixed; z-index: 22; left: 240px; bottom: var(--edge-bottom);
-  max-width: calc(100% - 240px - var(--edge-right, 16px));
-  display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; pointer-events: none;
+/* A desktop shows incoming chat in the upper right while driving, like notifications: newest at
+   the bottom, so an arrival never moves the lines already there (the owner, 25 November 2026).
+   With the cursor free the sidebar is there and its Chat card counts what is unread, so no
+   toasts. Touch keeps the strip's own place above until the phone layout is agreed. */
+.mira-shell:not(.has-touch) .chat-strip {
+  top: var(--edge-top, 16px); right: var(--edge-right, 16px); left: auto; bottom: auto; width: 340px;
+  align-items: flex-end;
 }
-.mira-shell.exploration-ui .help-chat-column > .spawn-help,
-.help-chat-column > .chat-strip { position: relative; inset: auto; box-sizing: border-box; }
-.help-chat-column > .chat-strip { margin-left: 2px; max-width: calc(100% - 2px); }
-.help-chat-column > .chat-strip:empty { display: none; }
-@media (max-width: 700px) {
-  .help-chat-column { left: var(--edge-left); max-width: calc(100% - var(--edge-left) - var(--edge-right)); }
-}
+.mira-shell:not(.has-touch) .chat-strip .chat-line { border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) 0 var(--chat-bubble-radius); }
+.mira-shell:not(.has-touch):has(.world-inspector:not([hidden], .lobby-settings)) .chat-strip { display: none; }
 .mira-shell:not(.is-playing) .chat-strip { display: none; }
 /* A name label or readout passed behind the strip: it steps back until they part. */
 .chat-strip.is-yielding { opacity: .18; }

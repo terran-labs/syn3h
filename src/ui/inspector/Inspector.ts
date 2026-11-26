@@ -97,6 +97,8 @@ export interface InspectorOptions {
   closePanels?(): void
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
+  /** Controls a group ends with, built by the caller (Input's Show tips again). Null for none. */
+  groupActions?(group: string): HTMLElement | null
 }
 /** One row's reset, as the inspector keeps it. */
 interface RowReset {
@@ -396,6 +398,7 @@ export class Inspector {
           fold.append(this.row(def))
           if (def.id === 'hud.surfaceCoverage' && liquid.length) fold.append(this.liquidFold(liquid))
         }
+        const actions = this.options.groupActions?.(group.name); if (actions) fold.append(actions)
         body.append(fold)
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'
