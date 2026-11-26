@@ -92,7 +92,7 @@ export const ride = (bed: Bed, b: MiraBuggy, seconds: number) => {
     hop = Math.max(hop, pos(b).y - y0)
     roll = Math.max(roll, Math.abs(Math.asin(axis(b, 1, 0, 0).y)) * THREE.MathUtils.RAD2DEG)
     let c = false
-    for (const col of [b.hull, b.skid]) {
+    for (const col of [b.hull, b.roof, b.skid]) {
       w.contactPairsWith(col, (o) => w.contactPair(col, o, (m) => { if (m.numSolverContacts() > 0) c = true }))
     }
     if (c && !touching) strikes++

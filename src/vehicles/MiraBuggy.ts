@@ -20,7 +20,7 @@ import type { Terrain } from '../world/Terrain'
 import {
   buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFinAir, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
-  buggyTraction, buggyTyreSize,
+  buggyTraction, buggyTyreSize, buggyRoofGrip, buggyBodyGrip, buggySelfRightSpeed, buggySelfRightSpin,
 } from './buggyParams'
 import { applyLava, floatPoints, lavaThickness } from './lava'
 import { gripAt } from './surfaceGrip'
@@ -102,6 +102,34 @@ const HULL = [
   0, 0.172, -0.046, 0, 1.072, -0.046, -1.175, 0.41, -0.046, 0, 0.172, 1.798, -1.274, 0.172, 1.819,
   0, 0.172, -1.872, -1.274, 0.172, -1.688, -1.079, 0.172, -0.046,
 ]
+/**
+ * The hull is split by a level cut at HULL_CUT (m, body frame) into a roof (above) and a lower
+ * hull (below), so each can have its own friction (buggy.roofGrip, buggy.bodyGrip). The pieces
+ * are the hull clipped by the plane: its points on each side, plus where every segment between
+ * two points crosses the plane, whose convex hull is exactly the section. Together they have the
+ * hull's volume, so the mass and inertia measured from them are the hull's. The ridge runs at
+ * 0.95 to 1.07 m and the side edges at 0.35 to 0.43 m, so the roof spans the cabin's top.
+ */
+const HULL_CUT = 0.55
+function splitHull(points: readonly number[], cut: number): { lower: Float32Array; upper: Float32Array } {
+  const lower: number[] = [], upper: number[] = []
+  const n = points.length / 3
+  for (let i = 0; i < n; i++) {
+    const y = points[i * 3 + 1]
+    if (y <= cut) lower.push(points[i * 3], y, points[i * 3 + 2])
+    if (y >= cut) upper.push(points[i * 3], y, points[i * 3 + 2])
+    for (let j = i + 1; j < n; j++) {
+      const yj = points[j * 3 + 1]
+      if ((y - cut) * (yj - cut) >= 0) continue
+      const t = (cut - y) / (yj - y)
+      const x = points[i * 3] + (points[j * 3] - points[i * 3]) * t
+      const z = points[i * 3 + 2] + (points[j * 3 + 2] - points[i * 3 + 2]) * t
+      lower.push(x, cut, z); upper.push(x, cut, z)
+    }
+  }
+  return { lower: new Float32Array(lower), upper: new Float32Array(upper) }
+}
+const HULL_PIECES = splitHull(HULL, HULL_CUT)
 /** Skid plate BoxCollider: size (2.5, 0.45, 3.481158), centre (0, 0.13976786, 0.090771556). */
 const SKID_HALF = { x: 1.25, y: 0.225, z: 1.740579 }
 const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
@@ -229,7 +257,10 @@ export interface SkinFactory {
 
 export class MiraBuggy extends Vehicle {
   readonly kind: 'buggy' | 'buggy-syn3h'
+  /** The lower hull, below the roof (HULL_CUT). */
   readonly hull: RAPIER.Collider
+  /** The hull above HULL_CUT: roof, cage and upper body. */
+  readonly roof: RAPIER.Collider
   readonly skid: RAPIER.Collider
   readonly ub: UnityBody
 
@@ -322,13 +353,24 @@ export class MiraBuggy extends Vehicle {
     super(game, terrain, position, heading)
     this.kind = kind
     const world = game.world
-    // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average. In Unity that
-    // averaged with the default terrain material (0.6) to 0.8; our terrain has friction 1, so a
-    // hull friction of 0.6 gives the same 0.8 when it scrapes the ground.
+    // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average, which came to 0.8
+    // against terrain. Here the hull is two pieces (HULL_CUT): a grippy roof, so a buggy on its
+    // back tumbles over instead of sledging, and slick lower sides, so a banked landing slides
+    // instead of tripping. Each keeps Mira's bounce.
     this.hull = world.createCollider(
-      RAPIER.ColliderDesc.convexHull(new Float32Array(HULL))!
+      RAPIER.ColliderDesc.convexHull(HULL_PIECES.lower)!
         .setDensity(1)
-        .setFriction(0.6)
+        .setFriction(buggyBodyGrip.value)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
+        .setRestitution(0.5)
+        .setCollisionGroups(Vehicle.chassisGroups()),
+      this.body,
+    )
+    this.roof = world.createCollider(
+      RAPIER.ColliderDesc.convexHull(HULL_PIECES.upper)!
+        .setDensity(1)
+        .setFriction(buggyRoofGrip.value)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Max)
         .setRestitution(0.5)
         .setCollisionGroups(Vehicle.chassisGroups()),
       this.body,
@@ -347,7 +389,7 @@ export class MiraBuggy extends Vehicle {
     )
     // Unity derives the inertia tensor from the non trigger colliders at uniform density and the
     // rigidbody's mass, and keeps it when a script moves centerOfMass (VB 178-179). Measure the
-    // two colliders at equal density, scale to 30 kg, then move all mass onto the body.
+    // colliders at equal density, scale to 30 kg, then move all mass onto the body.
     this.body.recomputeMassPropertiesFromColliders()
     const s = MASS / this.body.mass()
     const pi = this.body.principalInertia()
@@ -355,6 +397,7 @@ export class MiraBuggy extends Vehicle {
     this.inertia = { x: pi.x * s, y: pi.y * s, z: pi.z * s }
     this.inertiaFrame = { x: pf.x, y: pf.y, z: pf.z, w: pf.w }
     this.hull.setDensity(0)
+    this.roof.setDensity(0)
     this.skid.setDensity(0)
     this.updateMassProperties()
 
@@ -561,6 +604,9 @@ export class MiraBuggy extends Vehicle {
     // Buggy.js 488 (Mars Explorer): no self righting inside a zorb ball.
     if (this.zorbed) this.isInverted = false
     else this.selfRight(dt, speedSq)
+    // Body friction follows its settings live.
+    if (Math.abs(this.hull.friction() - buggyBodyGrip.value) > 1e-6) this.hull.setFriction(buggyBodyGrip.value)
+    if (Math.abs(this.roof.friction() - buggyRoofGrip.value) > 1e-6) this.roof.setFriction(buggyRoofGrip.value)
 
     let wheelsAreTouchingGround = false
     this.totalSuspensionCompression = 0
@@ -1183,7 +1229,8 @@ export class MiraBuggy extends Vehicle {
     const n = this.v1
     const w = this.body.angvel()
     const angSq = w.x * w.x + w.y * w.y + w.z * w.z
-    for (const collider of [this.hull, this.skid]) {
+    const rightSpeed = buggySelfRightSpeed.value, rightSpin = buggySelfRightSpin.value
+    for (const collider of [this.hull, this.roof, this.skid]) {
       world.contactPairsWith(collider, (other) => {
         world.contactPair(collider, other, (manifold, flipped) => {
           let count = 0
@@ -1196,7 +1243,7 @@ export class MiraBuggy extends Vehicle {
           for (let c = 0; c < count; c++) {
             if (this.isInverted && angle < 50) this.isInverted = false
             else if (!this.isInverted && angle > 90 && this.up.y < 0) this.isInverted = true
-            if (this.isInverted && angSq < 2 && speedSq < 8) {
+            if (this.isInverted && angSq < rightSpin * rightSpin && speedSq < rightSpeed * rightSpeed) {
               this.v2.crossVectors(this.up, UP).multiplyScalar(this.up.angleTo(UP) * DEG * 0.5)
               this.ub.addTorqueAcceleration(this.v2, dt)
             }

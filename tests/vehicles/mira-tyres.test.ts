@@ -27,7 +27,7 @@ function finite(b: MiraBuggy): boolean {
 function bodyTouching(bed: Bed, b: MiraBuggy): boolean {
   const w = bed.game.world
   let c = false
-  for (const col of [b.hull, b.skid]) w.contactPairsWith(col, (o) => w.contactPair(col, o, (m) => { if (m.numSolverContacts() > 0) c = true }))
+  for (const col of [b.hull, b.roof, b.skid]) w.contactPairsWith(col, (o) => w.contactPair(col, o, (m) => { if (m.numSolverContacts() > 0) c = true }))
   return c
 }
 

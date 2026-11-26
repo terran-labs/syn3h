@@ -260,6 +260,44 @@ export const buggyStability = defineParam({
   default: 0, min: 0, max: 5, step: 0.1,
 })
 
+// ---- Body friction and self righting (26 November 2026) -------------------------------------
+
+/**
+ * Friction of the roof: the hull above HULL_CUT (MiraBuggy.ts), the cage and upper body. It
+ * combines with the ground by Max, so terrain cannot dilute it. High, so a buggy that lands on
+ * its roof grips and tumbles over instead of sliding along like a sled (the owner, 26 November).
+ */
+export const buggyRoofGrip = defineParam({
+  id: 'buggy.roofGrip', label: 'Roof grip', group: 'Buggy', scope: 'world',
+  default: 1.5, min: 0, max: 3, step: 0.05,
+})
+/**
+ * Friction of the lower hull, the sides below the roof. It combines with the ground by
+ * Multiply. Mira's 0.6 (0.8 against terrain) let the side edges, which stand out past the skid
+ * plate, catch the ground on a banked landing and trip the buggy into a roll. The skid plate
+ * itself has no friction at all.
+ */
+export const buggyBodyGrip = defineParam({
+  id: 'buggy.bodyGrip', label: 'Body side grip', group: 'Buggy', scope: 'world',
+  default: 0.2, min: 0, max: 1.5, step: 0.05,
+})
+/**
+ * Self righting (Mira VB 545-562) pushes an upside down buggy back onto its wheels only while it
+ * moves slower than this (m/s). 2.83 is Mira's (speed squared under 8).
+ */
+export const buggySelfRightSpeed = defineParam({
+  id: 'buggy.selfRightSpeed', label: 'Self-right below (m/s)', group: 'Buggy', scope: 'world',
+  default: 2.83, min: 0, max: 30, step: 0.01,
+})
+/**
+ * Self righting acts only while the buggy spins slower than this (rad/s). 1.41 is Mira's (spin
+ * squared under 2). It is what keeps the push off while a buggy is still tumbling.
+ */
+export const buggySelfRightSpin = defineParam({
+  id: 'buggy.selfRightSpin', label: 'Self-right under spin (rad/s)', group: 'Buggy', scope: 'world',
+  default: 1.41, min: 0, max: 10, step: 0.01,
+})
+
 /**
  * Handling presets (the Handling dropdown in the Buggy settings). Each sets the same settings;
  * the defaults above are Assisted, the first. Measured in the handling report (tools/handling-report.ts),

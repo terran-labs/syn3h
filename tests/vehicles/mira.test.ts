@@ -359,8 +359,7 @@ describe('MiraBuggy', () => {
     const w = bed.game.world
     bed.run(3, () => {
       if (b.isInverted) flagged++
-      w.contactPair(b.hull, top.hull, () => { touched = true })
-      w.contactPair(b.hull, top.skid, () => { touched = true })
+      for (const mine of [b.hull, b.roof]) for (const theirs of [top.hull, top.roof, top.skid]) w.contactPair(mine, theirs, () => { touched = true })
     })
     expect(touched).toBe(true)
     expect(flagged).toBe(0)
