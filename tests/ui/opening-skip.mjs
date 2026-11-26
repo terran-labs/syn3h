@@ -37,7 +37,7 @@ async function openingPoint(page, kind, reduced = false) {
     if (kind === 'sky') {
       for (const x of [32, innerWidth / 2, innerWidth - 32]) {
         for (const y of [32, innerHeight / 4, innerHeight / 2]) {
-          if (document.elementFromPoint(x, y) === canvas && discs.every(p => gap(p, x, y) > 24)) return { x, y }
+          if (document.elementFromPoint(x, y) === canvas && [galaxy.sunScreen, ...discs].every(p => gap(p, x, y) > 24)) return { x, y }
         }
       }
     } else if (kind === 'caption') {
@@ -50,9 +50,10 @@ async function openingPoint(page, kind, reduced = false) {
         const row = range.getBoundingClientRect()
         const x = Math.round(row.left + row.width / 2), y = Math.round(row.top + row.height / 2)
         const hit = document.elementFromPoint(x, y)
+        if ([galaxy.sunScreen, ...discs].some(p => gap(p, x, y) <= 1)) continue
         const distance = gap(disc, x, y)
         const canvasHit = hit === canvas && distance < 22 && discs.every(p => gap(p, x, y) >= distance)
-        if (distance > 1 && (canvasHit || hit?.closest('.galaxy-label') === button)) return { x, y, id }
+        if (canvasHit || hit?.closest('.galaxy-label') === button) return { x, y, id }
       }
     } else {
       for (const p of discs) {
