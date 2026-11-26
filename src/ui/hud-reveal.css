@@ -12,7 +12,7 @@
      2  the left column (the gear list and its rows), in from the left
      3  the right column (the panel and the Panels control), in from the right
      4  the minimap and the chat lines, up from below
-     5  the speed and height readouts: fade only
+     5  the speed and height readouts and the reticle's crescents: fade only
      6  the help line: fade only
    The bottom stack (the full-room notice, "Preparing world") is never held back. A group
    the player opens or closes while the reveal runs (the panels) is marked
@@ -27,7 +27,7 @@
 @keyframes hud-reveal-thumb { from { opacity: .35; } }
 .mira-shell[data-hud-reveal].is-playing :is(
   .fh-top, .gear-selector, .hud-accessories, .hud-chat, .world-inspector, .hud-navigation,
-  .shell-minimap, .chat-strip, .focus-hud .fh-left, .focus-hud .fh-right, .spawn-help
+  .shell-minimap, .chat-strip, .focus-hud .fh-left, .focus-hud .fh-right, .focus-hud > svg, .spawn-help
 ) {
   /* Hidden through its wait (backwards fill): nothing can be pointed at before it shows. */
   animation: hud-reveal var(--reveal-ms, 750ms) var(--reveal-ease) calc(var(--reveal-at, 0) * var(--reveal-step, 110ms)) backwards;
@@ -37,7 +37,7 @@
 .mira-shell[data-hud-reveal].is-playing :is(.gear-selector, .hud-accessories, .hud-chat) { --reveal-at: 2; --reveal-from: calc(-1 * var(--reveal-far)) 0; }
 .mira-shell[data-hud-reveal].is-playing :is(.world-inspector, .hud-navigation) { --reveal-at: 3; --reveal-from: var(--reveal-far) 0; }
 .mira-shell[data-hud-reveal].is-playing :is(.shell-minimap, .chat-strip) { --reveal-at: 4; --reveal-from: 0 var(--reveal-far); }
-.mira-shell[data-hud-reveal].is-playing .focus-hud :is(.fh-left, .fh-right) { --reveal-at: 5; }
+.mira-shell[data-hud-reveal].is-playing :is(.focus-hud .fh-left, .focus-hud .fh-right, .focus-hud > svg) { --reveal-at: 5; }
 .mira-shell[data-hud-reveal].is-playing .spawn-help { --reveal-at: 6; }
 /* Touch: the thumb controls (the stick and buttons, the gear's own, the Panels control) are
    there at once, faint, and come up to full; they never slide. */
