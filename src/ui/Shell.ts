@@ -443,6 +443,10 @@ export class Shell implements System {
     const botControls = players.querySelector<HTMLElement>('.rail-session-bots')!
     const botInput = botControls.querySelector('input')!
     const [minus, plus] = botControls.querySelectorAll('button')
+    // The bot count's only control in play, so it carries the shared reset (resetControl.ts), as
+    // Connection diagnostics does; a room setting, so the host's lock applies to it too.
+    this.sessionBotsReset = resetButton(() => { if (canEditWorld()) this.setRequestedBots(String(botCount.def.default)) })
+    botControls.dataset.settingId = botCount.def.id; botControls.classList.add('has-reset'); botControls.append(this.sessionBotsReset.element)
     this.sessionBots = { input: botInput, output: botControls.querySelector('output')!, minus, plus }
     botInput.min = String(botCount.def.min)
     botInput.max = String(botCount.def.max)
@@ -2532,6 +2536,7 @@ export class Shell implements System {
     this.syncSessionBots()
   }
 
+  private sessionBotsReset?: ReturnType<typeof resetButton>
   private syncSessionBots(): void {
     const { input, output, minus, plus } = this.sessionBots
     const count = botCount.value, editable = canEditWorld()
@@ -2543,6 +2548,7 @@ export class Shell implements System {
     if (output.textContent !== label) output.textContent = label
     input.disabled = !editable
     output.classList.toggle('is-disabled', !editable)
+    this.sessionBotsReset?.set({ changed: editable && count !== botCount.def.default, defaultText: String(botCount.def.default), name: 'Bots' })
     minus.disabled = !editable || count <= Number(input.min)
     plus.disabled = !editable || count >= Number(input.max)
   }
