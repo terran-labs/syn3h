@@ -23,7 +23,8 @@
  * the background of whatever else the machine does: run it through heavy.sh, which holds one slot.
  */
 import { spawn } from 'node:child_process'
-import { copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, readdirSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:net'
 import { basename, join, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -103,6 +104,11 @@ const reason = out => {
 
 for (const line of skipped) if (!wanted.length || wanted.includes(line.split(':')[0])) console.log(`SKIP  ${line}`)
 const started = Date.now(), results = []
+// One private Vite dependency cache for this run (vite.config.ts cacheDir), so another lane's
+// dev server re-optimizing the shared node_modules/.vite cannot stall or 404 these checks.
+const viteCache = process.env.MIRA_VITE_CACHE || mkdtempSync(join(tmpdir(), 'mira-vite-cache-'))
+const ownCache = !process.env.MIRA_VITE_CACHE
+process.on('exit', () => { if (ownCache) rmSync(viteCache, { recursive: true, force: true }) })
 for (const name of files) {
   if (stopping) break
   const source = readFileSync(join(folder, `${name}.mjs`), 'utf8'), head = source.slice(0, 2000)
@@ -110,7 +116,7 @@ for (const name of files) {
   const urlArgument = /process\.argv\[2\]\s*\?\?\s*'http/.test(source)
   const [devPort, roomPort] = [String(await freePort()), String(await freePort())]
   const url = `http://127.0.0.1:${devPort}/`
-  const vars = { MIRA_ROOM_PORT: roomPort, VITE_SERVER_URL: `ws://127.0.0.1:${roomPort}` }
+  const vars = { MIRA_ROOM_PORT: roomPort, VITE_SERVER_URL: `ws://127.0.0.1:${roomPort}`, MIRA_VITE_CACHE: viteCache }
   if (/MIRA_RELEASE_VERSION|SYN3H_RELEASE_VERSION/.test(head)) vars.MIRA_RELEASE_VERSION = releaseVersion() // rename-keep: the older names too
   const t0 = Date.now()
   let server = null, result

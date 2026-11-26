@@ -91,6 +91,9 @@ export function installRawCollector() {
 async function main() {
   const {chromium}=await import('playwright-core'),{createServer:createVite}=await import('vite'),{createServer}=await import('node:net')
   const {spawn,execFileSync}=await import('node:child_process'),{mkdir,writeFile,appendFile}=await import('node:fs/promises'),{loadavg}=await import('node:os')
+  // A private Vite dependency cache for this run (vite.config.ts cacheDir): the shared one under
+  // node_modules is re-optimized by other lanes' dev servers, which timed out shell.playing.
+  if(!process.env.MIRA_VITE_CACHE){const {mkdtempSync}=await import('node:fs'),{tmpdir}=await import('node:os'),{join}=await import('node:path');process.env.MIRA_VITE_CACHE=mkdtempSync(join(tmpdir(),'mira-vite-cache-'))}
   const out=process.argv[2];assert.ok(out,'Unique output directory required');await mkdir(out)
   const source=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()
   const scenes=process.env.PERFORMANCE_SCENES?.split(',')??MATRIX_SCENES,tiers=process.env.PERFORMANCE_TIERS?.split(',').map(Number)??MATRIX_TIERS

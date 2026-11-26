@@ -99,6 +99,11 @@ function glassNotices(): Plugin {
 }
 
 export default defineConfig({
+  // Dependency pre-bundles. node_modules is one symlink every worktree shares, so its default
+  // .vite cache is shared too, and another lane's dev server re-optimizing it stalls or 404s a
+  // check mid-run (touch-stick and performance-check on 25 Nov). The check runners give each run
+  // a private one through MIRA_VITE_CACHE; anything else keeps Vite's default.
+  cacheDir: process.env.MIRA_VITE_CACHE || undefined,
   define: {
     __MIRA_BUILD__: JSON.stringify(buildLabel()),
     __MIRA_FREEZE_ID__: JSON.stringify(process.env.MIRA_FREEZE_ID || null),
