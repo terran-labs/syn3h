@@ -401,6 +401,8 @@ export class Shell implements System {
       closePanels: () => this.returnToDriving(),
       phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'mira.sidebar.open',
+      // A new player: Game open on a desktop; touch screens (phones and tablets) start from the list.
+      startOpen: this.touch.available || matchMedia('(pointer: coarse)').matches ? [] : ['game'],
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
     // function of cursor locking." With the cursor captured you are driving and only the
