@@ -2646,7 +2646,9 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     // The first look is the control tips (updateTips), taught by use: keys on a keyboard, the
     // on-screen buttons' names on touch.
-    if (!full) { this.tips.restart(); if (!hint.classList.contains('is-tips')) this.hideHelp(); return }
+    // Entering or changing vehicle: the tips when they are on; otherwise no card at all, so the
+    // phone's own first-run hint (TouchControls, "Drag on the left to drive") shows again.
+    if (!full) { if (controlTips.value) this.tips.restart(); if (!controlTips.value || !hint.classList.contains('is-tips')) this.hideHelp(); return }
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint', 'is-quiet'); this.touch.highlight(null)
     fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
@@ -2724,8 +2726,16 @@ export class Shell implements System {
    */
   updateTips(dt: number, input: Omit<TipInput, 'touch' | 'tagAllowed'>): void {
     const touch = this.touch.available
-    this.watchBands()
     const card = this.tipsCard ??= this.element.querySelector<HTMLElement>('.spawn-help')!
+    // Tips off (the default): nothing is drawn, measured or observed for them. A phone still keeps
+    // its bands: its upright chat line is placed below the readouts (chat.css); that observer
+    // measures in the layout's own pass and costs no frame time.
+    if (!controlTips.value) {
+      if (touch) this.watchBands()
+      if (card.classList.contains('is-tips') && !card.hidden) this.hideHelp()
+      return
+    }
+    this.watchBands()
     // An upright phone in a match: the match HUD (game state) takes the band the tips use, so the
     // tips wait, unseen and with their lessons and cap paused, and come back when it goes
     // (phone-layout.mjs, King of the Hill: they overlapped it).

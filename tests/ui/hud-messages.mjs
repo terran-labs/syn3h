@@ -41,7 +41,12 @@ try {
     await page.evaluate(() => { localStorage.removeItem('mira.tips.learned'); window.mira.params.set('daydream.seconds', 0, 'local'); window.mira.params.set('bots.count', 0) })
 
     // The driving view (exactly the cursor-captured view, hud.mode 1), with a line of chat in.
-    await page.evaluate(() => { window.mira.params.set('hud.mode', 1, 'local'); window.mira.shell.inspector.open = false; window.mira.shell.tips.restart() })
+    // Off by default (the owner, 26 November 2026): a new player sees no tips card at all.
+    await page.evaluate(() => { window.mira.params.set('hud.mode', 1, 'local'); window.mira.shell.inspector.open = false })
+    await page.waitForTimeout(600)
+    assert.equal(await page.locator('.spawn-help.is-tips:not([hidden])').count(), 0, `${size}: no tips card by default`)
+    // The rest checks the tips themselves, switched on as a player would in Settings.
+    await page.evaluate(() => { window.mira.params.set('help.tips', true, 'local'); window.mira.shell.tips.restart() })
     await page.evaluate(() => window.miraNet.chat.receive({ type: 'chat', from: 4242, text: 'Zeptock, that was an orange-level situation. Also beautiful.' }))
     await page.waitForFunction(() => document.querySelector('.chat-strip .chat-line') && document.querySelector('.spawn-help.is-tips:not([hidden])'), null, { timeout: 20000 })
     // The HUD comes in group by group on entering a world (hudReveal.ts); read and measure the
@@ -101,7 +106,7 @@ try {
     await page.waitForFunction(() => window.mira?.game.tick > 30 && window.miraNet?.connected, null, { timeout: 180000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 180000 })
     await page.waitForFunction(() => window.mira.shell.playing && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 180000 })
-    await page.evaluate(() => { localStorage.removeItem('mira.tips.learned'); window.mira.params.set('daydream.seconds', 0, 'local'); window.mira.params.set('bots.count', 0); window.mira.shell.tips.restart() })
+    await page.evaluate(() => { localStorage.removeItem('mira.tips.learned'); window.mira.params.set('daydream.seconds', 0, 'local'); window.mira.params.set('bots.count', 0); window.mira.params.set('help.tips', true, 'local'); window.mira.shell.tips.restart() })
     if (await page.locator('.world-inspector').isVisible()) await page.evaluate(() => window.mira.shell.returnToDriving())
     for (const text of ['race you to the volcano', 'Please do not do it again. Do it again.']) await page.evaluate(text => window.miraNet.chat.receive({ type: 'chat', from: 4242, text }), text)
     await page.waitForFunction(() => document.querySelector('.chat-strip .chat-line') && document.querySelector('.spawn-help.is-tips:not([hidden])'), null, { timeout: 20000 })
