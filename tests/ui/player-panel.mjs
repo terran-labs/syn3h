@@ -118,12 +118,18 @@ try {
         await host.locator('#player-panel:not([hidden])').waitFor({ timeout: 2000 })
       }
       assert.equal(await row(host, guestId).getAttribute('aria-expanded'), 'true')
+      // On a phone the sheet stands in the sidebar's place: the card under it must not show through.
+      if (touch) assert.equal(await host.evaluate(() => getComputedStyle(document.querySelector('.world-inspector:not(.lobby-settings)')).visibility), 'hidden', 'the Players card shows through the sheet')
       await noOverlap(host)
       await host.screenshot({ path: resolve(out, `${size}-host-panel.png`) })
 
       // Mute for me toggles this screen's mute; the host may mute for everyone.
       await host.locator('#player-panel .pp-toggle[data-mute=me]').click()
       await host.waitForFunction(id => miraNet.chat.muted.has(id), guestId)
+      // A toggle that is on looks on: it is filled, unlike one that is off.
+      const fills = await host.locator('#player-panel .pp-toggle').evaluateAll(bs => bs.map(b => [b.getAttribute('aria-pressed'), getComputedStyle(b).backgroundColor]))
+      const on = fills.find(([p]) => p === 'true'), off = fills.find(([p]) => p === 'false')
+      assert.ok(on && off && on[1] !== off[1], `a lit toggle is not filled: ${JSON.stringify(fills)}`)
       await host.locator('#player-panel .pp-toggle[data-mute=all]').click()
       await host.waitForFunction(id => miraNet.players.get(id)?.muted === true, guestId)
       await guest.waitForFunction(id => miraNet.players.get(id)?.muted === true, guestId)
@@ -138,6 +144,8 @@ try {
         const r = card.getBoundingClientRect()
         return [[.5, .5], [.1, .2], [.9, .2], [.1, .9], [.9, .9]].every(([x, y]) => card.contains(document.elementFromPoint(r.left + r.width * x, r.top + r.height * y)))
       }), true, 'the eject dialog is covered')
+      const danger = await host.locator('.eject-go').evaluate(b => getComputedStyle(b).backgroundColor)
+      assert.match(danger, /^rgba?\((1[5-9]\d|2\d\d), \d{1,2}, \d{1,2}/, `Eject is not red: ${danger}`)
       await host.screenshot({ path: resolve(out, `${size}-eject-none.png`) })
       await host.locator('.banish-slider').focus(); await host.keyboard.press('End')
       assert.equal(await host.locator('.banish-slider').getAttribute('aria-valuetext'), 'Permanently')

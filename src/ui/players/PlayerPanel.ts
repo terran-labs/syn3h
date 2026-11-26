@@ -214,6 +214,7 @@ export class PlayerPanel {
     if (this.element.hidden) return
     this.dialog.close(false)
     this.element.hidden = true
+    this.sidebar()?.classList.remove('is-under-sheet')
     const anchor = this.anchor
     this.id = null; this.player = null; this.anchor = null; this.pinned = false; this.dragging = false
     this.actions.changed()
@@ -225,6 +226,7 @@ export class PlayerPanel {
     const el = this.element, bar = this.sidebar()?.getBoundingClientRect()
     const phone = this.actions.phone()
     el.classList.toggle('is-sheet', phone)
+    this.sidebar()?.classList.toggle('is-under-sheet', phone)
     if (!bar) return
     if (phone) {
       Object.assign(el.style, { left: `${bar.left}px`, top: `${bar.top}px`, width: `${bar.width}px`, maxHeight: `${bar.height}px`, right: '' })

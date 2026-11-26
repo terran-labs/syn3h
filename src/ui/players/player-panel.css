@@ -61,10 +61,12 @@
 .mira-shell .player-panel .pp-why + .pp-why { margin-top: 2px; }
 .mira-shell .player-panel .pp-traits-head + .pp-why { margin-top: 0; }
 .mira-shell .player-panel .pp-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 2px 0 0; }
-.mira-shell .player-panel button.panel-action { min-height: 32px; margin: 0; padding: 5px 12px; font: 400 12.5px 'Barlow', sans-serif; letter-spacing: .02em; border-radius: 999px; }
+/* Buttons are the house panel action (glass.css: 30 px, thin rim; touch gets a 44 px hit area). */
 .mira-shell .player-panel .pp-toggle { display: flex; align-items: center; justify-content: center; gap: 6px; }
 .mira-shell .player-panel .pp-toggle .muted-mark { width: 14px; height: 14px; flex: none; }
-.mira-shell .player-panel .pp-toggle[aria-pressed="true"] { background: rgb(255 255 255 / .88); color: #111; border-color: transparent; }
+/* A lit toggle is on: filled in the ink, as the house's on-state fills (--s3-on-fill). */
+html[data-glass-material] .mira-shell.exploration-ui .player-panel button.pp-toggle[aria-pressed="true"]:not([hidden]),
+.mira-shell .player-panel button.pp-toggle[aria-pressed="true"] { background: var(--s3-on-fill, #ececec); color: var(--s3-on-ink, #141416); border-color: transparent; }
 .mira-shell .player-panel button:disabled { opacity: .45; cursor: default; }
 .mira-shell .player-panel .pp-eject-go { min-width: 96px; }
 .mira-shell .player-panel .pp-trait { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--reset-slot, 24px); align-items: center; column-gap: 8px; margin-top: 14px; }
@@ -74,7 +76,8 @@
 .mira-shell .player-panel .pp-trait .pp-why { grid-column: 1 / -1; margin-top: 4px; }
 /* Phone: the panel stands where the sidebar is, as its one open card; controls at thumb size. */
 .mira-shell .player-panel.is-sheet { right: auto; }
-.mira-shell .player-panel.is-sheet button.panel-action { min-height: 44px; }
+/* The sidebar it stands in for is hidden while the sheet is open, so nothing shows through. */
+.mira-shell .world-inspector.is-under-sheet { visibility: hidden; }
 .mira-shell .player-panel.is-sheet .pp-close { width: 44px; height: 44px; padding: 12px; margin: -12px -14px 0 0; }
 .mira-shell .player-panel.is-sheet .pp-trait input { height: 36px; }
 
@@ -101,8 +104,11 @@
 .mira-shell .eject-confirm .banish-says { margin: 8px 0 0; color: #fff; font-size: 14px; font-weight: 500; }
 .mira-shell .eject-confirm .banish-scope { margin: 2px 0 0; font-size: 12px; }
 .mira-shell .eject-confirm .exit-confirm-actions { justify-content: flex-end; }
-.mira-shell.exploration-ui .eject-confirm button.is-danger { background: rgb(196 52 52 / .9); border-color: rgb(255 255 255 / .3); color: #fff; font-weight: 600; }
-.mira-shell.exploration-ui .eject-confirm button.is-danger:hover { background: rgb(214 64 64 / .95); }
+/* Eject is the dangerous action: filled red, never the default focus (EjectDialog.ts). */
+html[data-glass-material] .mira-shell.exploration-ui .eject-confirm button.panel-action.is-danger:not([hidden]),
+.mira-shell.exploration-ui .eject-confirm button.is-danger { background: rgb(190 48 48 / .92); border-color: rgb(255 140 140 / .45); color: #fff; font-weight: 600; }
+html[data-glass-material] .mira-shell.exploration-ui .eject-confirm button.panel-action.is-danger:hover,
+.mira-shell.exploration-ui .eject-confirm button.is-danger:hover { background: rgb(212 62 62 / .96); }
 /* Phone: the card sits low, within reach of the thumb. */
 @media (max-width: 700px) { .mira-shell .eject-confirm { align-items: end; padding-bottom: 32px; } .mira-shell .banish-stops > span { font-size: 10.5px; } }
 
