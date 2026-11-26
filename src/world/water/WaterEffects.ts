@@ -75,7 +75,7 @@ export class WaterEffects implements System {
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
-  private readonly shape:{ball:number;air:'cushion'|'downwash'|null;near:number;beam:number;mass:number}={ball:0,air:null,near:0,beam:1,mass:30}
+  private readonly shape:{ball:number;air:'cushion'|'downwash'|null;near:number;beam:number;mass:number;under:number;height:number}={ball:0,air:null,near:0,beam:1,mass:30,under:-1,height:1}
   constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.lavaSpray=new Spray(game.scene,this.ripples,terrain,'lava');this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     this.motes=new Motes(game.scene);this.waterline=new Waterline(game.scene)
@@ -132,6 +132,7 @@ export class WaterEffects implements System {
         }
         const presence=easeWake(this.wake.get(v)??1,wakePresence(realTop,realTop-realBottom,surface),dt)
         this.wake.set(v,presence)
+        this.shape.under=surface-realTop;this.shape.height=realTop-realBottom
         // The shared water model displaces columns from body y-.5 to y+.5. A planing
         // buggy's thin skid plate can already be dry while those columns still lift it.
         // Include that same envelope so a supported skimming hull still makes spray.

@@ -4,6 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import { SpraySim, sprayCapacity, type WakeShape } from '../../src/world/water/spraySim'
+import { easeWake, submergedFraction, wakePresence } from '../../src/world/water/waterEffectsMath'
 
 const flat = { liquidHeightAt: () => 0 }
 const DT = 1 / 60
@@ -77,5 +78,54 @@ describe('exit splash', () => {
     run(sim, dive(3, 4), { ball: 0, mass: NaN, beam: Infinity }, 'b', 50)
     const a = new Float32Array(cap.droplets * 4), b = new Float32Array(cap.droplets * 4), n = sim.packDroplets(a, b)
     for (let i = 0; i < n * 4; i++) expect(Number.isFinite(a[i]) && Number.isFinite(b[i])).toBe(true)
+  })
+})
+
+/**
+ * As the game sends it (WaterEffects.ts): the wetted fraction scaled by the wake's eased
+ * presence, which fades to nothing once the craft's top is under, with the depth of its top and
+ * its height. Surface at y = 0. `ball` is a Zorb's radius (its fraction measured over its bottom
+ * metre), else a hull `height` tall; `path` gives its centre height each frame.
+ */
+function sent(sim: SpraySim, path: number[], opts: { ball?: number; height?: number; forward?: number } = {}) {
+  const r = opts.ball ?? 0, h = r ? 2 * r : opts.height ?? 1.2, forward = opts.forward ?? 6
+  let presence = 1
+  for (let i = 0; i < path.length; i++) {
+    const y = path[i], vy = i ? (y - path[i - 1]) / DT : 0, top = y + h / 2, bottom = y - h / 2
+    presence = easeWake(presence, wakePresence(top, h, 0), DT)
+    const fraction = (r ? submergedFraction(bottom, bottom + 1, 0) : submergedFraction(bottom, top, 0)) * presence
+    sim.step(DT)
+    sim.vehicle('a', i * forward * DT, 0, 0, forward, vy, 0, fraction, DT, 1, { ball: r, under: -top, height: h })
+  }
+}
+const line = (from: number, to: number, seconds: number) => { const n = Math.round(seconds / DT); return Array.from({ length: n + 1 }, (_, i) => from + (to - from) * i / n) }
+
+describe('exit splash, as the game sends it', () => {
+  it('a Zorb rising from deep throws one exit splash and no entry splash', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    sent(sim, [...line(-9, -9, .5), ...line(-9, 4, 1.2), ...line(4, 4, 1)], { ball: 1.5 })
+    expect(sim.exits).toBe(1)
+    expect(sim.entries).toBe(0)
+  })
+
+  it('a hull that dives in and comes back up splashes once going in and once coming out', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    sent(sim, [...line(3, 3, .3), ...line(3, -4, .8), ...line(-4, -4, .5), ...line(-4, 2, 1), ...line(2, 2, 1)])
+    expect(sim.entries).toBe(1)
+    expect(sim.exits).toBe(1)
+  })
+
+  it('a buggy driving up out of the shallows throws no exit splash', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    // Wading with its top above the water, then climbing a beach until clear.
+    sent(sim, [...line(.2, .2, 1), ...line(.2, 1.5, 3), ...line(1.5, 1.5, 1)])
+    expect(sim.exits).toBe(0)
+  })
+
+  it('still splashes going in from the air', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    sent(sim, [...line(4, 4, .3), ...line(4, -.3, .4), ...line(-.3, -.3, 1)])
+    expect(sim.entries).toBe(1)
+    expect(sim.exits).toBe(0)
   })
 })

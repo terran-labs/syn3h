@@ -70,6 +70,11 @@ const SKIM_GAP = .12
 const EXIT_BAND = .3, EXIT_RISE = .3
 /** A hull's fraction below which it has broken back out (a ball: its top above the surface). */
 const EXIT_OUT = .5
+/**
+ * Seconds after an exit splash in which the wetted fraction climbing back (the caller eases a
+ * surfacing craft's wake back in) is not taken for an entry, unless the craft is falling back in.
+ */
+const EXIT_QUIET = .6
 /** Buggy mass and half beam, the reference an entry or exit is scaled against. */
 const REF_MASS = 30, REF_BEAM = 1.2
 
@@ -87,6 +92,14 @@ export interface WakeShape {
   beam?: number
   /** The craft's mass, kg: heavier hulls throw a heavier splash. Unset, a buggy's. */
   mass?: number
+  /**
+   * Metres the craft's top is below the surface (negative above it), and its height top to
+   * bottom, from the caller's real colliders (WaterEffects). Given, they decide coming out:
+   * the wetted fraction the caller sends fades to nothing once a craft's top is under, so it
+   * cannot. Unset, the depth is integrated from the fraction and the vertical speed.
+   */
+  under?: number
+  height?: number
 }
 const HULL_SHAPE: WakeShape = { ball: 0 }
 /**
@@ -156,7 +169,7 @@ export function splashShape(impact: number): SplashShape {
  * on the water than the tier has slots): kept by id, so it neither splashes again on getting a
  * slot back nor misses coming out.
  */
-type Crossing = Pick<VehicleState, 'seen' | 'submerged' | 'x' | 'z' | 'depth' | 'deepest' | 'under'>
+type Crossing = Pick<VehicleState, 'seen' | 'submerged' | 'x' | 'z' | 'depth' | 'deepest' | 'under' | 'exitAt'>
 interface VehicleState {
   slot: number; seen: number; submerged: number
   x: number; z: number; dirX: number; dirZ: number
@@ -170,6 +183,8 @@ interface VehicleState {
   deepest: number
   /** It has been wholly under since it last came out: an exit may fire. */
   under: boolean
+  /** Simulation time of its last exit splash. */
+  exitAt: number
 }
 
 export class SpraySim {
@@ -336,13 +351,13 @@ export class SpraySim {
       for (const [k, v] of this.vehicles) if (v.seen < seen) { seen = v.seen; oldest = k }
       const evicted = this.vehicles.get(oldest!)!
       slot = evicted.slot; this.vehicles.delete(oldest!)
-      const { seen: was, submerged, x: ex, z: ez, depth, deepest, under } = evicted
-      this.crossings.set(oldest!, { seen: was, submerged, x: ex, z: ez, depth, deepest, under })
+      const { seen: was, submerged, x: ex, z: ez, depth, deepest, under, exitAt } = evicted
+      this.crossings.set(oldest!, { seen: was, submerged, x: ex, z: ez, depth, deepest, under, exitAt })
       for (let a = 0; a < ARMS; a++) { this.armCount[slot * ARMS + a] = 0; this.armHeadActive[slot * ARMS + a] = 0 }
     }
     this.slotUsed[slot] = 1
     this.armKind.fill(0, slot * ARMS, slot * ARMS + ARMS)
-    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0, depth: 0, deepest: 0, under: false }
+    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0, depth: 0, deepest: 0, under: false, exitAt: -Infinity }
     const kept = this.crossings.get(id)
     if (kept) { Object.assign(s, kept, { seen: this.time }); this.crossings.delete(id) }
     this.vehicles.set(id, s)
@@ -368,7 +383,9 @@ export class SpraySim {
     // A fast hull touching down flat (a jet skimming, a Zorb skipping) splashes too: a skip.
     // `touchdown`: a skip landing again (src/vehicles/skip.ts), which may not have dried the hull's
     // whole envelope in a low hop but is an entry all the same.
-    const entering = touchdown || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15)))
+    // Not while coming up from under (one exit splash, not an entry too), unless falling back in.
+    const surfacing = s.under || (this.time - s.exitAt < EXIT_QUIET && vy > -1.5)
+    const entering = !surfacing && (touchdown || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15))))
     s.seen = this.time; s.speed = speed
     // A trail joins points laid while the ball stayed on the water; a skimming ball that lifts
     // for a moment (under SKIM_GAP) is still on it, a skip is not.
@@ -422,14 +439,23 @@ export class SpraySim {
     // Coming out. Depth below the wholly-wet point is integrated from the vertical speed (the
     // caller gives the surface and the wetted fraction, not the hull's height): a ball is wholly
     // wet with its bottom metre under, a hull with its whole envelope under.
-    if (sub < .999) s.depth = sub
-    else s.depth = Math.max(s.depth, 1) - vy * dt
-    const top = ball ? 2 * ball : 1
-    if (s.depth > top + EXIT_BAND) { s.under = true; s.deepest = Math.max(s.deepest, s.depth - top) }
-    const out = ball ? s.depth < top : sub < EXIT_OUT
+    let out: boolean
+    const under = shape.under, height = shape.height
+    if (Number.isFinite(under) && Number.isFinite(height) && height! > 0) {
+      // The caller's depth of the craft's top: wholly under past the band, out once more than
+      // half its height is clear (a ball: its centre above the surface).
+      if (under! > EXIT_BAND) { s.under = true; s.deepest = Math.max(s.deepest, under!) }
+      out = under! < -height! * EXIT_OUT
+    } else {
+      if (sub < .999) s.depth = sub
+      else s.depth = Math.max(s.depth, 1) - vy * dt
+      const top = ball ? 2 * ball : 1
+      if (s.depth > top + EXIT_BAND) { s.under = true; s.deepest = Math.max(s.deepest, s.depth - top) }
+      out = ball ? s.depth < top : sub < EXIT_OUT
+    }
     if (s.under && out && vy > EXIT_RISE && !teleported) {
       this.exitSplash(x, y, z, vx, vy, vz, scale * size, ball, s.deepest)
-      s.under = false; s.deepest = 0
+      s.under = false; s.deepest = 0; s.exitAt = this.time
     } else if (s.under && out) { s.under = false; s.deepest = 0 }
     s.submerged = sub; s.x = x; s.z = z
     this.version++

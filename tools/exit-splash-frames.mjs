@@ -11,6 +11,8 @@
  *   zorb-bob      the ball resting at the surface: must throw no exit splash.
  *   <kind>-enter  dropped in at speed, 10 degrees down from 4 m up.
  *   <kind>-exit   let go 3 m under, moving forward and up at speed.
+ *   buggy-shore   driven (towed at 6 m/s) out of 1 m of water up a beach: its top never goes
+ *                 under, so it must throw no exit splash.
  * Camera 22 m to the side, 5 m up. Frames every 150 ms around the event; notes give the spray
  * simulation's entry and exit counts for each scene. --phone: 844 by 390, the Zorb and the buggy.
  */
@@ -31,7 +33,7 @@ const errors = [], notes = []
 const ZORB = [['zorb-deep', 'buggy', true, 8, 4, 14, 14], ['zorb-shallow', 'buggy', true, 2.5, 4, 6, 12], ['zorb-bob', 'buggy', true, 0, 0, 0, 10]]
 // The tank is hidden in this build (src/vehicles/available.ts): asking for it gets the buggy.
 const KINDS = phone ? ['buggy'] : ['buggy', 'jet', 'hovercraft']
-const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18, -3.2, 10], [`${k}-exit`, k, false, 3, 14, 9, 12]])]
+const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18, -3.2, 10], [`${k}-exit`, k, false, 3, 14, 9, 12]]), ['buggy-shore', 'buggy', false, 'shore', 6, 0, 20]]
 const HOURS = phone ? [14] : [14, 22]
 
 for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, frames] of SCENES) {
@@ -73,11 +75,36 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
   if (zorb) {
     // Ball on (the Zorb key), grown before the scene starts.
     await page.evaluate((spot) => window.syn3h.player.teleport({ x: spot.x, y: spot.surface + 3, z: spot.z }, 0), spot)
-    await page.keyboard.press('KeyX')
+    // Straight to the input (a key press is ignored while the game's input is suspended).
+    await page.evaluate(() => { const i = window.syn3h.game.input; if (!i.state.zorb) i.toggleZorb() })
     await page.waitForFunction(() => { const p = window.syn3h.player; return p.zorbed && p.zorb.radius > 0 && Math.abs(p.zorb.radius - p.zorb.target) < .01 }, null, { timeout: 15000 }).catch(() => errors.push(`${tag}: zorb did not grow`))
   }
   const before = await page.evaluate(({ spot, depth, forward, up }) => {
     const s = window.syn3h, b = s.player, fx = s.game.systems.find(x => x.spray && x.underwater)
+    if (depth === 'shore') {
+      // 1 m of water with dry land 12 m ahead, heading for it.
+      const t = s.terrain, sp = t.spawnPoint(0).position, wet = (x, z) => t.liquidKindAt?.(x, z) === 'water'
+      let at = null
+      for (let r = 10; r < 3000 && !at; r += 5) for (let a = 0; a < 96 && !at; a++) {
+        const ang = a / 96 * Math.PI * 2, x = sp.x + Math.cos(ang) * r, z = sp.z + Math.sin(ang) * r
+        if (!wet(x, z)) continue
+        const d = t.liquidHeightAt(x, z) - t.heightAt(x, z)
+        if (d < .8 || d > 1.3) continue
+        for (let k = 0; k < 16 && !at; k++) {
+          const hd = k / 16 * Math.PI * 2, dx = -Math.sin(hd), dz = -Math.cos(hd)
+          if (!wet(x + dx * 6, z + dz * 6) || wet(x + dx * 14, z + dz * 14) || wet(x + dx * 20, z + dz * 20)) continue
+          at = { x, z, hd, dx, dz }
+        }
+      }
+      if (!at) return { error: 'no beach' }
+      b.teleport({ x: at.x, y: t.heightAt(at.x, at.z) + 1, z: at.z }, at.hd)
+      s.game.add({ fixedUpdate() { const v = b.body.linvel(); if (window.__towing) b.body.setLinvel({ x: at.dx * forward, y: v.y, z: at.dz * forward }, true) } }, 'shore tow')
+      window.__towing = false; window.__shore = { ...at, forward }
+      const V = s.game.camera.position.constructor, w = t.liquidHeightAt(at.x, at.z)
+      s.camera.setCinematicPose(new V(at.x + at.dz * 18 - at.dx * 2, w + 5, at.z - at.dx * 18 - at.dz * 2), new V(at.x + at.dx * 8, w + 1, at.z + at.dz * 8))
+      window.__fx = fx
+      return { entries: fx.spray.sim?.entries ?? 0, exits: fx.spray.sim?.exits ?? 0 }
+    }
     // Depth is the ball's top, or the body's centre, under the still surface.
     const r = b.zorbed ? b.zorb.radius : 0
     b.teleport({ x: spot.x - 12, y: spot.surface - depth - r, z: spot.z }, Math.PI / 2)
@@ -87,6 +114,12 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
     window.__fx = fx
     return { entries: fx.spray.sim?.entries ?? 0, exits: fx.spray.sim?.exits ?? 0 }
   }, { spot, depth, forward, up })
+  if (before.error) { errors.push(`${tag}: ${before.error}`); await page.close(); continue }
+  if (depth === 'shore') {
+    // Let the world at the beach arrive, then start the tow.
+    await page.waitForTimeout(2500)
+    await page.evaluate(() => { const { dx, dz, forward } = window.__shore; window.syn3h.player.body.setLinvel({ x: dx * forward, y: 0, z: dz * forward }, true); window.__towing = true })
+  }
   const trace = []
   for (let i = 0; i < frames; i++) {
     await page.waitForTimeout(150)
