@@ -28,6 +28,7 @@ import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { paletteFor } from '../terrain/palettes'
 import { cameraInWater, liquidDaylight } from './daylight'
+import { lensNearSeaNow, mediumHere, setLensCamera } from './drawnSurface'
 import { waterClarity } from './params'
 import { UNDERWATER_DEFAULTS, type UnderwaterSettings, underwaterLook, underwaterRamp } from './waterEffectsMath'
 
@@ -112,6 +113,10 @@ export class Underwater {
     const { tint, extinction, blend, lava, causticLevel, causticGain, sunDirection, seaHue, columnLoss } = this
     this.fogNode = Fn(() => {
       const p = positionWorld
+      // The medium this pixel is seen from: the lens-wide blend, or per pixel at the near plane
+      // while the lens is at the sea's surface (drawnSurface.ts), so the underwater look ends
+      // exactly where the drawn water does.
+      const here = mediumHere(blend).toVar()
       const distance = positionView.length()
       const sunUp = smoothstep(0.0, 0.3, sunDirection.y)
       // Caustics: where light focused by the waves above lands. The zero crossings of a sum
@@ -141,10 +146,10 @@ export class Underwater {
       const sight = normalize(p.sub(cameraPosition))
       const column = below.max(0).mul(float(1.3).add(float(1).sub(sight.y.abs()).mul(0.6)))
       const absorb = exp(column.mul(columnLoss).mul(float(1.25).sub(seaHue)).negate())
-      const seen = mix(lit.mul(absorb), lit, blend)
+      const seen = mix(lit.mul(absorb), lit, here)
       output.assign(vec4(seen, output.a))
       const result = vec4(air).toVar()
-      If(blend.greaterThan(0.001), () => {
+      If(here.greaterThan(0.001), () => {
         const view = normalize(p.sub(cameraPosition))
         const kept = exp(distance.mul(extinction).negate())
         // Water: the object's colour, absorbed toward the water's hue, then in-scattered light.
@@ -173,13 +178,14 @@ export class Underwater {
         const upward = view.y.mul(0.5).add(0.5)
         const glow = tint.mul(mix(float(0.55), float(1.5), upward)).mul(cell.mul(0.9).add(0.4)).mul(float(1).sub(crust.mul(0.75)))
         const molten = mix(glow, lit.add(tint.mul(0.25)), kept)
-        result.assign(mix(air, vec4(mix(water, molten, lava), output.a), blend))
+        result.assign(mix(air, vec4(mix(water, molten, lava), output.a), here))
       })
       return result
     })()
     // Retain Environment's live air graph. Swapping its identity at the surface rebuilds
     // every affected material and GPU pipeline, even on the tenth crossing.
     game.scene.fogNode = this.fogNode
+    setLensCamera(game.camera)
     airUnder.set(this.fogNode, this.savedFog)
   }
 
@@ -257,7 +263,9 @@ export class Underwater {
       this.lava.value = 1
       this.tint.value.setRGB(LAVA_GLOW.x, LAVA_GLOW.y, LAVA_GLOW.z)
       this.extinction.value = 2.3 / LAVA_VISIBILITY
-    } else if (wet || wash > 0) {
+    } else if (wet || wash > 0 || lensNearSeaNow()) {
+      // At the sea's surface the look is decided per pixel: the water's colours must be ready
+      // for the pixels below the line even while the lens centre is above it.
       this.lava.value = 0
       this.tint.value.setRGB(look.red, look.green, look.blue)
       this.extinction.value = look.extinction + wash * 0.3

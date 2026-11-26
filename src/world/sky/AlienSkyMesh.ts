@@ -13,6 +13,7 @@
  *    glow, because Preetham's sky goes black two degrees after sunset.
  *  - The ratio betaTheta / beta is guarded so zeroing every channel cannot produce NaN.
  */
+import { mediumHere } from '../water/drawnSurface'
 import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3, type Camera } from 'three/webgpu'
 import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
@@ -324,7 +325,9 @@ export class AlienSkyMesh extends Mesh {
         texColor.assign(mix(texColor, colour, skyHazeAmount(tau, haze.strength).mul(fade)))
       })
 
-      return vec4(mix(max(texColor, vec3(0.0)), this.underwaterTint, this.underwaterMix), 1.0)
+      // The medium this pixel is seen from: per pixel at the sea's surface (water/drawnSurface.ts),
+      // so the sky below the waterline on the lens takes the water's colour and above it does not.
+      return vec4(mix(max(texColor, vec3(0.0)), this.underwaterTint, mediumHere(this.underwaterMix)), 1.0)
     })()
 
     material.side = BackSide

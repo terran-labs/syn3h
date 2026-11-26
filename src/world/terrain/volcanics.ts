@@ -16,7 +16,7 @@ import * as THREE from 'three/webgpu'
 import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, positionGeometry, smoothstep, time, uniform, vec3 } from 'three/tsl'
 import { worldGravity } from '../../../shared/params'
 import { seaLevel, seaSettled } from '../seaLevel'
-import { nearestImage } from '../../../shared/wrap'
+import { nearestImage, wrapCoord } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
 import { Emitters } from '../../fx/Emitters'
@@ -35,7 +35,8 @@ import { SEA_GRID } from '../water/seaWaves'
 import { CLIPMAP_LAYOUTS, Clipmap, clipmapReach } from '../water/clipmap'
 import { qualityLevel } from '../../core/quality'
 import { liquidWaves, type LiquidBody } from '../water/liquidWaves'
-import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
+import { VISUAL_DETAIL_MAX, buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, shoal, waterOpacityNode, type WaterBed } from '../water/surface'
+import { LENS_BAND, updateDrawnSea } from '../water/drawnSurface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
 import { createFallMaterial, drapedRivers, receivingWater, riverPieces } from '../water/falls'
 import { paletteFor } from './palettes'
@@ -476,6 +477,20 @@ export class Volcanics implements System {
       this.mist.update(dt, this.camera?.position.x ?? 0, this.camera?.position.z ?? 0, this.camera?.position.y ?? 0)
       for (const w of [this.newSea, this.newStill, this.newRiver]) w.setEnvironment(this.scene.environment)
       this.newSea.update(level)
+      // The drawn sea at the lens, for the waterline and the underwater look (water/drawnSurface.ts):
+      // the same waves, cells and shoaling the sea mesh draws with there.
+      const cam = this.camera?.position
+      if (cam && this.clip && !this.seaIsLava) {
+        const field = liquidWaves(SEA_BODY)
+        const depth = level - this.sampler.heightAt(wrapCoord(cam.x, this.sampler.data.size), wrapCoord(cam.z, this.sampler.data.size))
+        let reach = VISUAL_DETAIL_MAX
+        for (const c of field.components) reach += Math.abs(c.amplitude)
+        updateDrawnSea({
+          level, components: field.components, shoal: shoal(depth, field),
+          cell: CLIPMAP_LAYOUTS[Math.max(0, Math.min(5, this.clipLevel))].base,
+          near: !SEA_BODY.frozen && depth > 0 && Math.abs(cam.y - level) < LENS_BAND + reach,
+        })
+      } else updateDrawnSea({ level, components: [], shoal: 0, cell: 1, near: false })
       this.newStill.update(0)
       this.newRiver.update(0)
     }

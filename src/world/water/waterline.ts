@@ -14,7 +14,8 @@
  * and bright, lava ones glowing orange that cool to dark as they slide.
  */
 import * as T from 'three/webgpu'
-import { abs, float, floor, fract, max, mix, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { abs, float, floor, fract, fwidth, max, mix, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { heightAtLens, lensNearSea, lensNearSeaNow } from './drawnSurface'
 
 /** How far in front of the lens the sheet sits, in near-plane distances. */
 const SHEET = 1.5
@@ -78,8 +79,18 @@ export class Waterline {
     // Only while the surface crosses the sheet (the line lies within it), and during a crossing.
     const near = smoothstep(1.2, 0.9, abs(this.plane.x).div(grad)).mul(this.crossing)
     const lineColour = mix(vec3(1.8, 2, 2), vec3(4, 1.6, 0.3), this.lava)
-    const lineAlpha = meniscus.mul(0.85).mul(near)
-    const bodyAlpha = below.mul(near).mul(0.55)
+    const planeLine = meniscus.mul(0.85).mul(near)
+    const planeBody = below.mul(near).mul(0.55)
+    // At the sea's surface (drawnSurface.ts) the line is where this pixel's near-plane point meets
+    // the drawn sea: where the near plane cuts the mesh, so line and drawn edge are one curve at
+    // every pitch, roll and wave. Below it the underwater look is the scene fog's own, per pixel,
+    // so the sheet adds no tint there. Lava and inland water keep the fitted plane above.
+    const heightHere = heightAtLens()
+    const lineWidth = fwidth(heightHere).mul(1.2).max(0.0008)
+    const seaLine = smoothstep(lineWidth, float(0), abs(heightHere)).mul(0.85).mul(lensNearSea)
+    const notSea = float(1).sub(lensNearSea)
+    const lineAlpha = max(planeLine.mul(notSea), seaLine)
+    const bodyAlpha = planeBody.mul(notSea)
     // Drops after surfacing: a column per streak, each with its own start and speed.
     const columns = 34
     const column = floor(uv().x.mul(columns))
@@ -132,7 +143,7 @@ export class Waterline {
     const e = camera.matrixWorld.elements
     waterlinePlane(height, this.forward, [e[0], e[1], e[2]], [e[4], e[5], e[6]], d, halfW, halfH, slopeX, slopeZ, this.plane.value)
     const p = this.plane.value, reach = Math.hypot(p.y, p.z)
-    const active = (Math.abs(p.x) < reach * 1.2 && crossing > 0.01) || this.surfaced < DRIP_SECONDS
+    const active = (Math.abs(p.x) < reach * 1.2 && crossing > 0.01) || this.surfaced < DRIP_SECONDS || lensNearSeaNow()
     this.mesh.visible = active
     if (!active) return
     if (kind) {
