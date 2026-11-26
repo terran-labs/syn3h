@@ -59,7 +59,7 @@ async function openingPoint(page, kind, reduced = false) {
       for (const p of discs) {
         const x = Math.round(p.x + rect.left), y = Math.round(p.y + rect.top)
         if (p.radius > 8 && document.elementFromPoint(x, y) === canvas &&
-            discs.every(q => q === p || gap(q, x, y) >= 0 || q.depth > p.depth)) return { x, y, id: p.id }
+            discs.every(q => q === p || gap(q, x, y) >= 0)) return { x, y, id: p.id }
       }
     }
     return false
@@ -75,6 +75,14 @@ async function observeEntry(page) {
       if (!probe || probe.input || !event.isTrusted) return
       probe.input = { opening: typeof galaxy?.opening?.start === 'number', key: event.key,
         world: document.activeElement?.closest('.galaxy-label')?.dataset.world ?? null }
+      if (type === 'pointerdown') {
+        const canvas = galaxy.canvas, bounds = canvas.getBoundingClientRect()
+        const x = event.clientX - bounds.left, y = event.clientY - bounds.top
+        Object.assign(probe.input, {
+          canvas: event.target === canvas, x, y,
+          discs: galaxy.screen.filter(p => p.visible && Math.hypot(p.x - x, p.y - y) < p.radius).map(p => p.id),
+        })
+      }
     }, { capture: true })
   })
 }
@@ -124,6 +132,13 @@ async function enterDuringOpening(page, kind, touch, reduced = false) {
   const result = await page.evaluate(() => ({ ...window.openingEntryProbe, world: window.mira.planets.currentPlanet().id }))
   assert.equal(result.input?.opening, !reduced, 'trusted input arrives in the expected opening state')
   if (kind === 'enter') assert.equal(result.input?.world, world, 'Enter targeted the current label')
+  if (kind === 'disc') {
+    const { canvas, x, y, discs } = result.input
+    console.log(`disc at (${x}, ${y}): sampled ${world}, at pointerdown ${discs.join(', ') || 'none'}, landed ${result.world}`)
+    assert.ok(canvas, 'the trusted press hit the Galaxy canvas')
+    assert.equal(discs.length, 1, 'the press hit exactly one visible disc in the input frame')
+    world = discs[0]
+  }
   assert.equal(result.world, world, 'entered the world activated by the player')
   assert.equal(result.joins, 1, 'one activation joins once')
   assert.equal(result.flight, !reduced, 'reduced motion enters without a flight')
