@@ -64,6 +64,56 @@ async function setMaterial(page, value, material) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
 }
 
+async function qualityFallback(page, material) {
+  await page.evaluate(() => {
+    mira.shell.requestResume()
+    mira.game.quality.setAuto(false)
+  })
+  await page.waitForFunction(() => !mira.shell.userPaused)
+  const selected = material === 'liquid' ? 0 : 2
+  const savedStyle = await page.evaluate(() => localStorage.getItem('mira.glassMaterial.v2'))
+  const fillAt = async (quality, tint) => {
+    await page.evaluate(quality => mira.params.set('gfx.quality', quality), quality)
+    const effective = quality < 2 ? 'flat' : material
+    await page.waitForFunction(({ effective, quality }) => document.documentElement.dataset.glassMaterial === effective &&
+      mira.params.get('gfx.quality').value === quality && mira.game.quality.governor.level === quality, { effective, quality })
+    const state = await page.evaluate(() => ({
+      selected: mira.params.get('hud.glass').value,
+      tint: mira.params.get('hud.surfaceCoverage').value,
+      saved: localStorage.getItem('mira.glassMaterial.v2'),
+      savedTint: localStorage.getItem('mira.surfaceCoverage'),
+      fill: document.documentElement.style.getPropertyValue('--interface-tint'),
+    }))
+    assert.deepEqual([state.selected, state.tint, state.saved, state.savedTint],
+      [selected, tint, savedStyle, String(tint)], 'the quality tier preserves the selection and stored tint')
+    return state.fill
+  }
+  const readPainted = await page.evaluateHandle(async () => (await import('/src/ui/glassMaterial.ts')).currentTint)
+  try {
+    const setTint = async tint => {
+      await page.evaluate(tint => mira.params.set('hud.surfaceCoverage', tint), tint)
+      await page.waitForFunction(({ readPainted, tint }) => readPainted() === tint, { readPainted, tint })
+    }
+    const flatDefault = await page.evaluate(async () => (await import('/src/ui/glassMaterial.ts')).defaultTint(2))
+    await setTint(flatDefault)
+    const defaultFill = await fillAt(3, flatDefault)
+    for (const tint of material === 'liquid' ? [28, 78] : [28]) {
+      await setTint(tint)
+      const original = await fillAt(3, tint)
+      const minimal = await fillAt(0, tint)
+      const low = await fillAt(1, tint)
+      assert.equal(minimal, low, 'both ineligible tiers use the same effective fill')
+      if (material === 'liquid' && tint === 28) {
+        assert.equal(minimal, defaultFill, 'a low Liquid tint paints the default Flat CSS face')
+      } else {
+        assert.equal(minimal, original, 'a higher tint or native Flat keeps its exact CSS fill')
+      }
+      assert.equal(await fillAt(3, tint), original, 'returning to Medium or higher restores the exact fill')
+    }
+  } finally { await readPainted.dispose() }
+  console.log(material, 'low-tier tint and persistence ok')
+}
+
 async function lobbyMarkerOwnership(page) {
   await page.waitForFunction(() => document.querySelector('.mira-shell[data-lobby-glass]'))
   await page.evaluate(() => {
@@ -247,6 +297,7 @@ try {
           'the pause Exit button retains its keyboard focus outline')
           await cleanInk(page, pauseBar, pauseExit)
         }
+        await qualityFallback(page, material)
         console.log(width + 'x' + height, material, await page.evaluate(() => mira.game.backend), 'glass ink ok')
       } finally { await context.close() }
     }

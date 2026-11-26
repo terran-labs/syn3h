@@ -81,9 +81,17 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
   let previousStyle = glassStyleChoice(glassStyle.value).value
   paintedTint = surfaceCoverage.value
   let frame = 0
+  function paintFlatFill() {
+    // Low tiers render a selected Liquid style with Flat's CSS face. Give that
+    // face Flat's default contrast without moving the slider or saving a tint.
+    const tint = glassStyle.value === GLASS_LIQUID && !liquidEligible()
+      ? Math.max(paintedTint, defaultTint(GLASS_FLAT))
+      : paintedTint
+    document.documentElement.style.setProperty('--interface-tint', fill(flatFill, tint))
+  }
   function paintTint() {
     const root = document.documentElement
-    root.style.setProperty('--interface-tint', fill(flatFill, paintedTint))
+    paintFlatFill()
     root.style.setProperty('--interface-frost-tint', fill(frostFill, paintedTint))
     for (const notify of tintListeners) notify()
   }
@@ -127,8 +135,10 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
     } else if (id === surfaceCoverage.def.id) {
       easeTint()
       try { localStorage.setItem('mira.surfaceCoverage', String(surfaceCoverage.value)) } catch { /* Session only. */ }
+      return
     } else if (id !== qualityLevel.def.id) return
     paintStyle()
+    paintFlatFill()
   })
   return () => { unsubscribe(); if (frame) cancelAnimationFrame(frame) }
 }
