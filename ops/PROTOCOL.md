@@ -28,7 +28,12 @@ A handoff is ready when, on the lane branch with `main` merged in first:
 
 Lanes run their own tests; the Orchestrator owns combined acceptance. Heavy jobs
 (test runs, builds, headless browsers) go through the integration `tools/heavy.sh`, which
-allows three at once machine-wide. Unit tests and typechecks need no allocation or
+allows three at once machine-wide. Always call it by the trunk path,
+`/Users/vtn/dev/Syn3h/tools/heavy.sh`, never a worktree copy: only the trunk's carries the time
+limit, the reaping of a finished job's leftovers and the priority lane (`MIRA_HEAVY_PRIORITY=1`,
+for release-path jobs only), and a waiter on an old copy does not honour the lane (26 November
+2026). `tools/heavy.sh status` shows holders, ages and waiters without taking a slot.
+Unit tests and typechecks need no allocation or
 permission: run them. There is no separate runtime allocation, receipt or pin step; the
 testing principle in `AGENTS.md` sets how much checking a change needs.
 
