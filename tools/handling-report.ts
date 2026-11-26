@@ -155,6 +155,11 @@ async function miraBuggy(): Promise<VehicleReport> {
   for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: turn radius after 2 s`, 'm', locks.get(v)!.radius))
   for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: lateral after 2 s`, 'g', locks.get(v)!.lateralG))
   for (const v of [45, 60]) detail.push(fig(`Full lock at ${v} m/s for 2 s: largest slide angle`, 'deg', locks.get(v)!.worstSlip), fig(`Full lock at ${v} m/s for 2 s: least upright (1 level)`, '', locks.get(v)!.upright))
+  // Fishtail: a one second steering step, then let go (26 November 2026).
+  for (const v of [30, 60, 90]) for (const [lock, name] of [[0.25, 'quarter'], [1, 'full']] as const) {
+    const r = await at(() => buggy.steerStep(v, lock))
+    detail.push(fig(`${name} lock for 1 s at ${v} m/s: largest slide angle`, 'deg', r.worstSlip), fig(`${name} lock for 1 s at ${v} m/s: settled after letting go`, 's', r.settled))
+  }
   const flick = await at(() => buggy.flick(45))
   detail.push(fig('Flick left-right at 45 m/s: largest slide angle', 'deg', flick.worstSlip), fig('Flick left-right at 45 m/s: slide angle 2 s after letting go', 'deg', flick.endSlip))
   detail.push(fig('In the air yawed 30 deg at 30 m/s: nose turned toward travel in 1 s', 'deg', await at(() => buggy.airStraighten())))
@@ -173,7 +178,7 @@ async function miraBuggy(): Promise<VehicleReport> {
     fig('Broadside at 20 m/s: time to face travel', 's', broadside.faced),
     fig('Broadside at 20 m/s: time to stop', 's', broadside.stopped),
   )
-  for (const [v, a] of [[30, 40], [45, 40], [60, 5], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
+  for (const [v, a] of [[30, 30], [30, 40], [45, 40], [60, 5], [60, 30], [90, 30], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
   for (const [v, a] of [[30, 40], [45, 90], [60, 70]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, let go: recovered`, 's', (await at(() => buggy.kick(v, a, false))).recovered))
   // Ice (surface.grip.ice): a frozen lake.
   const onIce = async <T>(scenario: () => Promise<T>) => { buggy.ground.surface = 'ice'; try { return await at(scenario) } finally { buggy.ground.surface = undefined } }

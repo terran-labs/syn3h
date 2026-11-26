@@ -126,7 +126,7 @@ export const buggyGrip = defineParam({
  */
 export const buggySlide = defineParam({
   id: 'buggy.slide', label: 'Grip at high speed', group: 'Buggy', scope: 'world',
-  default: 3.3, min: 0.2, max: 4, step: 0.01,
+  default: 3, min: 0.2, max: 4, step: 0.01,
 })
 /** Speed (m/s) by which grip has gone from its low speed to its high speed value. */
 export const buggyGripFade = defineParam({
@@ -141,7 +141,7 @@ export const buggyGripFade = defineParam({
  */
 export const buggySteerLimit = defineParam({
   id: 'buggy.steerLimit', label: 'Steering at speed (x grip)', group: 'Buggy', scope: 'world',
-  default: 2.75, min: 0.5, max: 4, step: 0.05,
+  default: 2, min: 0.5, max: 4, step: 0.05,
 })
 /** Next-gen regen braking on the reverse key while rolling forward, in g at full key. */
 export const buggyRegen = defineParam({
@@ -196,11 +196,12 @@ export const buggySideGrip = defineParam({
  * travel the front wheels could no longer be pointed back along it, and holding full
  * counter-steer held the slide. With this at 1 the front wheels swing toward the direction of
  * travel once the buggy slides more than a few degrees, and the driver's steering is added to
- * that. Normal cornering is unchanged. 0 is the old behaviour.
+ * that. Normal cornering is unchanged. 0 is the old behaviour. On by default since 26 November
+ * 2026 (the Assisted preset): with it off, counter-steering held a slide instead of ending it.
  */
 export const buggySteerFollow = defineParam({
   id: 'buggy.steerFollow', label: 'Counter-steer assist', group: 'Buggy', scope: 'world',
-  default: 0, min: 0, max: 1, step: 0.01,
+  default: 1, min: 0, max: 1, step: 0.01,
 })
 /**
  * Next-gen rear steering at speed, as a fraction of the Mira rear angle. Mira steers the
@@ -210,7 +211,7 @@ export const buggySteerFollow = defineParam({
  */
 export const buggyRearSteerFast = defineParam({
   id: 'buggy.rearSteerFast', label: 'Rear steering at speed', group: 'Buggy', scope: 'world',
-  default: 1, min: -1, max: 1, step: 0.05,
+  default: 0, min: -1, max: 1, step: 0.05,
 })
 /**
  * Next-gen: the least grip a broadside tyre keeps, as a fraction of its grip at that speed,
@@ -238,7 +239,7 @@ export const buggyDownforce = defineParam({
  */
 export const buggyFin = defineParam({
   id: 'buggy.fin', label: 'Tail fin', group: 'Buggy', scope: 'world',
-  default: 0, min: 0, max: 3, step: 0.05,
+  default: 1, min: 0, max: 3, step: 0.05,
 })
 /**
  * Whether the tail fin also acts with no wheel on the ground. On, it turns a buggy thrown into
@@ -251,23 +252,31 @@ export const buggyFinAir = defineParam({
 })
 /**
  * Next-gen stability assist: damps the buggy's turning (per second) at speed while the
- * steering is let go and the wheels are down. Off by default: it also damps a drift the
- * driver wanted.
+ * steering is let go and the wheels are down. Off by default (the Assisted preset): it also
+ * damps a drift the driver wanted. Balanced sets it to 1.
  */
 export const buggyStability = defineParam({
   id: 'buggy.stability', label: 'Stability assist', group: 'Buggy', scope: 'world',
-  default: 1, min: 0, max: 5, step: 0.1,
+  default: 0, min: 0, max: 5, step: 0.1,
 })
 
 /**
  * Handling presets (the Handling dropdown in the Buggy settings). Each sets the same settings;
- * the defaults above are Balanced. Measured in the handling report (tools/handling-report.ts),
- * 16 November 2026. "Course change" is in one second at full lock.
+ * the defaults above are Assisted, the first. Measured in the handling report (tools/handling-report.ts),
+ * 16 November 2026. Assisted became the default on 26 November 2026 (the owner: Balanced fishtailed
+ * and could not be controlled at speed). It differs from Sunday 15 November's Assisted in two values
+ * kept as they were: the tail fin does not act in the air, and stall blending stays on.
+ * "Course change" is in one second at full lock.
  */
 export const BUGGY_PRESETS = definePresets('Buggy', [
   {
+    name: 'Assisted',
+    description: 'The default. Counter-steer assist and a tail fin catch any slide, so it stays under control at speed; it is heavier to turn at speed and the wheels steer themselves. The fin works only on the ground, and the wings keep stall blending.',
+    values: { 'buggy.steerFollow': 1, 'buggy.rearSteerFast': 0, 'buggy.sideHold': 0.5, 'buggy.fin': 1, 'buggy.finAir': false, 'buggy.stability': 0, 'buggy.steerLimit': 2, 'buggy.slide': 3, 'buggy.downforce': 0, 'buggy.flightSlip': true, 'buggy.flightModel': 1 },
+  },
+  {
     name: 'Balanced',
-    description: 'Turns in sharper than it did before the assists, settles itself when you let go of the steering, and nothing acts on it in the air.',
+    description: 'The default until 26 November. Turns in sharper than it did before the assists, settles itself when you let go of the steering, and nothing acts on it in the air.',
     values: { 'buggy.steerFollow': 0, 'buggy.rearSteerFast': 1, 'buggy.sideHold': 0.5, 'buggy.fin': 0, 'buggy.finAir': false, 'buggy.stability': 1, 'buggy.steerLimit': 2.75, 'buggy.slide': 3.3, 'buggy.downforce': 0, 'buggy.flightSlip': true, 'buggy.flightModel': 1 },
   },
   {
@@ -284,10 +293,5 @@ export const BUGGY_PRESETS = definePresets('Buggy', [
     name: 'Direct',
     description: 'No assists at all: the wheels do only what you say and nothing acts in the air. On the ground it drives as Classic does; the wings use stall blending.',
     values: { 'buggy.steerFollow': 0, 'buggy.rearSteerFast': 1, 'buggy.sideHold': 0, 'buggy.fin': 0, 'buggy.finAir': false, 'buggy.stability': 0, 'buggy.steerLimit': 2, 'buggy.slide': 3, 'buggy.downforce': 0, 'buggy.flightSlip': true, 'buggy.flightModel': 1 },
-  },
-  {
-    name: 'Assisted',
-    description: 'Sunday 15 November: a tail fin and counter-steer assist catch any slide, but it is heavy to turn at speed, the wheels steer themselves, and it straightens in the air.',
-    values: { 'buggy.steerFollow': 1, 'buggy.rearSteerFast': 0, 'buggy.sideHold': 0.5, 'buggy.fin': 1, 'buggy.finAir': true, 'buggy.stability': 0, 'buggy.steerLimit': 2, 'buggy.slide': 3, 'buggy.downforce': 0, 'buggy.flightSlip': false, 'buggy.flightModel': 1 },
   },
 ])
