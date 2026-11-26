@@ -123,7 +123,7 @@ export class BotManager implements System {
   drawClimbFleet(draw: () => void): void { this.covered.drawClimbFleet(draw) }
 
   warmCovered(warm: CoveredWarm): Promise<void> { return this.covered.warm(warm) }
-  warmClimbFleet(warm: CoveredWarm): Promise<void> { return this.covered.warm(warm) }
+  warmClimbLooks(warm: CoveredWarm): Promise<void> { return this.covered.warm(warm) }
   acquireBotVehicle(kind: VehicleKind, position: Vector3, heading: number): Vehicle {
     return this.covered.acquire(kind, position, heading)
   }

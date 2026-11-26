@@ -237,6 +237,12 @@ export function createVehicleSwapper(
       if (disposed) return Promise.resolve()
       return warming ??= warmVehicles(warm).finally(() => { warming = null })
     },
+    // The parked player vehicles at a manual climb's new level, as at entry: the first switch to
+    // one after a level change otherwise built its pipelines in play.
+    warmClimbLooks(warm: CoveredWarm): Promise<void> {
+      if (disposed) return Promise.resolve()
+      return warming ??= warmVehicles(warm).finally(() => { warming = null })
+    },
     dispose: () => swapper.dispose(),
   }, 'Vehicle cache')
   return swapper

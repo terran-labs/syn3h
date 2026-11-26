@@ -68,10 +68,11 @@ export interface System {
   /** After a climb outside play: draw every distance look of the parked bot models, unseen, around `draw`. */
   drawClimbFleet?(draw: () => void): void
   /**
-   * A manual quality change behind its veil: draw every look of every bot kind at the new level,
-   * one a frame, making a model for any kind with none parked (BotRenderWarm.warm).
+   * A manual quality change behind its veil: draw every model this system keeps off screen at the
+   * new level (every look of every bot kind, BotRenderWarm.warm; the parked player vehicles,
+   * swap.ts), making one for any kind with none kept.
    */
-  warmClimbFleet?(warm: CoveredWarm): Promise<void>
+  warmClimbLooks?(warm: CoveredWarm): Promise<void>
   drawCoveredLowFleet?(draw: () => void): void
   dispose?(): void
 }
@@ -904,17 +905,18 @@ export class Game {
       }
       if (batch) await batch.ready()
     }
-    // Every look of every bot kind at the new level, one a frame. warmVisibleQuality draws only
-    // what is on screen now: a look no bot shows at this moment (another detail level, another
-    // paint) would otherwise build its pipelines for the passes this level adds (ambient occlusion,
-    // indirect light, a larger shadow tier) when a bot drives into it, in play.
+    // Every look of every bot kind and every parked player vehicle at the new level. This draws
+    // only what is on screen now: a look no bot shows at this moment (another detail level, another
+    // paint), or a vehicle the player has not switched to yet, would otherwise build its pipelines
+    // for the new level's passes (ambient occlusion, indirect light, a larger shadow tier, another
+    // shading tier) when it first appears, in play.
     // Through the covered batch where the backend has one: each look's pipelines are requested
     // and compile in parallel (WebGPU, or WebGL with parallel shader compile), every pose in one
     // frame, then one wait for them all. One look a frame where it has not.
     for (const system of this.systems) {
-      if (!system.warmClimbFleet) continue
+      if (!system.warmClimbLooks) continue
       progress('Preparing vehicles')
-      await system.warmClimbFleet({
+      await system.warmClimbLooks({
         draw: () => { if (batch) batch.run(true, submit); else submit() },
         yieldFrame: async () => { if (!batch) await frame(); signal.throwIfAborted() },
       })
