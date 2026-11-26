@@ -34,6 +34,12 @@ export interface NavProfile {
   roadCost: number
   /** Metres above the surface an aircraft cruises at. Ignored unless `flies`. */
   cruiseAltitude: number
+  /**
+   * Horizontal deceleration this pilot plans its stops with, m/s^2. When set, a hold's approach
+   * is slowed to a stop at the hold rather than run in at cruise speed (Mind). Left unset, the
+   * vehicle approaches a hold as it always has.
+   */
+  stopAccel?: number
 }
 
 /** A planned route. `points[0]` is near the start; the last point is the goal or as near as it got. */

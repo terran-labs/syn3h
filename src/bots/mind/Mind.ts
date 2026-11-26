@@ -289,6 +289,13 @@ export class Mind {
       if (act.kind === 'follow' && distance < 6) { goal.stopWithin = 6; goal.x = target.x; goal.z = target.z }
       // On the hill: stop well inside the zone and stay, rather than circling its centre.
       if (act.kind === 'hold' && distance < this.holdRadius * 0.6) { goal.stopWithin = this.holdRadius * 0.6; goal.x = target.x; goal.z = target.z }
+      // Coming in to a hold: slow on the pilot's own stopping profile, so it reaches the stop
+      // zone above at a crawl. Run in at cruise speed, a jet crossed the zone at 14 m/s and swung
+      // 30 m past, back and forth, for as long as it held (25 November 2026).
+      else if (act.kind === 'hold' && this.pilot.profile.stopAccel) {
+        const left = Math.max(0, distance - this.holdRadius * 0.6)
+        goal.speed = Math.min(goal.speed, Math.sqrt(2 * this.pilot.profile.stopAccel * left) + 1)
+      }
       if (act.kind === 'flee') goal.speed = Math.max(goal.speed, 16)
     }
     if (this.pilot.profile.flies && act.kind !== 'pause') {
