@@ -58,6 +58,9 @@ async function openingPoint(page, kind, reduced = false) {
     } else {
       for (const p of discs) {
         const x = Math.round(p.x + rect.left), y = Math.round(p.y + rect.top)
+        // A newly arriving globe can still be crossing the sun between measurement and input.
+        // Use a globe on its orbit while the opening is still playing.
+        if (p.labelled === false || gap(galaxy.sunScreen, x, y) <= p.radius) continue
         if (p.radius > 8 && document.elementFromPoint(x, y) === canvas &&
             discs.every(q => q === p || gap(q, x, y) >= 0)) return { x, y, id: p.id }
       }
