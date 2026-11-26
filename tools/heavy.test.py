@@ -69,6 +69,28 @@ class HeavyTests(unittest.TestCase):
             p.wait(timeout=30)
         self.assertEqual(order.read_text().split(), ['first', 'second', 'third'])
 
+    def test_a_release_job_is_never_outranked_by_waiters_the_hold_confines(self):
+        # 26 November: release 130 waited 17 minutes with two slots free, ranked behind older
+        # waiters that its own hold confined to the one busy shared slot.
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '3', 'MIRA_HEAVY_RUNNING_SLOTS': '1'}
+        slots = self.root / 'slots'; slots.mkdir(parents=True, exist_ok=True)
+        holder = subprocess.Popen(['sleep', '60'])
+        busy = older = None
+        try:
+            (slots / 'hold').write_text(f'{holder.pid}\nrunning\n')
+            busy = subprocess.Popen(['sh', str(SCRIPT), 'sleep', '20'], env=env)  # takes slot 3, the shared one
+            time.sleep(1.5)
+            older = subprocess.Popen(['sh', str(SCRIPT), 'true'], env=env)  # confined to slot 3: waits
+            time.sleep(1.5)
+            started = time.time()
+            release = subprocess.run(['sh', str(SCRIPT), 'true'], env={**env, 'MIRA_HEAVY_RELEASE': '1'}, timeout=15)
+            self.assertEqual(release.returncode, 0)
+            self.assertLess(time.time() - started, 5, 'the release takes a free slot at once')
+        finally:
+            for p in (busy, older):
+                if p and p.poll() is None: p.terminate(); p.wait(timeout=10)
+            holder.kill(); holder.wait()
+
     def test_status_does_not_call_a_held_slot_free(self):
         import fcntl
         env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
