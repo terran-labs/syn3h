@@ -1,6 +1,7 @@
+import { touchdownFall } from '../world/water/spraySim'
 import * as THREE from 'three/webgpu'
 import type { System } from '../core/Game'
-import { params, worldSeed } from '../../shared/params'
+import { params, worldGravity, worldSeed } from '../../shared/params'
 import { Engine, SLIP_ALLOW, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue, type CueOptions } from './Cues'
 /** Seconds clear of the water before a skip's touchdown splashes again. */
@@ -463,7 +464,7 @@ export class GameAudio implements System {
       if(entered)this.cue(liquidKind==='lava'?'lava':'splash',p)
       // A skip touching down (src/vehicles/skip.ts): planing again after a moment clear of the
       // water, which the entry above misses when the hop never rose a metre. As loud as the hit.
-      else if(planing&&now-previous.planingAt>SKIP_SPLASH_GAP)this.cue('splash',p,{level:THREE.MathUtils.clamp(Math.abs(v.body.linvel().y)/4,.25,1.2)})
+      else if(planing&&now-previous.planingAt>SKIP_SPLASH_GAP&&v.body.linvel().y< -touchdownFall(worldGravity.value))this.cue('splash',p,{level:THREE.MathUtils.clamp(Math.abs(v.body.linvel().y)/4,.25,1.2)})
     }
     this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind,planingAt:planing?now:previous?.planingAt??-Infinity})
   }

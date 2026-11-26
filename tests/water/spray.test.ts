@@ -292,4 +292,24 @@ describe('spray render wrapper', () => {
       expect(scene.children).toHaveLength(0); expect(spray.state).toBeNull()
     } finally { waterSpray.value = enabled; (graphicsLevel as { value: number }).value = level; spray.dispose() }
   })
+
+  it('splashes for a skip touching down only when it lands', () => {
+    // Planing restarting while the hull is in the water (wading, settling) is no touchdown.
+    const sim = new SpraySim(cap, sea)
+    sim.step(1 / 60); sim.vehicle('a', 0, 0, 0, 7, 0, 0, .5, 1 / 60)
+    sim.step(1 / 60)
+    expect(sim.vehicle('a', .1, 0, 0, 7, .8, 0, .5, 1 / 60, 1, { ball: 0 }, true)).toBe(false)
+    sim.step(1 / 60)
+    expect(sim.vehicle('a', .2, 0, 0, 7, -3, 0, .5, 1 / 60, 1, { ball: 0 }, true)).toBe(true)
+  })
+
+  it('counts a gentle landing on a low-gravity world as a touchdown', () => {
+    // A 20 cm hop on a 1.62 m/s² world lands at 0.8 m/s: still a landing there.
+    const sim = new SpraySim(cap, sea)
+    sim.gravity = 1.62
+    sim.step(1 / 60); sim.vehicle('a', 0, 0, 0, 7, 0, 0, .5, 1 / 60)
+    sim.step(1 / 60)
+    expect(sim.vehicle('a', .1, 0, 0, 7, -Math.sqrt(2 * 1.62 * .2), 0, .5, 1 / 60, 1, { ball: 0 }, true)).toBe(true)
+  })
 })
+
