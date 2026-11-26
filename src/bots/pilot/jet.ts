@@ -22,6 +22,8 @@
 import * as THREE from 'three/webgpu'
 import type { InputState } from '../../core/Input'
 import type { Vehicle } from '../../vehicles/Vehicle'
+import { jetControlResponse, jetDrag, jetFlightThrust, jetSteer } from '../../vehicles/Jet'
+import { FIXED_DT } from '../../core/physics'
 import type { Terrain } from '../../world/Terrain'
 import type { DriveGoal, NavProfile, Pilot, PilotStatus } from './types'
 
@@ -77,15 +79,18 @@ const STEER_PER_MASS = 4
 const RIGHTING_PER_MASS = 0.2
 /** Jet angular drag in hover mode, per second; the attitude loop already gets this damping. */
 const HOVER_ANGULAR_DRAG = 2
-/** Forward flight torque per unit input at full authority (Jet.ts: steer 20, control response .3). */
-const FLIGHT_PITCH_TORQUE = 200 * 20 * .2 * .3
-const FLIGHT_ROLL_TORQUE = 200 * 20 * .75 * .3
+/** Forward flight torque per unit input at full authority (Jet.ts: mass x jet.steer x .2 or .75 x jet.controlResponse), read live. */
+const flightPitchTorque = () => 200 * jetSteer.value * .2 * jetControlResponse.value
+const flightRollTorque = () => 200 * jetSteer.value * .75 * jetControlResponse.value
 /** Lift per (m/s)^2 per unit of angle of attack near sea level: jet.lift .5 * 1.225 * 15. */
 const LIFT_PER_V2 = .5 * 1.225 * 15
 /** Body origin height when resting on the deployed landing gear. */
 const GEAR_HEIGHT = 1.3
 const DEG = Math.PI / 180
 const clamp = THREE.MathUtils.clamp
+/** Air density at a height, as Jet.ts reads it (the world's own air scaling aside). */
+const density = (y: number) => (y < 15240 ? THREE.MathUtils.lerp(1.225, .18756, Math.max(0, y) / 15240) : .18756)
+const stability = new THREE.Vector3()
 
 /** Positive means turn right. Forward is -Z; positive rotation about +Y turns left. */
 function headingError(fx: number, fz: number, dx: number, dz: number): number {
@@ -331,12 +336,18 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     // Local torque from inputs (Jet.ts flight): x axis -y * pitch torque, z axis -x * roll torque.
     torque.set(2 * e.x * 3 - localSpin.x * 1.5, 0, 2 * e.z * 5 - localSpin.z * 1.5)
     applyInertia(torque)
-    input.y = clamp(-torque.x / (FLIGHT_PITCH_TORQUE * authority), -1, 1)
-    input.x = clamp(-torque.z / (FLIGHT_ROLL_TORQUE * authority), -1, 1)
+    // The jet's own stability (weathervane, damping, levelling) acts as well: ask only for the rest.
+    const own = (vehicle as { stabilityTorque?: (out: THREE.Vector3) => THREE.Vector3 }).stabilityTorque
+    if (own) torque.sub(own.call(vehicle, stability))
+    input.y = clamp(-torque.x / (flightPitchTorque() * authority), -1, 1)
+    input.x = clamp(-torque.z / (flightRollTorque() * authority), -1, 1)
     // Yaw only through thrust vectoring: a little, to keep the nose on the flight path.
     input.w = clamp(-(2 * e.y - localSpin.y) * 2, -1, 1)
     const cruise = Math.max(goal.speed, tune.flightSpeed)
-    input.z = clamp(.15 + (cruise - speed) * .08 + .5 * Math.sin(gammaWant), .02, 1)
+    // Feed forward the throttle that holds this speed against the jet's drag (Jet.ts: a velocity
+    // change of -v * drag * density every step, against thrust of flightThrust * 2g * .99).
+    const hold = speed * jetDrag.value * density(pos.y) / FIXED_DT / (jetFlightThrust.value * 2 * g * .99)
+    input.z = clamp(hold + (cruise - speed) * .08 + .5 * Math.sin(gammaWant), .02, 1)
   }
 
   function reset(): void {
