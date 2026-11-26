@@ -32,6 +32,7 @@ import { GameAudio } from '../audio'
 import '../audio/params'
 import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/sky/presets'
 import { TouchControls } from './TouchControls'
+import { heightFullScale, speedFullScale } from './inspector/instrumentScales'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
@@ -2659,7 +2660,7 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentWorldName()} · ${currentPlanet().label}`
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.compassHeading(), world, hour: currentHour() })
+      this.focusHud.update(true, { speed: this.telemetry.speed, speedScale: speedFullScale(this.activeVehicleKind), heightScale: heightFullScale(this.activeVehicleKind), altitude: this.telemetry.seaAltitude, thrust: this.telemetry.thrust, heading: this.compassHeading(), world, hour: currentHour() })
       if (this.element.dataset.glass !== '1') this.element.dataset.glass = '1'
     }
     // The stylesheet drops frost at the lowest graphics level.

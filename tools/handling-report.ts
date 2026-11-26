@@ -32,6 +32,8 @@ import * as skip from '../tests/vehicles2/waterSkipScenarios'
 import { skipAngle } from '../src/vehicles/skip'
 import { harness } from '../tests/vehicles2/harness'
 import { MiraBuggy } from '../src/vehicles/MiraBuggy'
+import { HOVER_PRESETS, Hovercraft } from '../src/vehicles/Hovercraft'
+import { makeBed } from '../tests/vehicles/harness'
 
 /** One measured figure. `null` means the event never happened in the scenario's window. */
 interface Figure { label: string; unit: string; value: number | null }
@@ -427,6 +429,28 @@ async function waterSkipping(): Promise<Figure[]> {
 // ---- Report ----------------------------------------------------------------------------
 
 /** Each vehicle, its presets (the default first), and how its summary columns were measured. */
+// ---- Hovercraft ----------------------------------------------------------------------
+
+/**
+ * Full throttle from rest on the flat for 60 s: the glide speed it settles at, and the body's mass.
+ * Its glide is a constant thrust against linear drag, so it settles at hover.thrust / (mass *
+ * hover.drag) (Hovercraft.ts); the instrument scale reads that relation (instrumentScales.ts).
+ */
+const hoverTopSpeed = async () => {
+  const bed = await makeBed()
+  const h = bed.add(new Hovercraft(bed.game, bed.terrain, new THREE.Vector3(0, 3, 0), 0))
+  h.isLocal = false
+  bed.run(2)
+  h.input.y = 1
+  const trace: number[] = []
+  bed.run(60, () => { const v = h.body.linvel(); trace.push(Math.hypot(v.x, v.z)) })
+  return { ...settle(trace, FIXED_DT), mass: h.body.mass() }
+}
+async function hovercraftReport(): Promise<VehicleReport> {
+  const top = await at(hoverTopSpeed)
+  return { summary: { ...NO_SUMMARY, topSpeed: finite(top.top), toTop: finite(top.toTop) }, detail: [fig('Body mass', 'kg', top.mass)] }
+}
+
 const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: readonly HandlingPreset[]; how: string }> = {
   buggy: {
     run: miraBuggy, presets: BUGGY_PRESETS,
@@ -435,6 +459,10 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
   'buggy liquids': {
     run: async () => ({ summary: NO_SUMMARY, detail: await liquids('buggy') }), presets: [BUGGY_PRESETS[0]],
     how: 'Lava and water (tests/vehicles/liquidScenarios.ts), default preset only. Lava and water have their own settings, not the handling presets.',
+  },
+  hovercraft: {
+    run: hovercraftReport, presets: HOVER_PRESETS,
+    how: 'Top speed: full throttle from rest on the flat, gliding (thrust against drag). Braking and turn radius are not measured yet.',
   },
   'hovercraft liquids': {
     run: async () => ({ summary: NO_SUMMARY, detail: await liquids('hovercraft') }), presets: [{ name: 'default', description: '', values: {} }],

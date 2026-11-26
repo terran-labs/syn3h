@@ -12,10 +12,15 @@
  * It is all SVG and text. Nothing here draws unless the display is visible.
  */
 import { focusStyle, reticleStyle } from './params'
+import { FALLBACK_TOP_SPEED, HEIGHT_FULL_SCALE } from './instrumentScales'
 import './focus-readouts.css'
 import { displayUnits, heightUnit, heightValue, speedUnit, speedValue, wholeNumber } from '../units'
 
 export interface Telemetry {
+  /** The speed, in m/s, at which the speed crescent reads full: the vehicle's own (instrumentScales.ts). */
+  speedScale?: number
+  /** The height, in m, at which the altitude crescent reads full (instrumentScales.ts). */
+  heightScale?: number
   /** Metres per second. */
   speed: number
   /** Resolved Jet thrust, -1 to 1; absent for other vehicles. */
@@ -107,15 +112,16 @@ export class FocusHud {
     if (thrust !== this.thrustShown) { this.thrustShown = thrust; for (const node of this.thrustRows) node.hidden = !thrust }
     if (thrust) this.set('thrust', thrustPercent(t.thrust!))
     const units = displayUnits.value, speed = speedValue(t.speed, units), height = heightValue(t.altitude, units)
-    // The arcs keep one physical scale whatever the units: full at 140 mph and 600 m.
-    const mph = Math.abs(t.speed) * 2.23694, degrees = bearing(t.heading), seconds = (performance.now() - this.started) / 1000
+    // The arcs keep one physical scale whatever the units: speed full at the vehicle's own scale
+    // (instrumentScales.ts; the old 140 mph when none is given), height at its scale (600 m today).
+    const degrees = bearing(t.heading), seconds = (performance.now() - this.started) / 1000
     this.set('speed', wholeNumber(speed)); this.set('speed3', pad(speed, 3)); this.set('altitude', wholeNumber(height)); this.set('altitude4', signedPad(height, 4))
     this.set('speedUnit', speedUnit(units)); this.set('heightUnit', heightUnit(units))
     this.set('heading', `${pad(Math.round(degrees) % 360, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
     this.set('elapsed', `${pad(Math.floor(seconds / 60), 2)}:${pad(seconds % 60, 2)}`)
     if (style === '0') {
-      this.speedFill = fillArc(this.speedArc, this.speedFill, 150, 1, mph / 140)
-      this.altitudeFill = fillArc(this.altitudeArc, this.altitudeFill, 30, -1, Math.max(0, t.altitude) / 600)
+      this.speedFill = fillArc(this.speedArc, this.speedFill, 150, 1, Math.abs(t.speed) / (t.speedScale ?? FALLBACK_TOP_SPEED))
+      this.altitudeFill = fillArc(this.altitudeArc, this.altitudeFill, 30, -1, Math.max(0, t.altitude) / (t.heightScale ?? HEIGHT_FULL_SCALE))
     } else if (style === '1') {
       // The tape is marked every 5 degrees (30 units); slide it so the bearing sits at the pointer.
       this.tape.setAttribute('transform', `translate(${(-(degrees % 15) * 6).toFixed(1)} 0)`)
