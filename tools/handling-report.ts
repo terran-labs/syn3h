@@ -165,9 +165,9 @@ async function miraBuggy(): Promise<VehicleReport> {
   }
   // The same on real ground: the flattest straight strip of the generated island for seeds 1 to 3
   // (tests/vehicles/groundScenarios.ts); seed 0 is a flat slab through the same code, the control.
-  for (const seed of [0, 1, 2, 3]) for (const v of [30, 60]) for (const kick of [false, true]) {
-    const r = await at(() => onGround(seed, v, kick))
-    const what = `${seed ? `Island ${seed} (strip within ${r.roughness.toFixed(1)} m)` : 'Flat control'}, ${kick ? `40 deg slide at ${v} m/s, counter-steer` : `full lock for 1 s at ${v} m/s`}`
+  for (const seed of [0, 1, 2, 3]) for (const v of [30, 60]) for (const [kick, lock] of [[false, 1], [false, 0.5], [true, 1]] as const) {
+    const r = await at(() => onGround(seed, v, kick, lock))
+    const what = `${seed ? `Island ${seed} (strip within ${r.roughness.toFixed(1)} m)` : 'Flat control'}, ${kick ? `40 deg slide at ${v} m/s, counter-steer` : `${lock === 1 ? 'full' : 'half'} lock for 1 s at ${v} m/s`}`
     detail.push(fig(`${what}: largest slide angle`, 'deg', r.worstSlip), fig(`${what}: settled`, 's', r.settled), fig(`${what}: least upright (1 level)`, '', r.upright))
   }
   const flick = await at(() => buggy.flick(45))
