@@ -12,6 +12,7 @@
  *                 count starts: it bobs, and must throw no splash at all.
  *   <kind>-enter  dropped in at speed, 10 degrees down from 4 m up.
  *   <kind>-exit   let go 3 m under, moving forward and up at speed.
+ *   buggy-skim    level on the surface at 20 m/s: its bow spray.
  *   buggy-shore   driven (towed at 6 m/s) out of 1 m of water up a beach: its top never goes
  *                 under, so it must throw no exit splash.
  * Camera 22 m to the side, 5 m up. Frames every 150 ms around the event; notes give the spray
@@ -28,7 +29,8 @@ const phone = process.argv.includes('--phone')
 // scene. --split=<frame>: at that frame also capture with spray off, then ripples off too, to
 // name what a mark on the water is.
 const opt = (k) => process.argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3)
-const serveDir = opt('dir') ?? process.cwd(), only = opt('only'), split = opt('split') === undefined ? null : Number(opt('split'))
+// --only=<scene>[,<scene>...]; --hours=<h>[,<h>...] (default 14 and 22; 14 only with --phone).
+const serveDir = opt('dir') ?? process.cwd(), only = opt('only')?.split(','), split = opt('split') === undefined ? null : Number(opt('split'))
 await mkdir(out, { recursive: true })
 const app = await serveStable({ dir: serveDir, port: 0 })
 const port = app.server.address().port
@@ -39,12 +41,12 @@ const errors = [], notes = []
 const ZORB = [['zorb-deep', 'buggy', true, 8, 4, 14, 14], ['zorb-shallow', 'buggy', true, 2.5, 4, 6, 12], ['zorb-bob', 'buggy', true, 'bob', 0, 0, 10]]
 // The tank is hidden in this build (src/vehicles/available.ts): asking for it gets the buggy.
 const KINDS = phone ? ['buggy'] : ['buggy', 'jet', 'hovercraft']
-const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18, -3.2, 10], [`${k}-exit`, k, false, 3, 14, 9, 12]]), ['buggy-shore', 'buggy', false, 'shore', 6, 0, 20]]
-const HOURS = phone ? [14] : [14, 22]
+const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18, -3.2, 10], [`${k}-exit`, k, false, 3, 14, 9, 12]]), ['buggy-shore', 'buggy', false, 'shore', 6, 0, 20], ['buggy-skim', 'buggy', false, -.3, 20, 0, 10]]
+const HOURS = opt('hours')?.split(',').map(Number) ?? (phone ? [14] : [14, 22])
 
 for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, frames] of SCENES) {
-  if (only && name !== only) continue
-  const tag = `${name}-${hour === 14 ? 'day' : 'night'}${phone ? '-phone' : ''}`
+  if (only && !only.includes(name)) continue
+  const tag = `${name}-${hour === 14 ? 'day' : hour === 22 ? 'night' : `h${hour}`}${phone ? '-phone' : ''}`
   const page = await (await browser.newContext({ viewport: phone ? { width: 844, height: 390 } : { width: 1280, height: 720 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`))
   await page.routeWebSocket(/\/ws/, (s) => s.close())

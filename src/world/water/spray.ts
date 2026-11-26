@@ -143,13 +143,18 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   m.opacityNode = select(mist, puff.mul(alpha).mul(.6), mix(drop.mul(.8), tuft.mul(.9), aerated).mul(alpha).mul(cover.mul(.75).add(.25)))
   // A drop is clear water: the sea's colour through it, deeper below and paler where its upper
   // side catches the sky, with a white glint and rim, so it reads against a pale sky as well as
-  // against the sea. A clot is white with air, a little of the sea in its shadow side.
+  // against the sea. A clot is white with air on top where it catches the sky, and the sea's own
+  // colour on its underside: so a crown or column has form against a bright sky and a bright sea
+  // at noon, not a pale scatter, while everything still scales with the light (dim, not grey,
+  // at night).
   const up = positionWorld.y.sub(centre.y).div(radius.max(1e-4)).clamp(-1, 1)
   const water = mix(tint.mul(.9), mix(tint, vec3(.8, .9, 1), .45), smoothstep(-.6, .8, up))
-  const clot = mix(mix(tint, vec3(1, 1, 1), .6), vec3(1.15, 1.18, 1.2), smoothstep(-.9, .3, up))
+  const clot = mix(mix(tint.mul(.85), vec3(1, 1, 1), .22), vec3(1.15, 1.18, 1.2), smoothstep(-.7, .55, up))
   const lit = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), clot, aerated.mul(.85))
-  // Spray thrown into the sun scatters it forward: clots and mist read brighter than lit sand.
-  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .75).mul(1.35), lit.mul(mix(float(1), float(1.6), aerated))).mul(light)
+  // Spray thrown into the sun scatters it forward: lit tops of clots and mist read brighter than
+  // lit sand; their shaded sides do not.
+  const sunlit = mix(float(1), float(1.35), aerated.mul(smoothstep(-.2, .8, up)))
+  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .62).mul(1.2), lit.mul(sunlit)).mul(light)
   if (lava) {
     // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.
     // Lava "mist" is a hot, dark smoke.
