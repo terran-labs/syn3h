@@ -27,7 +27,7 @@
    readouts (--readouts-bottom, Shell.measureBands; the tips hold the band above them); on its side, top right, its
    left edge kept right of the centre column the system toasts use (the owner's plan, 25 November
    2026, approved from the mock). */
-.mira-shell.has-touch .chat-strip { --chat-bubble-radius: 17px; }
+.mira-shell.has-touch .chat-strip { --chat-bubble-radius: 17px; font-size: 12.5px; }
 .mira-shell.has-touch .chat-strip .chat-line:not(:last-child) { display: none; }
 @media (orientation: portrait) {
   .mira-shell.has-touch .chat-strip { top: calc(var(--readouts-bottom, 290px) + 8px); bottom: auto; left: var(--edge-left, 16px); right: var(--edge-right, 16px); width: auto; align-items: flex-end; }
@@ -63,15 +63,6 @@
 .chat-strip .chat-line.is-leaving { opacity: 0; }
 .chat-strip .chat-time { display: none; }
 .chat-strip .chat-name { pointer-events: none; }
-.mira-shell.has-touch .chat-strip { left: var(--edge-left); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 250px); width: calc(100% - 84px); font-size: 12.5px; }
-@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .mira-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
-  .mira-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(var(--safe-left) + 64px)); }
-  /* Left-handed, the Panels tab and the action buttons stand below the strip on this side
-     (from 52 px under its top at 390 px tall): only the newest line shows, so a second line
-     never covers the tab. */
-  .mira-shell.has-touch .chat-strip.is-left-hand .chat-line:not(:last-child) { display: none; }
-}
 /* While the sidebar is open the strip is not needed: the card is there. */
 .mira-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
 

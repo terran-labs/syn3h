@@ -119,6 +119,10 @@ try {
       assert.ok(bands.tips.top >= bands.gear && bands.tips.bottom <= bands.readTop, `${size}: the tips sit between the gear list and the readouts ${JSON.stringify(bands)}`)
       assert.ok(bands.chat.top >= bands.readBottom, `${size}: the chat sits below the readouts ${JSON.stringify(bands)}`)
       assert.ok(help.y + help.height <= pill.y - 4, `${size}: the tips stay clear of the PANELS pill`)
+    } else {
+      // On its side: top right, right of the centre column the system toasts use.
+      const strip = await page.locator('.chat-strip').boundingBox()
+      assert.ok(strip.y < 40 && strip.x >= width / 2 + 149 && strip.x + strip.width >= width - 40, `${size}: the chat is top right, clear of the centre column (${JSON.stringify(strip)})`)
     }
     const clash = await page.evaluate(overlaps)
     await page.screenshot({ path: `${shots}/${size}-driving.png` })
