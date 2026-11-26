@@ -12,6 +12,9 @@
  * the tables have a column per preset. Every figure uses that preset over the parameter defaults
  * unless its label says otherwise. To add a vehicle (the hovercraft), write its scenarios next to
  * its tests and add an entry to `vehicles` below. The tank is hidden from the game and left out.
+ *
+ * 400 m/s is Rapier's own limit (0.21; a bare body set to 450 m/s reads 400.00 after a step), not
+ * any vehicle's: a top speed of exactly 400.0 means the vehicle reached the physics cap.
  */
 import * as THREE from 'three/webgpu'
 import { params } from '../shared/params'
@@ -478,6 +481,10 @@ if (process.argv.includes('--json')) {
 } else {
   const out = [
     '# Handling report',
+    '',
+    // Measured on 26 November 2026: a bare Rapier body with no game code, set to 450 m/s, reads
+    // 400.00 after one step. The cap is in Rapier 0.21's solver; its JS bindings expose no setting.
+    'Speeds cannot exceed 400 m/s: Rapier 0.21 holds every rigid body there (measured on a bare body; no setting is exposed). A top speed of exactly 400.0 is that cap, not the vehicle.',
     '',
     '| Vehicle | Preset | Top speed (m/s) | To 95% of top (s) | Braking distance (m) | Turn radius (m) |',
     '| --- | --- | ---: | ---: | ---: | ---: |',
