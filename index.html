@@ -452,8 +452,6 @@
             // A phase the game reports (core/quality.ts reportLoading): its stage is done.
             stage: function(phase) { var at = AT[phase]; if (at + 1 > stage) { stage = at + 1; if (ENDS[at] > target) target = ENDS[at]; } },
             value: function() { return shown; },
-            // The game has drawn its first frame: the loading lines may no longer appear.
-            drawn: function() { return stage >= 4; },
             stop: function() { running = false; },
             received: received,
             total: total
@@ -581,11 +579,10 @@
             if (bar) { w.title = numbers; w.dataset.numbers = numbers; pct.textContent = Math.floor(boot.value() * 100) + "%"; }
             else w.textContent = numbers;
             // The one trigger for both lines (the CSS above), and its rule: three seconds into the
-            // visit, and only while the game has not drawn its first frame; never after it, so a
-            // load whose main thread was too busy to get here in time shows no lines at all. Once
-            // shown they stay at least 800 ms before the veil lifts (LoadingScreen, LATE_MIN_MS),
-            // so they never flash on for a few frames.
-            if (now >= 3000 && !root.hasAttribute("data-boot-late") && !(boot && boot.drawn && boot.drawn())) { root.dataset.bootLate = ""; window.__bootLateAt = now; }
+            // visit, and only while the veil is up and loading (data-boot "loading"); never once it
+            // has begun to lift. Once shown, the veil stays at least 800 ms more (LoadingScreen,
+            // LATE_MIN_MS), so they are never seen for only a few frames.
+            if (now >= 3000 && root.dataset.boot === "loading" && !root.hasAttribute("data-boot-late")) { root.dataset.bootLate = ""; window.__bootLateAt = now; }
           };
           var tick = setInterval(draw, 250);
         })(document.querySelector(".boot-status"), document.querySelector(".boot-still"));

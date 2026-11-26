@@ -31,7 +31,7 @@ try {
     await page.waitForTimeout(1200)
     const early = await state()
     assert.equal(early.game, false, `${view.name}: the veil is up before the game's code has run`)
-    assert.equal(early.veil, '1'); assert.ok(early.progress > 0.05 && early.progress < 0.45, `${view.name}: the light is already moving (${early.progress})`)
+    assert.equal(early.veil, '1'); assert.ok(early.progress >= 0.3 && early.progress < 0.97, `${view.name}: the light is visible from the start and not yet complete (${early.progress})`)
     await page.screenshot({ path: `${out}/${view.name}-early.png` })
     release()
     // Sample the light while the game loads: it only ever goes forward.

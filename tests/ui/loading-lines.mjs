@@ -26,7 +26,10 @@ try {
     // Physics arrives late, as on a slow phone, so loading passes several seconds.
     await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
     await page.goto(`${base}?room=lines-${view.name}-${Date.now()}`, { waitUntil: 'commit' })
-    await page.waitForFunction(() => document.querySelector('.boot-status'))
+    // From when the veil's own script has run (the canvas after it is parsed): on a slow link the
+    // document arrives in pieces, and before that script the status line holds its no-script
+    // default, which is never seen (the line is transparent for the first three seconds).
+    await page.waitForFunction(() => document.querySelector('.boot-status') && document.getElementById('game'))
     const samples = []; let shot = 0, last = '', layout = new Set()
     const started = Date.now()
     while (Date.now() - started < 90000) {
@@ -64,11 +67,16 @@ try {
     await cdp.send('Network.emulateNetworkConditions', { offline: false, latency: 40, downloadThroughput: 8_000_000 / 8, uploadThroughput: 500_000 })
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 })
     await page.route(/\.wasm(\?|$)/, async route => { await new Promise(r => setTimeout(r, 14000)); await route.continue() })
+    // The dev server loads hundreds of modules: past the default 250 resource entries the
+    // LoadingScreen module's own entry, which the check finds it by, may not be recorded.
+    await page.addInitScript(() => performance.setResourceTimingBufferSize(5000))
     await page.goto(`${base}?room=lines-markup-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.mira-loading'), null, { timeout: 60000 })
     const markup = await page.evaluate(async () => {
       // The exact URL the app loaded, so this is the app's own instance, not a second one.
       const url = performance.getEntriesByType('resource').map(e => e.name).find(name => name.includes('/src/ui/LoadingScreen.ts'))
+      // Only the dev server serves the module on its own; a production build has no handle on it.
+      if (!url) return { skipped: 'production build: run against the dev server for this case' }
       const { bootLoading } = await import(url)
       if (document.querySelectorAll('.mira-loading').length !== 1) return { instances: document.querySelectorAll('.mira-loading').length }
       if (document.documentElement.dataset.boot !== 'loading') return null
@@ -80,14 +88,14 @@ try {
       bootLoading.setMessages([])
       return result
     })
-    if (markup) { assert.equal(markup.instances, undefined); assert.equal(markup.children, 0); assert.equal(markup.owned, false); assert.match(markup.text, /^<b>Bold<\/b>/) }
+    if (markup && !markup.skipped) { assert.equal(markup.instances, undefined); assert.equal(markup.children, 0); assert.equal(markup.owned, false); assert.match(markup.text, /^<b>Bold<\/b>/) }
     report.markup = markup ?? 'veil lifted before the check could run'
     await page.close()
   }
   // The fast path: a warm cache, on a desktop and on a phone at 4x CPU. The rule for the loading
-  // lines (index.html, LoadingScreen LATE_MIN_MS): they appear three seconds into a load only if
-  // the game has not drawn its first frame, never after it, and once shown the veil stays at
-  // least 800 ms, so they never flash. A load that ends before three seconds never shows them.
+  // lines (index.html, LoadingScreen LATE_MIN_MS): they appear three seconds into a load only
+  // while the veil is up and loading, and once shown the veil stays at least 800 ms, so they
+  // never flash (a line appearing as the lift began would break the 800 ms too). A load that ends before three seconds never shows them.
   for (const [name, view, cpu] of [['desktop', { viewport: { width: 1280, height: 720 } }, 1], ['phone 4x CPU', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 }, 4]]) {
     const context = await browser.newContext(view)
     for (let load = 0; load < 2; load++) {
@@ -109,8 +117,8 @@ try {
         report[`warm ${name}`] = r
         if (r.doneAt < 3000) assert.equal(r.shownAt, null, `${name}: a warm load under three seconds never shows the lines`)
         if (r.shownAt !== null) {
+          // shownAt >= 3000 and the hold; readyAt is reported only: the lobby can lift the veil before the game's first frame.
           assert.ok(r.shownAt >= 3000, `${name}: the lines never appear before three seconds (${r.shownAt})`)
-          assert.ok(r.readyAt === null || r.shownAt < r.readyAt, `${name}: the lines never appear after the first frame (${JSON.stringify(r)})`)
           assert.ok(r.doneAt - r.shownAt >= 800, `${name}: once shown, the lines stay at least 800 ms (${JSON.stringify(r)})`)
         }
       }
