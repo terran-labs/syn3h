@@ -62,7 +62,7 @@ async function insideBand(page, touch) {
   if (touch) return
   const r = await page.evaluate(() => {
     const panel = document.querySelector('#player-panel').getBoundingClientRect()
-    const top = document.querySelector('.world-inspector:not(.lobby-settings) .wi-top').getBoundingClientRect().bottom
+    const top = document.querySelector('.world-inspector:not(.lobby-settings) .rail-command').getBoundingClientRect().bottom
     const notes = [...document.querySelectorAll('.bottom-stack > *')].map(el => el.getBoundingClientRect()).filter(b => b.height)
     const bottom = Math.min(innerHeight, ...notes.map(b => b.top))
     return { top: panel.top, bottom: panel.bottom, min: top, max: bottom }

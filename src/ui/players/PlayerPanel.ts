@@ -96,7 +96,7 @@ const MARGIN = 8
 
 /** The vertical band a desktop panel may occupy, px from the top of the viewport. */
 function band(sidebar: HTMLElement | null, shell: HTMLElement): { top: number; bottom: number } {
-  const topRow = sidebar?.querySelector('.wi-top')?.getBoundingClientRect()
+  const topRow = sidebar?.querySelector('.rail-command')?.getBoundingClientRect()
   const top = Math.max(MARGIN, topRow && topRow.height ? topRow.bottom + MARGIN : MARGIN)
   let bottom = innerHeight - MARGIN
   for (const item of shell.querySelectorAll<HTMLElement>('.bottom-stack > *')) {
@@ -258,7 +258,7 @@ export class PlayerPanel {
       return
     }
     const row = this.anchor?.closest('.score-row')?.getBoundingClientRect()
-    // The band it may use: below the top HUD row (the sidebar's search row, level with the
+    // The band it may use: below the top HUD row (the sidebar's Search, Pause and Exit row, level with the
     // world's name) and above whatever the bottom stack is showing. It scrolls inside that.
     const { top: low, bottom: high } = band(this.sidebar(), this.host)
     el.style.width = ''; el.style.left = ''
