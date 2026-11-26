@@ -131,7 +131,9 @@ for (const mode of ['desktop', 'phone']) {
       const days = [...list.querySelectorAll(':scope > .update-day')].map(d => d.getBoundingClientRect().bottom - top)
       return { solid, lastDay: Math.round(days.at(-1)), height: list.getBoundingClientRect().height }
     })
-    let r = await rail()
+    // Days open and close in .2 s and the rail is re-measured as they move: compare once still.
+    const settled = async () => { let r; for (let i = 0; i < 30; i++) { r = await rail(); if (Math.abs(r.solid - r.lastDay) <= 1) break; await page.waitForTimeout(100) } return r }
+    let r = await settled()
     assert.ok(Math.abs(r.solid - r.lastDay) <= 1, `${mode}: the rail is solid to the last day's foot (${r.solid} vs ${r.lastDay})`)
     // Changes: plain text, each with exactly one GitHub mark linking its commit in a new tab.
     const changes = await sheet.locator('.update-changes > li').evaluateAll(lis => lis.map(li => ({
@@ -156,7 +158,7 @@ for (const mode of ['desktop', 'phone']) {
     const lastDay = sheet.locator('.update-day').last(), lastToggle = lastDay.locator('.update-day-toggle')
     await lastToggle.click()
     assert.equal(await lastDay.locator('.update-release').last().getAttribute('data-version'), oldest, `${mode}: the list reaches the first release`)
-    r = await rail()
+    r = await settled()
     assert.ok(Math.abs(r.solid - r.lastDay) <= 1, `${mode}: after Show more the rail is solid to the new last day`)
     for (const c of await centred()) assert.ok(c.off <= 1, `${mode}: after Show more, ${c.day} is ${c.off.toFixed(2)} px off its circle`)
     assert.equal(loads, 1, 'still the first load')
