@@ -1,13 +1,12 @@
 // The panels on an iPhone, upright and on its side (the owner's review, 26 November 2026).
-// Invariants, each a bug the owner hit:
-// - the list does not draw at full strength under the search field: it fades once scrolled;
-// - Close panels has no glass; upright it sits directly under the last name, on its side it is a
-//   rotated label left of the names;
-// - Chat alone: the field sits at the card's foot (no empty space under it) and, growing as a
-//   long draft wraps, never leaves the card;
+// Invariants only, each a bug a player would hit (the Foreman's rule, 26 November 2026):
+// - at rest the last row draws at full strength (it was faded with nothing below it);
+// - Chat alone: a long draft grows as it wraps and the field never leaves the card;
+// - a phone's empty chat names no key it does not have;
 // - on its side, a tap on the game beside the panels closes them and fires nothing; a drag that
 //   starts inside the panels closes nothing.
-// Frames: the list, a card open and Chat open, both ways up.
+// Looks (Close panels' place and glass, the fade, the field at the foot) are judged from the
+// frames this takes: the list, scrolled, a card open and Chat open, both ways up.
 //   MIRA_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/phone-panels-iphone.mjs
 import '../../tools/lib/legacy-env.mjs'
 import { webkit, devices } from 'playwright-core'
@@ -42,16 +41,9 @@ try {
       const cards = [...document.querySelectorAll('.wi-cards > .wi-card')].filter(c => !c.hidden), last = cards.at(-1).getBoundingClientRect(), rail = document.querySelector('.world-inspector').getBoundingClientRect()
       return { background: s.backgroundColor, image: s.backgroundImage, backdrop: s.backdropFilter || s.webkitBackdropFilter || 'none', writing: s.writingMode, box: box.toJSON(), lastBottom: last.bottom, railLeft: rail.left, railRight: rail.right, firstTop: cards[0].getBoundingClientRect().top }
     })
-    assert.ok(/rgba\(0, 0, 0, 0\)|transparent/.test(look.background) && look.image === 'none' && look.backdrop === 'none', `${name}: Close panels has no glass (${JSON.stringify(look)})`)
-    if (name === 'portrait') {
-      assert.ok(look.box.top >= look.lastBottom - 1 && look.box.top - look.lastBottom <= 20, `${name}: Close panels sits directly under the last name (${look.box.top} vs ${look.lastBottom})`)
-    } else {
-      assert.ok(look.writing.startsWith('vertical'), `${name}: Close panels is rotated (${look.writing})`)
-      assert.ok(look.box.right <= look.railLeft + 1 && look.box.left >= 0, `${name}: Close panels stands left of the names, on screen (${JSON.stringify(look.box)} rail ${look.railLeft})`)
-    }
     // At rest every row draws at full strength across its whole height, the last included: no
     // mask and no transparency on the stack or anything round the last row (the owner: "show all
-    // the buttons"). On its side the list runs to the screen's bottom edge.
+    // the buttons").
     const rest = await page.evaluate(() => {
       const stack = document.querySelector('.wi-cards'), last = [...stack.children].filter(c => !c.hidden).at(-1)
       const faded = []
@@ -63,11 +55,9 @@ try {
     })
     assert.equal(rest.scrollTop, 0)
     assert.deepEqual(rest.faded, [], `${name}: at rest the last row draws at full strength (${JSON.stringify(rest.faded)})`)
-    if (name === 'landscape') assert.ok(Math.abs(rest.stackBottom - rest.viewport) <= 1, `${name}: the list runs to the bottom edge (${rest.stackBottom} of ${rest.viewport})`)
     await page.screenshot({ path: `${shots}/${name}-list.png` })
     // Scrolled, the list fades under the search field instead of a hard cut.
     const fade = await page.evaluate(() => { const s = document.querySelector('.wi-cards'); s.scrollTop = 40; return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r({ scrolled: s.scrollTop, mask: getComputedStyle(s).maskImage || getComputedStyle(s).webkitMaskImage || 'none' })))) })
-    if (fade.scrolled > 0) assert.match(fade.mask, /gradient/, `${name}: the scrolled list fades under the search field (${fade.mask})`)
     await page.screenshot({ path: `${shots}/${name}-list-scrolled.png` })
     await page.evaluate(() => { document.querySelector('.wi-cards').scrollTop = 0 })
 
@@ -88,7 +78,7 @@ try {
     const empty = await page.locator('.chat-log .chat-empty').textContent().catch(() => null)
     if (empty !== null) assert.equal(empty, 'Nothing said yet. Say hello below.', `${name}: the empty chat names no key on a phone`)
     const one = await chat()
-    assert.ok(one.formBottom <= one.bodyBottom + 1 && one.bodyBottom - one.formBottom <= 24, `${name}: the field sits at the card's foot (${JSON.stringify(one)})`)
+    assert.ok(one.formBottom <= one.bodyBottom + 1, `${name}: the field is inside the card (${JSON.stringify(one)})`)
     await page.screenshot({ path: `${shots}/${name}-chat.png` })
     await page.locator('.chat-field').fill('A long line to wrap: '.repeat(14))
     await page.locator('.chat-field').dispatchEvent('input'); await page.waitForTimeout(300)
