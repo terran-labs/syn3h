@@ -106,6 +106,11 @@ export interface InspectorOptions {
   closePanels?(): void
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
+  /**
+   * Cards open for a player with nothing stored yet. Desktop: Game. Touch screens start from the
+   * list: Show panels always opens the list there (the owner, 19 November 2026).
+   */
+  startOpen?: readonly string[]
   /** Controls a group ends with, built by the caller (Input's Show tips again). Null for none. */
   groupActions?(group: string): HTMLElement | null
 }
@@ -346,10 +351,10 @@ export class Inspector {
   private recall(): string[] {
     const key = this.options.rememberOpen; if (!key) return []
     let ids: string[] = []
-    // A player who has never opened or closed a card starts with Game open, except where one
-    // panel shows at a time (phones), which start from the list. Older versions' card ids
+    // A player who has never opened or closed a card starts with options.startOpen (Shell: Game
+    // on a desktop, nothing on touch screens, which start from the list). Older versions' card ids
     // ('you', 'vehicles') become the cards that took them over (model.ts RETIRED_CARDS).
-    try { const raw = localStorage.getItem(key); ids = raw === null ? (this.options.phonePanels?.() ? [] : ['game']) : migrateOpenCards(JSON.parse(raw)) } catch { /* Storage is optional; a broken value starts closed. */ }
+    try { const raw = localStorage.getItem(key); ids = raw === null ? [...(this.options.startOpen ?? [])] : migrateOpenCards(JSON.parse(raw)) } catch { /* Storage is optional; a broken value starts closed. */ }
     return this.options.oneOpen?.() ? ids.slice(-1) : ids
   }
   private remember(): void {
