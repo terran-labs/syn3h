@@ -34,13 +34,14 @@
  */
 import { VEHICLE_KINDS } from '../shared/protocol'
 import { cleanFrames, errorName, reduceMessage } from '../shared/crashText'
+import { cleanFeatureCodes, GPU_VENDORS, MODEL_PATTERN } from '../shared/gpu'
 
 /** The binding as this code uses it. */
 export interface AnalyticsSink {
   writeDataPoint(point: { blobs?: string[]; doubles?: number[]; indexes?: string[] }): void
 }
 
-export type EventName = 'session_start' | 'session_end' | 'vehicle' | 'presence' | 'room_full' | 'client' | 'crash' | 'dropped'
+export type EventName = 'session_start' | 'session_end' | 'vehicle' | 'presence' | 'room_full' | 'client' | 'crash' | 'dropped' | 'device' | 'perf'
 
 /** Fields common to rows about one player. Empty strings where unknown. */
 export interface Common {
@@ -57,6 +58,9 @@ export interface Common {
 export const EMPTY_COMMON: Common = { channel: '', build: '', recipe: '', roomKind: '', device: '', backend: '', country: '', continent: '', aid: '' }
 
 export interface Extra {
+  /** Device and perf rows: blobs 11 to 20 and doubles 1 to 20 given whole (DEVICE_COLUMNS, PERF_COLUMNS). */
+  b?: string[]
+  d?: number[]
   vehicle?: string
   message?: string
   stack?: string
@@ -76,18 +80,19 @@ export interface Extra {
 /** One data point in the column layout above. */
 export function dataPoint(event: EventName, c: Common, x: Extra = {}): { blobs: string[]; doubles: number[]; indexes: string[] } {
   const n = (v: number | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  const common = [event, c.channel, c.build, c.recipe, c.roomKind, c.device, c.backend, c.country, c.continent, c.aid]
   return {
     indexes: [event],
-    blobs: [event, c.channel, c.build, c.recipe, c.roomKind, c.device, c.backend, c.country, c.continent, c.aid,
+    blobs: x.b ? [...common, ...x.b.slice(0, 10)] : [...common,
       x.vehicle ?? '', x.message ?? '', x.stack ?? '', x.frames ?? '', x.crashVehicle ?? '', x.ref ?? '', x.errorName ?? ''],
-    doubles: [n(x.seconds), n(x.activeSeconds), n(x.quality), n(x.count), n(x.players), n(x.active), n(x.rooms)],
+    doubles: x.d ? x.d.slice(0, 20).map(n) : [n(x.seconds), n(x.activeSeconds), n(x.quality), n(x.count), n(x.players), n(x.active), n(x.rooms)],
   }
 }
 
 /** Rows a room object may write per minute, whatever its clients do. */
 export const ROOM_ROWS_PER_MINUTE = 240
-/** Rows a session can cost: start, end, and one per vehicle kind. */
-export const MAX_ROWS_PER_SESSION = 2 + VEHICLE_KINDS.length
+/** Rows a session can cost in its room: start, its device row, end, and one per vehicle kind. */
+export const MAX_ROWS_PER_SESSION = 3 + VEHICLE_KINDS.length
 
 /**
  * A token bucket of rows per minute. Rows over budget are dropped and counted; the count is
@@ -308,6 +313,10 @@ export function cleanClientPost(body: unknown, rawKey: unknown, geo: Geo, channe
       frames: cleanFrames(b.frames), crashVehicle: word(b.vehicle, /^[a-z-]{1,20}$/), quality: facts.quality,
     } } }
   }
+  if (b.type === 'perf') {
+    const perf = cleanPerf(b.perf)
+    return perf ? { key, row: { event: 'perf', common, extra: perf } } : null
+  }
   if (b.type === 'event') {
     const kind = word(b.kind, new RegExp(`^(${CLIENT_EVENTS.join('|')})$`))
     if (!kind) return null
@@ -367,5 +376,69 @@ export class PostLimiter {
     this.counts.set(key, n + 1)
     this.total++
     return true
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Device and rendering (the owner: "what share of players can run feature X, and how well does
+// the game actually run for them"). One device row per session, from the hello; at most one
+// perf row per page, posted by the client. Every field is an enum, a strict pattern or a
+// bucketed number; anything else is dropped.
+//
+// Deliberately NOT collected: canvas, WebGL-readback or audio fingerprints; font lists; the
+// full user agent; OS and browser versions; exact screen pixels (100 px buckets only);
+// timezone and languages; battery; network information; plugins; raw GPU driver strings (a
+// cleaned model family only, shared/gpu.ts); Android model names (display-only on the
+// players card, shared/device.ts).
+
+/** Device row: blobs 11 to 20, then doubles 1 to 8. */
+export const DEVICE_COLUMNS = {
+  blobs: ['gpuVendor', 'gpuModel', 'gpuSource', 'backendReason', 'adapterProbe', 'features', 'gamut', 'hdr', 'pointer', 'motion'],
+  doubles: ['memoryGB', 'cores', 'startLevel', 'maxTexture', 'cssWidth100', 'cssHeight100', 'dpr', 'reserved'],
+} as const
+/** Perf row: blobs 11 and 12, then doubles 1 to 12. */
+export const PERF_COLUMNS = {
+  blobs: ['gpuVendor', 'gpuModel'],
+  doubles: ['startLevel', 'settledLevel', 'auto', 'medianMs', 'p95Ms', 'windows', 'shadowQuality', 'liquidGlass', 'postTier', 'longFrames', 'fpsCeiling', 'playSeconds'],
+} as const
+
+const BACKEND_REASONS = ['forced-webgl2', 'webgpu', 'adapter-timeout', 'adapter-missing', 'webgpu-unsupported', 'webgpu-start-timeout', 'webgpu-start-failed', 'webgpu-device-failed']
+const PROBES = ['available', 'fallback', 'missing', 'timeout', 'rejected', 'unsupported']
+const oneOf = (v: unknown, list: readonly string[]): string => (typeof v === 'string' && list.includes(v) ? v : '')
+const num = (v: unknown, ok: (n: number) => boolean): number => (typeof v === 'number' && Number.isFinite(v) && ok(v) ? v : 0)
+const intIn = (lo: number, hi: number) => (n: number) => Number.isInteger(n) && n >= lo && n <= hi
+const step = (s: number, lo: number, hi: number) => (n: number) => n >= lo && n <= hi && Math.abs(n / s - Math.round(n / s)) < 1e-9
+
+/** The hello's `dev` object, cleaned to the device row's columns, or null when absent. */
+export function cleanDevice(v: unknown): { b: string[]; d: number[] } | null {
+  if (!v || typeof v !== 'object') return null
+  const x = v as Record<string, unknown>
+  const vendor = oneOf(x.vendor, GPU_VENDORS) || 'unknown'
+  const model = typeof x.model === 'string' && MODEL_PATTERN.test(x.model) ? x.model : ''
+  return {
+    b: [vendor, model, oneOf(x.source, ['webgpu', 'webgl', 'none']), oneOf(x.reason, BACKEND_REASONS), oneOf(x.probe, PROBES),
+      cleanFeatureCodes(x.features) ?? '', oneOf(x.gamut, ['srgb', 'p3', 'rec2020']), oneOf(x.hdr, ['high', 'standard']),
+      oneOf(x.pointer, ['coarse', 'fine', 'none']), oneOf(x.motion, ['reduce', 'no-preference'])],
+    d: [
+      num(x.mem, (n) => [0.25, 0.5, 1, 2, 4, 8, 16, 32].includes(n)), num(x.cores, intIn(1, 256)), num(x.start, intIn(0, 5)),
+      num(x.maxTex, (n) => [2048, 4096, 8192, 16384, 32768].includes(n)), num(x.w, intIn(1, 100)), num(x.h, intIn(1, 100)),
+      num(x.dpr, step(0.25, 0.25, 6)), 0,
+    ],
+  }
+}
+
+/** A client's perf post, cleaned to the perf row's columns, or null. */
+export function cleanPerf(v: unknown): { b: string[]; d: number[] } | null {
+  if (!v || typeof v !== 'object') return null
+  const x = v as Record<string, unknown>
+  const windows = num(x.windows, intIn(1, 100000))
+  if (!windows) return null
+  return {
+    b: [oneOf(x.vendor, GPU_VENDORS) || 'unknown', typeof x.model === 'string' && MODEL_PATTERN.test(x.model) ? x.model : ''],
+    d: [
+      num(x.start, intIn(0, 5)), num(x.settled, intIn(0, 5)), num(x.auto, intIn(0, 1)), num(x.medianMs, step(0.5, 0.5, 1000)),
+      num(x.p95Ms, intIn(1, 5000)), windows, num(x.shadow, intIn(0, 5)), num(x.glass, intIn(0, 1)), num(x.post, intIn(0, 5)),
+      num(x.longFrames, intIn(0, 1_000_000)), num(x.fps, (n) => [30, 60, 90, 120, 144].includes(n)), num(x.seconds, intIn(0, 86_400)),
+    ],
   }
 }

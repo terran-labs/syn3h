@@ -174,6 +174,29 @@ export function reportCrash(kind: CrashKind, error: unknown): void {
   } catch { /* never affects play */ }
 }
 
+/**
+ * How the game ran this page (src/net/deviceFacts.ts perfFacts), posted at most once per page:
+ * the first time the page is hidden after at least PERF_AFTER_S seconds of play, or at
+ * pagehide. One row; nothing per frame.
+ */
+export const PERF_AFTER_S = 60
+let perfSent = false
+export function reportPerf(perf: object | null): void {
+  try {
+    if (perfSent || !perf) return
+    perfSent = true
+    const { key, body } = base(readContext())
+    send(JSON.stringify({ ...body, type: 'perf', perf }), key)
+  } catch { /* never affects play */ }
+}
+export function installPerfReporting(read: () => object | null, playedSeconds: () => number, target: Pick<Document, 'addEventListener' | 'visibilityState'> = document, win: Pick<Window, 'addEventListener'> = window): void {
+  const send = (force: boolean) => { if (!perfSent && (force || playedSeconds() >= PERF_AFTER_S)) reportPerf(read()) }
+  target.addEventListener('visibilitychange', () => { if (target.visibilityState === 'hidden') send(false) })
+  win.addEventListener('pagehide', () => send(playedSeconds() >= 10))
+}
+/** Tests. */
+export function resetPerfReport(): void { perfSent = false }
+
 let installed = false
 /** Uncaught errors and unhandled rejections, reported as crashes. Once per page. */
 export function installCrashReporting(target: Pick<Window, 'addEventListener'> = window): void {

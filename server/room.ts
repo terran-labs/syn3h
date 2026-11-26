@@ -8,7 +8,7 @@
  * already knows before it changes shared state.
  */
 import {
-  type Common, type EventName, type Extra, type Geo, type SessionRecord, cleanFacts, cleanSession, commonOf, endRows,
+  type Common, type EventName, type Extra, type Geo, type SessionRecord, cleanDevice, cleanFacts, cleanSession, commonOf, endRows,
   NO_GEO, roomKind, sessionKind, sessionPaused, sessionSnapshot, startSession,
 } from './analytics'
 import { recipeIdForLook } from '../shared/recipes'
@@ -798,6 +798,9 @@ export class Room {
       const now = this.now()
       player.session = startSession(now, this.presence().recipeId ?? '', roomKind(this.name), facts, this.geo.get(peer) ?? NO_GEO, player.info.kind)
       this.track('session_start', commonOf(player.session), { quality: facts.quality, ref: facts.ref })
+      // One device row per session (shared/gpu.ts, server/analytics.ts cleanDevice), when sent.
+      const device = cleanDevice((hello as { dev?: unknown }).dev)
+      if (device) this.track('device', commonOf(player.session), device)
     } catch { player.session = null }
   }
 

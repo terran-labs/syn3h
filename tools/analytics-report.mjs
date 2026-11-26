@@ -37,6 +37,75 @@ export function eventSql(event, since, channel) {
     `FROM ${DATASET} WHERE blob1 = '${event}' AND timestamp >= ${sinceSql(since)}${ch} LIMIT 200000 FORMAT JSON`
 }
 
+/** Device rows (server/analytics.ts DEVICE_COLUMNS) and perf rows (PERF_COLUMNS), raw. */
+export function wideSql(event, since, channel) {
+  if (event !== 'device' && event !== 'perf') throw new Error('bad event')
+  const ch = channel === 'all' ? '' : ` AND blob2 = '${channel === 'beta' ? 'beta' : 'production'}'`
+  const cols = event === 'device'
+    ? 'blob11 AS gpuVendor, blob12 AS gpuModel, blob13 AS gpuSource, blob14 AS backendReason, blob15 AS adapterProbe, blob16 AS features, blob17 AS gamut, blob18 AS hdr, blob19 AS pointer, blob20 AS motion, double1 AS memoryGB, double2 AS cores, double3 AS startLevel, double4 AS maxTexture, double7 AS dpr'
+    : 'blob11 AS gpuVendor, blob12 AS gpuModel, double1 AS startLevel, double2 AS settledLevel, double3 AS auto, double4 AS medianMs, double5 AS p95Ms, double6 AS windows, double7 AS shadowQuality, double8 AS liquidGlass, double10 AS longFrames, double11 AS fpsCeiling'
+  return `SELECT timestamp, _sample_interval AS si, blob6 AS device, ${cols} FROM ${DATASET} WHERE blob1 = '${event}' AND timestamp >= ${sinceSql(since)}${ch} LIMIT 200000 FORMAT JSON`
+}
+
+const LEVEL_NAMES = ['Minimal', 'Low', 'Medium', 'High', 'Ultra', 'Cinematic']
+/** A GPU model family coarse enough to group: its first two or three words ("GeForce RTX", "Apple M2"). */
+export function modelFamily(model) {
+  const m = String(model || '').trim()
+  if (!m) return '(not given)'
+  const w = m.split(' ')
+  return (/^(GeForce|Radeon|Intel|Apple|Adreno|Mali|PowerVR|Iris)$/i.test(w[0]) ? w.slice(0, 2) : w.slice(0, 1)).join(' ')
+}
+
+/**
+ * "Devices and rendering": shares of sessions by GPU, memory, backend, settled quality and
+ * feature, and median frame time by GPU family and settled level. Each share is of the
+ * sessions that reported that field; the unknown count is shown beside it.
+ */
+export function summarizeDevices(devices = [], perfs = []) {
+  const share = (rows, key) => {
+    const m = new Map(); let total = 0
+    for (const r of rows) { const k = key(r); total += w(r); m.set(k, (m.get(k) ?? 0) + w(r)) }
+    return { total, rows: [...m].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => [k, v, total ? v / total : 0]) }
+  }
+  const features = new Map(); let featureTotal = 0
+  for (const r of devices) {
+    if (r.gpuSource !== 'webgpu') continue
+    featureTotal += w(r)
+    for (const f of String(r.features || '').split(',').filter(Boolean)) features.set(f, (features.get(f) ?? 0) + w(r))
+  }
+  const medians = (key) => {
+    const groups = new Map()
+    for (const r of perfs) { const k = key(r); if (!groups.has(k)) groups.set(k, []); groups.get(k).push([Number(r.medianMs), w(r)]) }
+    return [...groups].map(([k, pairs]) => [k, weightedMedian(pairs), pairs.reduce((a, [, x]) => a + x, 0)]).sort((a, b) => b[2] - a[2]).slice(0, 15)
+  }
+  return {
+    vendor: share(devices, (r) => r.gpuVendor || 'unknown'),
+    family: share(devices, (r) => `${r.gpuVendor || 'unknown'}: ${modelFamily(r.gpuModel)}`),
+    memory: share(devices, (r) => (Number(r.memoryGB) ? `${r.memoryGB} GB` : 'not reported (Safari, Firefox)')),
+    backend: share(devices, (r) => r.gpuSource === 'webgpu' ? 'WebGPU' : r.gpuSource === 'webgl' ? `WebGL 2 (${r.backendReason || 'reason unknown'})` : 'none'),
+    settled: share(perfs, (r) => LEVEL_NAMES[Number(r.settledLevel)] ?? '?'),
+    highOrAbove: perfs.length ? perfs.filter((r) => Number(r.settledLevel) >= 3).reduce((a, r) => a + w(r), 0) / perfs.reduce((a, r) => a + w(r), 0) : 0,
+    features: [...features].sort((a, b) => b[1] - a[1]).map(([k, v]) => [k, v, featureTotal ? v / featureTotal : 0]), featureTotal,
+    frameByFamily: medians((r) => `${r.gpuVendor || 'unknown'}: ${modelFamily(r.gpuModel)}`),
+    frameByLevel: medians((r) => LEVEL_NAMES[Number(r.settledLevel)] ?? '?'),
+  }
+}
+
+export function formatDevices(d) {
+  const pct = (x) => `${Math.round(x * 100)}%`
+  const shares = (title, s) => [`${title} (of ${n(s.total)} sessions):`, ...(s.rows.length ? s.rows.map(([k, v, f]) => `  ${String(k).padEnd(40)} ${pct(f).padStart(4)}  (${n(v)})`) : ['  (none)'])]
+  return [
+    'Devices and rendering',
+    ...shares('GPU vendor', d.vendor), ...shares('GPU model family', d.family), ...shares('Device memory', d.memory),
+    ...shares('Graphics backend', d.backend), ...shares('Settled quality level', d.settled),
+    `Sessions settling at High or above: ${pct(d.highOrAbove)}.`,
+    `WebGPU features (of ${n(d.featureTotal)} WebGPU sessions):`, ...(d.features.length ? d.features.map(([k, v, f]) => `  ${k.padEnd(40)} ${pct(f).padStart(4)}  (${n(v)})`) : ['  (none)']),
+    'Median frame time by GPU family:', ...(d.frameByFamily.length ? d.frameByFamily.map(([k, ms, c]) => `  ${String(k).padEnd(40)} ${ms} ms  (${n(c)} sessions)`) : ['  (none)']),
+    'Median frame time by settled level:', ...(d.frameByLevel.length ? d.frameByLevel.map(([k, ms, c]) => `  ${String(k).padEnd(40)} ${ms} ms  (${n(c)} sessions)`) : ['  (none)']),
+    'Frame times come from the game\'s own per-second windows at the settled level; frame-rate ceilings are observed, not measured.',
+  ].join('\n')
+}
+
 /** Every anonymous id's first session, over the whole retention (three months). */
 export function firstSeenSql(channel) {
   const ch = channel === 'all' ? '' : ` AND blob2 = '${channel === 'beta' ? 'beta' : 'production'}'`
@@ -187,6 +256,9 @@ export async function main(argv = process.argv.slice(2), fetcher = fetch, out = 
   for (const e of events) rows[e] = await sql(fetcher, token, account, eventSql(e, since, channel))
   const firstSeen = new Map((await sql(fetcher, token, account, firstSeenSql(channel))).map((r) => [r.aid, r.first]))
   out(format(summarize(rows, firstSeen), `since ${since}, ${channel}`))
+  const devices = await sql(fetcher, token, account, wideSql('device', since, channel))
+  const perfs = await sql(fetcher, token, account, wideSql('perf', since, channel))
+  out(formatDevices(summarizeDevices(devices, perfs)))
   const sinceDate = /^\d{4}-\d{2}-\d{2}/.test(since) ? since.slice(0, 10) : new Date(Date.now() - (/d$/.test(since) ? parseInt(since) * 86400e3 : 86400e3)).toISOString().slice(0, 10)
   out(zone ? await zoneFigures(fetcher, token, zone, sinceDate) : 'Zone figures for mira.cc: zone unknown; set MIRA_ZONE_ID or add Zone | Zone | Read.')
   return 0

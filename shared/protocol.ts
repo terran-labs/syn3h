@@ -388,7 +388,9 @@ export type ClientMessage =
    * webgpu or webgl2; quality: level 0 to 5; ref: the entry campaign tag (?ref=).
    */
   | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean
-      aid?: string; build?: string; device?: string; backend?: string; quality?: number; ref?: string }
+      aid?: string; build?: string; device?: string; backend?: string; quality?: number; ref?: string
+      /** Device and graphics capability, once per session (src/net/deviceFacts.ts, server/analytics.ts cleanDevice). */
+      dev?: object }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and

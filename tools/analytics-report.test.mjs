@@ -65,3 +65,23 @@ test('never prints the token, and says which permission is missing', async () =>
   assert.match(out, /Zone \| Analytics \| Read/)
   assert.equal(await main([], ok, (l) => lines.push(l), ''), 1)
 })
+
+// Bug: device shares counted by rows instead of sampled weight, or GPU strings too fine to group.
+test('devices and rendering: weighted shares, model families, median frame time by family', async () => {
+  const { summarizeDevices, modelFamily } = await import('./analytics-report.mjs')
+  assert.equal(modelFamily('GeForce RTX 4070'), 'GeForce RTX')
+  assert.equal(modelFamily('Apple M2 Max'), 'Apple M2')
+  assert.equal(modelFamily(''), '(not given)')
+  const d = summarizeDevices([
+    { si: 10, gpuVendor: 'apple', gpuModel: 'Apple M2 Max', gpuSource: 'webgpu', features: 'f32f,ts', memoryGB: 0 },
+    { si: 1, gpuVendor: 'nvidia', gpuModel: 'GeForce RTX 4070', gpuSource: 'webgl', backendReason: 'adapter-missing', features: '', memoryGB: 16 },
+  ], [
+    { si: 10, gpuVendor: 'apple', gpuModel: 'Apple M2 Max', settledLevel: 4, medianMs: 8 },
+    { si: 1, gpuVendor: 'nvidia', gpuModel: 'GeForce RTX 4070', settledLevel: 2, medianMs: 16 },
+  ])
+  assert.deepEqual(d.vendor.rows[0], ['apple', 10, 10 / 11])
+  assert.equal(d.highOrAbove, 10 / 11)
+  assert.deepEqual(d.features, [['f32f', 10, 1], ['ts', 10, 1]])
+  assert.deepEqual(d.frameByFamily[0], ['apple: Apple M2', 8, 10])
+  assert.ok(d.memory.rows.some(([k]) => k.startsWith('not reported')))
+})
