@@ -257,11 +257,13 @@ describe('zorb ball physics', () => {
     // The harness floor is the only collider not on the vehicle's body.
     const floor = 1
     v.input.zorb = true; h.step(v, 400)
-    expect(v.zorb.radius).toBe(zorbRadius(0.5, 5))
+    // The ball fits the vehicle: the jet's camera distance scales with its size (jetgen/size.ts).
+    const camOffset = (v as unknown as { camOffset: number }).camOffset
+    expect(v.zorb.radius).toBe(zorbRadius(0.5, camOffset))
     params.set('zorb.size', 1); h.step(v, 1)
     const r1 = v.zorb.radius
-    expect(r1).toBeGreaterThan(zorbRadius(0.5, 5))
-    expect(r1).toBeLessThan(zorbRadius(0.5, 5) + 0.2)
+    expect(r1).toBeGreaterThan(zorbRadius(0.5, camOffset))
+    expect(r1).toBeLessThan(zorbRadius(0.5, camOffset) + 0.2)
     v.dispose()
     expect(v.zorb.collider).toBeNull()
     expect(h.world.colliders.len()).toBe(floor)

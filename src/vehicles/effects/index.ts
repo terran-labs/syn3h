@@ -242,11 +242,14 @@ class VehicleEffects {
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
     // Hovercraft points are for the generated Lowwing body (hovergen h4-low), from its lead: lamps
     // on the nose bar at (+/-.6,.215,-2.03) and the stern bars at (+/-.6,.35,1.7).
-    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:hover?.6:.584,front=jet?3.2756:hover?2.03:1.775
-    this.pool={object:vehicle.object,lampY:jet?-.423:hover?.215:.036,lampZ:-front,strength:0}
+    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft'
+    // The jet's points are at its design size; it is drawn at jet.length (jetgen/size.ts).
+    const s=this.size=jet?(vehicle as {size?:number}).size??1:1
+    const width=(jet?1:hover?.6:.584)*s,front=(jet?3.2756:hover?2.03:1.775)*s,lampY=(jet?-.423:hover?.215:.036)*s
+    this.pool={object:vehicle.object,lampY,lampZ:-front,strength:0}
     for(const sign of [-1,1]){
-      const head=new T.Object3D();head.position.set(sign*width,jet?-.423:hover?.215:.036,-front);this.root.add(head);this.lampPoints.push(head)
-      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,hover?.35:.12,jet?2.7:1.7);this.root.add(tail);this.lampPoints.push(tail)
+      const head=new T.Object3D();head.position.set(sign*width,lampY,-front);this.root.add(head);this.lampPoints.push(head)
+      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,(hover?.35:.12)*s,(jet?2.7:1.7)*s);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
       this.headlightRig=new HeadlightRig(this.root)
@@ -341,7 +344,9 @@ class VehicleEffects {
     return style.amount
   }
   private dry(p:T.Vector3){return (this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity)<this.terrain.heightAt(p.x,p.z)-.01}
-  private point(x:number,y:number,z:number,out:T.Vector3){return out.set(x,y,z).applyQuaternion(this.vehicle.object.quaternion).add(this.vehicle.object.position)}
+  /** Vehicle-space points written at the design size are scaled by this (the jet's size; 1 otherwise). */
+  private readonly size:number
+  private point(x:number,y:number,z:number,out:T.Vector3){return out.set(x*this.size,y*this.size,z*this.size).applyQuaternion(this.vehicle.object.quaternion).add(this.vehicle.object.position)}
   update(dt:number){
     const v=this.vehicle,w=this.world,p=v.object.position
     if(p.distanceToSquared(this.lastPosition)>900)this.reset()
