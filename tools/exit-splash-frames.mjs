@@ -24,8 +24,13 @@ import { serveStable } from './serve-stable.mjs'
 
 const out = process.argv[2] ?? '/tmp/exit-splash/frames'
 const phone = process.argv.includes('--phone')
+// --dir=<checkout>: serve another built checkout (main, for a comparison). --only=<scene>: one
+// scene. --split=<frame>: at that frame also capture with spray off, then ripples off too, to
+// name what a mark on the water is.
+const opt = (k) => process.argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3)
+const serveDir = opt('dir') ?? process.cwd(), only = opt('only'), split = opt('split') === undefined ? null : Number(opt('split'))
 await mkdir(out, { recursive: true })
-const app = await serveStable({ dir: process.cwd(), port: 0 })
+const app = await serveStable({ dir: serveDir, port: 0 })
 const port = app.server.address().port
 if (Number(execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']).toString().trim().split('\n')[0]) !== process.pid) throw new Error(`port ${port} is not ours`)
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'] })
@@ -38,6 +43,7 @@ const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18,
 const HOURS = phone ? [14] : [14, 22]
 
 for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, frames] of SCENES) {
+  if (only && name !== only) continue
   const tag = `${name}-${hour === 14 ? 'day' : 'night'}${phone ? '-phone' : ''}`
   const page = await (await browser.newContext({ viewport: phone ? { width: 844, height: 390 } : { width: 1280, height: 720 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`))
@@ -129,6 +135,16 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
   for (let i = 0; i < frames; i++) {
     await page.waitForTimeout(150)
     await page.screenshot({ path: `${out}/${tag}-${String(i).padStart(2, '0')}.png` })
+    if (i === split) {
+      // Frozen while the parts are switched off one by one, so each capture is the same moment.
+      await page.evaluate(() => window.syn3h.game.pause())
+      const redraw = () => page.evaluate(() => window.syn3h.game.redrawPaused())
+      await page.evaluate(() => window.syn3h.params.set('water.spray', false)); await page.evaluate(() => { const fx = window.__fx; fx.spray.update(0) }); await redraw()
+      await page.screenshot({ path: `${out}/${tag}-${String(i).padStart(2, '0')}-no-spray.png` })
+      await page.evaluate(() => { window.syn3h.params.set('water.ripples', false); const c = window.syn3h.game.camera.position; window.__fx.ripples.update(0, c.x, c.z) }); await redraw()
+      await page.screenshot({ path: `${out}/${tag}-${String(i).padStart(2, '0')}-no-spray-no-ripples.png` })
+      break
+    }
     trace.push({ frame: i, ...await page.evaluate((before) => { const s = window.syn3h, b = s.player, sim = window.__fx.spray.sim, p = (b.zorbed && b.zorb.collider ? b.zorb.collider : b.body).translation(); return { y: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), vy: +b.body.linvel().y.toFixed(1), entries: (sim?.entries ?? 0) - before.entries, exits: (sim?.exits ?? 0) - before.exits, touchdowns: sim?.touchdowns ?? 0, planing: +(b.liquidState?.skipping ?? 0).toFixed(2) } }, before) })
   }
   const after = await page.evaluate(() => { const sim = window.__fx.spray.sim; return { entries: sim?.entries ?? 0, exits: sim?.exits ?? 0, droplets: sim?.dropletCount ?? 0 } })
