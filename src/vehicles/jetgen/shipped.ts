@@ -34,6 +34,13 @@ const INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
 const BOOM_X = 1.5
 /**
+ * The main wing, root to tip, as surface rows: from the boom out to the drooped tip plate. One
+ * clean forward sweep: the leading edge runs straight from the boom to the tip, and the tip plate
+ * turns down a quarter of a metre.
+ */
+const WING = [[BOOM_X, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.3, .2, -.18, .82, .055], [3.55, -.05, -.14, .74, .055]]
+const WING_TIP = WING[WING.length - 1]
+/**
  * Where thrust leaves the shipped jet, in its own frame, for code that must not build the model
  * to find out (the thrust plume). Every entry is taken from the rows above or checked against
  * the built model by
@@ -48,6 +55,11 @@ export const MK2_FITTINGS = {
   ],
   /** Belly hover ports: under the nose and under each boom. */
   ports: [{ x: 0, y: -.262, z: -1.74, r: .24 }, { x: BOOM_X, y: -.39, z: 1.16, r: .16 }, { x: -BOOM_X, y: -.39, z: 1.16, r: .16 }],
+  /** Wingtip trails start here: the trailing corner of each drooped tip plate (left, then right). */
+  wingTips: [
+    { x: -WING_TIP[0], y: WING_TIP[1], z: WING_TIP[2] + WING_TIP[3] },
+    { x: WING_TIP[0], y: WING_TIP[1], z: WING_TIP[2] + WING_TIP[3] },
+  ],
 } as const
 
 /**
@@ -62,9 +74,7 @@ function build(b: Builder): void {
   b.cockpit(-2.9, -.7, .6, VANGUARD_EYE, { bulge: .2 })
   b.body('paint', BOOM, { x: bx, mirror: true, around: 20, exhaust: true })
   b.surf([[.5, 0, -.4, 2.2, .08], [bx, -.02, -.2, 2.0, .08]], { round: false })
-  // One clean forward sweep: the leading edge runs straight from the boom to the tip. The
-  // drooped tip plate turns down a quarter of a metre.
-  b.surf([[bx, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.3, .2, -.18, .82, .055], [3.55, -.05, -.14, .74, .055]], { tipFrom: .66, tip: 'accent' })
+  b.surf(WING, { tipFrom: .66, tip: 'accent' })
   b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
 
   // The tail ring: a hexagon with upright flanks. Struts run from each boom to the corners
