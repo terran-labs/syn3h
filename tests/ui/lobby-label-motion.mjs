@@ -46,16 +46,9 @@ try {
     const trace = await page.evaluate(seconds => new Promise(resolve => {
       const galaxy = window.mira.shell.galaxy, options = galaxy.options, original = options.onLayout
       const frames = []
-      let planets = {}
+      let planets = {}, laidOut = false, running = true
       for (const p of galaxy.screen ?? []) planets[p.id] = [p.x, p.y]
-      options.onLayout = (places, chosen) => {
-        original(places, chosen)
-        planets = {}
-        for (const p of places) planets[p.id] = [p.x, p.y]
-      }
-      let running = true
-      const sample = () => {
-        if (!running) return
+      const record = () => {
         const t = performance.now()
         const names = {}
         for (const chip of document.querySelectorAll('.galaxy-label')) {
@@ -64,13 +57,21 @@ try {
           names[chip.dataset.world] = { opacity: Number(getComputedStyle(chip).opacity), box: [r.left, r.top, r.right, r.bottom], at }
         }
         frames.push({ t, planets: { ...planets }, names })
-        requestAnimationFrame(sample)
       }
-      requestAnimationFrame(sample)
+      // In the layout callback when it runs, so names and planets are from the same frame; on a
+      // plain animation frame only when it did not (reduced motion holds the galaxy still).
+      options.onLayout = (places, chosen) => {
+        original(places, chosen)
+        planets = {}
+        for (const p of places) planets[p.id] = [p.x, p.y]
+        if (running) { record(); laidOut = true }
+      }
+      const tick = () => { if (!running) return; if (!laidOut) record(); laidOut = false; requestAnimationFrame(tick) }
+      requestAnimationFrame(tick)
       setTimeout(() => { running = false; options.onLayout = original; resolve(frames) }, seconds * 1000)
     }), SECONDS)
     assert.ok(trace.length > 20, `${name}: frames sampled (${trace.length})`)
-    let worstOpacity = 0, worstGlide = 0, overlaps = [], edges = []
+    let worstOpacity = 0, worstGlide = 0, overlaps = [], edges = [], fade = '', move = ''
     for (let i = 1; i < trace.length; i++) {
       const a = trace[i - 1], b = trace[i], dt = Math.max(1e-3, (b.t - a.t) / 1000)
       for (const [id, now] of Object.entries(b.names)) {
@@ -78,11 +79,13 @@ try {
         if (!was) continue
         // Over two frames: frame timestamps on a busy machine jitter more than a fade's own rate.
         const before = trace[i - 2]?.names[id]
-        if (before) worstOpacity = Math.max(worstOpacity, Math.abs(now.opacity - before.opacity) / Math.max(1e-3, (b.t - trace[i - 2].t) / 1000))
+        const rate = before ? Math.abs(now.opacity - before.opacity) / Math.max(1e-3, (b.t - trace[i - 2].t) / 1000) : 0
+        if (rate > worstOpacity) { worstOpacity = rate; fade = `${id} ${before.opacity.toFixed(2)} to ${now.opacity.toFixed(2)} at frame ${i}` }
         // Only a name that can be seen on both frames: one may take a new place while faded out.
         if (Math.min(now.opacity, was.opacity) > 0.1 && now.at.length === 2 && was.at.length === 2 && a.planets[id] && b.planets[id]) {
           const own = Math.hypot((now.at[0] - was.at[0]) - (b.planets[id][0] - a.planets[id][0]), (now.at[1] - was.at[1]) - (b.planets[id][1] - a.planets[id][1]))
-          worstGlide = Math.max(worstGlide, Math.max(0, own - ROUNDING) / dt)
+          const speed = Math.max(0, own - ROUNDING) / dt
+          if (speed > worstGlide) { worstGlide = speed; move = `${id} ${own.toFixed(1)} px in ${(dt * 1000).toFixed(0)} ms at frame ${i}, opacity ${now.opacity.toFixed(2)}` }
         }
       }
       const shown = Object.entries(b.names).filter(([, n]) => n.opacity >= SHOWN)
@@ -96,6 +99,7 @@ try {
       }
     }
     const label = `${name} ${reducedMotion === 'reduce' ? 'reduced motion' : ''}`.trim()
+    console.log(`${label}: fastest fade ${fade}; fastest move ${move}`)
     console.log(`${label}: ${trace.length} frames in ${SECONDS} s; fastest opacity change ${worstOpacity.toFixed(2)}/s (limit ${OPACITY_RATE}); fastest own motion ${worstGlide.toFixed(0)} px/s (limit ${GLIDE_RATE}); overlaps ${overlaps.length}; edge ${edges.length}`)
     assert.ok(worstOpacity <= OPACITY_RATE, `${label}: a name changed opacity at ${worstOpacity.toFixed(2)}/s`)
     assert.ok(worstGlide <= GLIDE_RATE, `${label}: a name moved on its own at ${worstGlide.toFixed(0)} px/s`)

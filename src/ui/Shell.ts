@@ -35,7 +35,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, pickLobbyTarget, type GalaxyWorld } from './galaxy/Galaxy'
-import { CAPTION_INSET, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
+import { CAPTION_INSET, captionClearance, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -2167,7 +2167,10 @@ export class Shell implements System {
           const tabIndex = suppressed || useKey ? -1 : 0
           if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
           if (!placement) continue
-          placement = this.captionMotion(id, chip, placement, now, dt, still, leapt.has(id))
+          // Never over a nearer globe or the sun, the rework's rule: a held or gliding name that would be goes straight to its place.
+          const own = places.find(p => p.id === id)
+          const clear = (box: ScreenBox) => !own || captionClearance(box, own, places, sun) >= 0
+          placement = this.captionMotion(id, chip, placement, now, dt, still, leapt.has(id), clear)
           if (chip.dataset.captionContent !== placement.content) chip.dataset.captionContent = placement.content
           const inline = placement.inline ?? 'center'
           if (chip.dataset.captionInline !== inline) chip.dataset.captionInline = inline
@@ -2222,7 +2225,7 @@ export class Shell implements System {
    * old one and eases away (about 95 percent in .35 s), so the text never jumps. With reduced
    * motion it does not move: it fades out where it was, takes its new place, and fades back in.
    */
-  private captionMotion(id: string, chip: HTMLButtonElement, placement: CaptionOption, now: number, dt: number, still: boolean, leapt = false): CaptionOption {
+  private captionMotion(id: string, chip: HTMLButtonElement, placement: CaptionOption, now: number, dt: number, still: boolean, leapt = false, clear: (box: ScreenBox) => boolean = () => true): CaptionOption {
     const key = captionKey(placement)
     let glide = this.captionGlide.get(id)
     if (!glide) { glide = { x: 0, y: 0, key, left: placement.box.left, top: placement.box.top, until: 0 }; this.captionGlide.set(id, glide) }
@@ -2242,7 +2245,7 @@ export class Shell implements System {
           glide.held = this.lastPlacement.get(id) ?? placement; glide.until = now + CAPTION_FADE_MS; chip.classList.add('is-reflowing')
           if (from) this.captionReserve.set(id, { box: from, until: glide.until })
         }
-        if (now < glide.until && glide.held) return glide.held
+        if (now < glide.until && glide.held && clear(glide.held.box)) return glide.held
         glide.held = undefined; chip.classList.remove('is-reflowing'); glide.x = glide.y = 0
       } else {
         const lastDrawn = this.chipDrawn.get(chip)
@@ -2250,6 +2253,8 @@ export class Shell implements System {
       }
       glide.key = key
     }
+    // A glide that would carry it over a nearer globe ends at once.
+    if ((glide.x || glide.y) && !clear({ left: placement.box.left + glide.x, right: placement.box.right + glide.x, top: placement.box.top + glide.y, bottom: placement.box.bottom + glide.y })) glide.x = glide.y = 0
     // Ease the offset away: exponentially when it is small, at the glide speed when it is large.
     const left = Math.hypot(glide.x, glide.y)
     if (left > 0) {
