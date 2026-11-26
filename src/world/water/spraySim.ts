@@ -745,8 +745,11 @@ export class SpraySim {
     if (speed < .3) { this.off(s); return }
     // A skimming ball throws water wider than the chord it dips: never narrower than a 15 cm dip.
     const half = ballPatch(s.ball, Math.max(sub, .15)) * .85 * scale * this.wakeWidth * this.foamWidth
-    // Faint at a drift, full by a brisk roll; a ball barely touching leaves a little less.
-    const strength = Math.min(1, .5 + speed / 8) * Math.min(1, .7 + sub * 2) * this.wakeStrength
+    // Nothing at a drift, full by a brisk roll; a ball barely touching leaves a little less. A big
+    // ball's patch is metres wide: drifting, it laid a short wide strip of full foam on the water,
+    // a pale rectangle, so the trail comes in with speed.
+    const roll = Math.min(1, Math.max(0, (speed - .3) / 2.2))
+    const strength = Math.min(1, .5 + speed / 8) * roll * roll * (3 - 2 * roll) * Math.min(1, .7 + sub * 2) * this.wakeStrength
     this.point(s.slot * ARMS + CENTRE, x, y, z, half, strength, Math.max(1.5, Math.min(4, 40 / Math.max(1, speed))) * this.foamLife, .3 + Math.min(.6, speed * .03), Math.max(.5, speed * 2.4 * this.foamLife / (this.cap.points - 2)), fresh)
   }
 
