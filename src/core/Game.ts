@@ -908,11 +908,18 @@ export class Game {
     // what is on screen now: a look no bot shows at this moment (another detail level, another
     // paint) would otherwise build its pipelines for the passes this level adds (ambient occlusion,
     // indirect light, a larger shadow tier) when a bot drives into it, in play.
+    // Through the covered batch where the backend has one: each look's pipelines are requested
+    // and compile in parallel (WebGPU, or WebGL with parallel shader compile), every pose in one
+    // frame, then one wait for them all. One look a frame where it has not.
     for (const system of this.systems) {
       if (!system.warmClimbFleet) continue
       progress('Preparing vehicles')
-      await system.warmClimbFleet({ draw: () => submit(), yieldFrame: async () => { await frame(); signal.throwIfAborted() } })
+      await system.warmClimbFleet({
+        draw: () => { if (batch) batch.run(true, submit); else submit() },
+        yieldFrame: async () => { if (!batch) await frame(); signal.throwIfAborted() },
+      })
       signal.throwIfAborted()
+      if (batch) await batch.ready()
     }
     progress('Drawing the new level')
     await frame()
