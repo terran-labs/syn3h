@@ -389,7 +389,7 @@ export class Inspector {
       // A card built elsewhere with this id (Settings is PerformancePanel's) takes the
       // registry's sections into its .wi-registry slot instead of a card of their own.
       const extra = this.extras.get(section.id)
-      if (extra) { if (section.aliases) extra.card.dataset.aliases = section.aliases; const slot = extra.card.querySelector('.wi-registry') ?? extra.card.querySelector(':scope > .wi-body'); slot?.querySelector(':scope > .wi-parts')?.remove(); const parts = document.createElement('div'); parts.className = 'wi-parts'; if (section.id === 'performance') parts.insertAdjacentHTML('beforeend', SETTINGS_ACTIONS); this.fillParts(section, parts); slot?.append(parts); continue }
+      if (extra) { if (section.aliases) extra.card.dataset.aliases = section.aliases; const slot = extra.card.querySelector('.wi-registry') ?? extra.card.querySelector(':scope > .wi-body'); slot?.querySelector(':scope > .wi-parts')?.remove(); const parts = document.createElement('div'); parts.className = 'wi-parts'; this.fillParts(section, parts); if (section.id === 'performance') parts.querySelector(':scope > .wi-blurb')?.insertAdjacentHTML('afterend', SETTINGS_ACTIONS); slot?.append(parts); continue }
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
       if (section.aliases) card.dataset.aliases = section.aliases
       const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
