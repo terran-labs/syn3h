@@ -222,6 +222,8 @@ export class SpraySim {
   /** Entry splashes, and exits, since the simulation began (for tests and evidence). */
   entries = 0
   exits = 0
+  /** Of the entries, those flagged as a skip touching down (src/vehicles/skip.ts). */
+  touchdowns = 0
   wakeStrength = 1
   wakeWidth = 1
   /**
@@ -447,6 +449,7 @@ export class SpraySim {
     else this.off(s)
     // Size and weight: a tank throws a slab, a buggy a spray.
     const size = sizeScale(shape)
+    if (entering && touchdown) this.touchdowns++
     if (entering) this.splash(x, y, z, vx, Math.min(vy, 0), vz, scale * size, ball)
     // Coming out. Depth below the wholly-wet point is integrated from the vertical speed (the
     // caller gives the surface and the wetted fraction, not the hull's height): a ball is wholly

@@ -129,7 +129,7 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
   for (let i = 0; i < frames; i++) {
     await page.waitForTimeout(150)
     await page.screenshot({ path: `${out}/${tag}-${String(i).padStart(2, '0')}.png` })
-    trace.push({ frame: i, ...await page.evaluate((before) => { const s = window.syn3h, b = s.player, sim = window.__fx.spray.sim, p = (b.zorbed && b.zorb.collider ? b.zorb.collider : b.body).translation(); return { y: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), vy: +b.body.linvel().y.toFixed(1), entries: (sim?.entries ?? 0) - before.entries, exits: (sim?.exits ?? 0) - before.exits } }, before) })
+    trace.push({ frame: i, ...await page.evaluate((before) => { const s = window.syn3h, b = s.player, sim = window.__fx.spray.sim, p = (b.zorbed && b.zorb.collider ? b.zorb.collider : b.body).translation(); return { y: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), vy: +b.body.linvel().y.toFixed(1), entries: (sim?.entries ?? 0) - before.entries, exits: (sim?.exits ?? 0) - before.exits, touchdowns: sim?.touchdowns ?? 0, planing: +(b.liquidState?.skipping ?? 0).toFixed(2) } }, before) })
   }
   const after = await page.evaluate(() => { const sim = window.__fx.spray.sim; return { entries: sim?.entries ?? 0, exits: sim?.exits ?? 0, droplets: sim?.dropletCount ?? 0 } })
   notes.push({ tag, entries: after.entries - before.entries, exits: after.exits - before.exits, droplets: after.droplets, trace })
