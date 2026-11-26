@@ -76,7 +76,7 @@ for (const mode of ['desktop', 'phone']) {
     assert.ok(await first.locator('.update-notes li').count() >= 2, 'the player digest shows as bullets')
     // Open means seen: the newest release's notes are visible, not only present.
     await first.locator('.update-notes li').first().waitFor({ state: 'visible', timeout: 5000 })
-    assert.equal(await first.locator('.update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${NEWEST}`)
+    assert.equal(await first.locator(':scope > .update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${NEWEST}`)
     assert.equal(await first.locator('.update-notes script, .update-notes [onerror]').count(), 0)
     const links = await first.locator('.update-notes a').evaluateAll(as => as.map(a => [a.target, a.rel, a.protocol]))
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
