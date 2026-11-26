@@ -52,6 +52,7 @@ try {
         const s = window.syn3h, game = s.game, b = game.renderer.backend
         const fx = game.systems.find(x => x.spray && x.underwater), V = game.camera.position.constructor
         const frame = () => new Promise(r => requestAnimationFrame(r))
+        const exitsBefore = fx.spray.sim?.exits ?? 0
         if (which === 'breach') {
           const at = new V(spot.x, spot.surface, spot.z), id = `cost-${Math.random()}`
           fx.spray.vehicle(id, at, new V(0, 10, 0), 0, 1 / 60, { ball: 2.5, under: 8, height: 5 })
@@ -62,6 +63,7 @@ try {
         const gl = b.gl, px = new Uint8Array(4)
         const drain = b.device ? () => b.device.queue.onSubmittedWorkDone() : async () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px) }
         const original = game.frame, script = [], total = []
+        let peak = 0
         game.frame = () => {}
         try {
           await drain()
@@ -70,12 +72,13 @@ try {
             const t0 = performance.now(); original.call(game); const t1 = performance.now()
             await drain()
             script.push(t1 - t0); total.push(performance.now() - t0)
+            peak = Math.max(peak, fx.spray.sim?.dropletCount ?? 0)
           }
         } finally { game.frame = original }
-        return { script, total, drops: fx.spray.sim?.dropletCount ?? 0 }
+        return { script, total, drops: peak, exits: (fx.spray.sim?.exits ?? 0) - exitsBefore }
       }, { which, spot })
       samples[which].push(...block.total.map((t, i) => ({ total: t, script: block.script[i] })))
-      if (which === 'breach') drops.push(block.drops)
+      if (which === 'breach') drops.push(`${block.drops} (exits ${block.exits})`)
       loads.push(loadavg()[0])
     }
     const p50 = (xs) => { const o = xs.toSorted((a, b) => a - b); return o[Math.floor(o.length / 2)] }
@@ -89,7 +92,7 @@ try {
 } catch (e) { errors.push(String(e)) } finally { await browser.close(); await app.close() }
 const f = (x) => x?.toFixed(2) ?? 'n/a'
 console.log(`Zorb breach from 8 m at its peak: frame cost (ms, p50 of 80 frames each), ${webgl ? 'WebGL 2' : 'WebGPU'}, ${cpus()[0].model}, 1280×720. Load ${Math.min(...loads).toFixed(1)} to ${Math.max(...loads).toFixed(1)}.`)
-console.log('| Level | Quiet total | Breach total | Difference | Quiet script | Breach script | Drops alive at block end |\n|---|---:|---:|---:|---:|---:|---|')
+console.log('| Level | Quiet total | Breach total | Difference | Quiet script | Breach script | Peak drops in the block (exits) |\n|---|---:|---:|---:|---:|---:|---|')
 for (const r of rows) console.log(`| ${r.name} | ${f(r.quiet)} | ${f(r.breach)} | ${f(r.breach - r.quiet)} | ${f(r.quietScript)} | ${f(r.breachScript)} | ${r.dropsAtBlockEnd.join(', ')} |`)
 console.log(JSON.stringify({ errors }))
 process.exit(errors.length ? 1 : 0)
