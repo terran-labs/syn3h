@@ -235,3 +235,7 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 .welcome-body .welcome-credits a { color: var(--w-dim); }
 .welcome-body .welcome-credits ul { margin: 0 0 10px; list-style: disc; padding-left: 18px; }
 .welcome-body .welcome-credits li { margin: 4px 0; line-height: 1.5; }
+
+/* What the game keeps, last, in the credits' small type (the owner, 25 November 2026: "simple.
+   Nothing ominous"). No heading or box; room for a second sentence later. */
+.mira-shell .welcome-body.welcome-body p.welcome-privacy, .welcome-body p.welcome-privacy { margin-top: 20px; max-width: 62ch; font-size: 13.5px; line-height: 1.5; color: var(--w-soft); }
