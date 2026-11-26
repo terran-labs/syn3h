@@ -121,14 +121,31 @@ async function contrastEveryStyle(page, out, size) {
   const noFloor = process.env.MIRA_PANEL_NO_FLOOR === '1'
   if (noFloor) await page.evaluate(() => document.querySelector('#player-panel').classList.add('no-floor'))
   const report = {}
-  for (const [style, name] of [[0, 'liquid'], [1, 'frost'], [2, 'flat']]) {
+  // Style, then the budget state: full; shed (the glass lead's hook: the post chain released, so
+  // Liquid falls to its CSS face, html[data-drive-glass="shed"]); low (the real lowest quality
+  // level, gfx.quality 0, end to end). Frost at full budget for coverage.
+  const cases = [['liquid', 0, 'full'], ['liquid', 0, 'shed'], ['liquid', 0, 'low'], ['frost', 1, 'full'], ['flat', 2, 'full'], ['flat', 2, 'low']]
+  for (const [name, style, state] of cases) {
     await page.evaluate(style => mira.params.set('hud.glass', style), style)
-    await page.waitForFunction(name => document.documentElement.dataset.glassMaterial === name || name === 'liquid', name)
-    await page.waitForTimeout(300)
-    const shown = await page.evaluate(() => document.documentElement.dataset.glassMaterial)
-    const results = await contrastOverBusy(page, resolve(out, `${size}-host-bot-busy-${name}${noFloor ? '-nofloor' : ''}.png`))
-    report[shown] = Object.fromEntries(results.map(([selector, ratio]) => [selector.includes('why') ? 'hint' : 'label', ratio]))
-    if (!noFloor) for (const [selector, ratio] of results) assert.ok(ratio >= 4.5, `${selector} reads at ${ratio}:1 over a busy backdrop in ${shown}`)
+    if (state === 'shed') {
+      await page.evaluate(() => { window.__ppChain = mira.game.postChain; window.__ppChain?.glass?.release('player panel contrast'); mira.game.setPostChain(null) })
+      await page.waitForFunction(() => document.documentElement.dataset.driveGlass === 'shed', null, { timeout: 30000 })
+    }
+    if (state === 'low') {
+      await page.evaluate(() => mira.params.set('gfx.quality', 0))
+      await page.waitForFunction(() => document.documentElement.dataset.gfx === '0', null, { timeout: 60000 })
+      await page.waitForTimeout(1500)
+    }
+    await page.waitForTimeout(400)
+    const shown = await page.evaluate(() => `${document.documentElement.dataset.glassMaterial}/${document.documentElement.dataset.driveGlass ?? '-'}/gfx${document.documentElement.dataset.gfx ?? '?'}`)
+    const results = await contrastOverBusy(page, resolve(out, `${size}-host-bot-busy-${name}-${state}${noFloor ? '-nofloor' : ''}.png`))
+    report[`${name}-${state} (${shown})`] = Object.fromEntries(results.map(([selector, ratio]) => [selector.includes('why') ? 'hint' : 'label', ratio]))
+    if (!noFloor) for (const [selector, ratio] of results) assert.ok(ratio >= 4.5, `${selector} reads at ${ratio}:1 over a busy backdrop in ${name}-${state} (${shown})`)
+    if (state === 'shed') {
+      await page.evaluate(() => mira.game.setPostChain(window.__ppChain))
+      await page.waitForFunction(() => document.documentElement.dataset.driveGlass !== 'shed', null, { timeout: 30000 }).catch(() => {})
+    }
+    if (state === 'low') await page.evaluate(() => mira.params.set('gfx.quality', mira.params.get('gfx.quality').def.default))
   }
   await page.evaluate(() => { mira.params.set('hud.glass', mira.params.get('hud.glass').def.default); document.querySelector('#player-panel').classList.remove('no-floor') })
   return report
