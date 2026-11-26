@@ -452,6 +452,8 @@
             // A phase the game reports (core/quality.ts reportLoading): its stage is done.
             stage: function(phase) { var at = AT[phase]; if (at + 1 > stage) { stage = at + 1; if (ENDS[at] > target) target = ENDS[at]; } },
             value: function() { return shown; },
+            // The game has drawn its first frame: the loading lines may no longer appear.
+            drawn: function() { return stage >= 4; },
             stop: function() { running = false; },
             received: received,
             total: total
@@ -471,7 +473,10 @@
             var ceiling = (stage < ENDS.length ? ENDS[stage] : 1) - 0.015;
             if (target < ceiling && !(total && stage === 0)) target += (ceiling - target) * (1 - Math.exp(-dt / 4000));
             shown += (target - shown) * (1 - Math.exp(-dt / 230));
-            root.style.setProperty("--boot-progress", shown.toFixed(4));
+            // The mark (ring, point) never starts dark: before the first line appears it is all
+            // there is on screen, so it shows at least 0.3 from the first frame. The bar shows
+            // the number itself.
+            root.style.setProperty("--boot-progress", (0.3 + 0.7 * shown).toFixed(4));
             // With reduced motion the bar moves in steps of a twentieth.
             root.style.setProperty("--boot-bar", (still ? Math.floor(shown * 20) / 20 : shown).toFixed(4));
             requestAnimationFrame(tick);
@@ -575,8 +580,12 @@
             var numbers = Math.floor(now / 1000) + " s \u00b7 " + ((bar ? boot.received() : received()) / 1048576).toFixed(1) + " MB";
             if (bar) { w.title = numbers; w.dataset.numbers = numbers; pct.textContent = Math.floor(boot.value() * 100) + "%"; }
             else w.textContent = numbers;
-            // The one trigger for both lines (the CSS above): three seconds into the visit.
-            if (now >= 3000) root.dataset.bootLate = "";
+            // The one trigger for both lines (the CSS above), and its rule: three seconds into the
+            // visit, and only while the game has not drawn its first frame; never after it, so a
+            // load whose main thread was too busy to get here in time shows no lines at all. Once
+            // shown they stay at least 800 ms before the veil lifts (LoadingScreen, LATE_MIN_MS),
+            // so they never flash on for a few frames.
+            if (now >= 3000 && !root.hasAttribute("data-boot-late") && !(boot && boot.drawn && boot.drawn())) { root.dataset.bootLate = ""; window.__bootLateAt = now; }
           };
           var tick = setInterval(draw, 250);
         })(document.querySelector(".boot-status"), document.querySelector(".boot-still"));

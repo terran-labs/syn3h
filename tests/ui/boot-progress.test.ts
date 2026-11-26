@@ -8,11 +8,15 @@
  * - a retried physics download counted twice, a resource outside the startup set counted, or a
  *   different transfer encoding changing the count (decoded sizes);
  * - the bar going backwards, reaching 100% before the veil lifts, or claiming a stage early;
- * - a page without a total (the dev server) losing its seconds and megabytes line.
+ * - a page without a total (the dev server) losing its seconds and megabytes line;
+ * - the mark starting dark, when it is all there is on screen;
+ * - the loading lines flashing on for a few frames: they may not appear once the first frame is
+ *   drawn, and once shown the veil stays LATE_MIN_MS (the browser side: tests/ui/loading-lines.mjs).
  */
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { bootSetScript, countedTotal, fillSlot, startupFiles } from '../../tools/boot-bytes.mjs'
+import { LATE_MIN_MS, earliestLift } from '../../src/ui/LoadingScreen'
 
 const chunk = (fileName: string, code: string, imports: string[] = [], extra: object = {}) => ({ type: 'chunk', fileName, code, imports, dynamicImports: [], isEntry: false, viteMetadata: { importedCss: new Set<string>() }, ...extra })
 const asset = (fileName: string, source: string | Uint8Array) => ({ type: 'asset', fileName, source })
@@ -82,7 +86,7 @@ function veil(set: { bytes: number; files: string[] } | null, opts: { search?: s
     { documentElement: root }, { getItem: () => null }, { search: opts.search ?? '' }, win,
     (f: (now: number) => void) => { frame = f; return 0 }, () => ({ matches: !!opts.reduced }),
     { now: () => now, getEntriesByType: (type: 'navigation' | 'resource') => entries[type] })
-  const boot = win.__boot as { set(v: number): void; stage(p: string): void; value(): number; received(): number; total: number }
+  const boot = win.__boot as { set(v: number): void; stage(p: string): void; value(): number; drawn(): boolean; received(): number; total: number }
   const run = (frames: number) => { for (let i = 0; i < frames; i++) { now += 16; frame?.(now) } }
   return { boot, win, entries, vars, dataset, run, bar: () => Number(vars['--boot-bar']) }
 }
@@ -150,6 +154,23 @@ describe('the veil\'s progress', () => {
     expect('bootPercent' in veil(set, { search: '?bootpct=1' }).dataset).toBe(true)
     // Without a total the mark still creeps, as before.
     const old = veil(null); old.run(2000); expect(Number(old.vars['--boot-progress'])).toBeGreaterThan(0)
+  })
+
+  it('shows the mark from its first frame, while the bar starts at nothing', () => {
+    const v = veil(set)
+    v.run(1)
+    expect(Number(v.vars['--boot-progress'])).toBeGreaterThanOrEqual(0.3); expect(v.bar()).toBeLessThan(0.01)
+    v.boot.set(1); v.run(400); expect(Number(v.vars['--boot-progress'])).toBeGreaterThan(0.99)
+  })
+
+  it('knows when the first frame is drawn, and keeps lines that appeared up long enough to be read', () => {
+    const v = veil(set)
+    expect(v.boot.drawn()).toBe(false); v.boot.stage('terrain'); expect(v.boot.drawn()).toBe(false)
+    v.boot.stage('ready'); expect(v.boot.drawn()).toBe(true)
+    expect(earliestLift(undefined)).toBe(0)
+    expect(earliestLift(3100)).toBe(3100 + LATE_MIN_MS); expect(LATE_MIN_MS).toBeGreaterThanOrEqual(400 + 300)
+    const body = scripts.find(s => s.includes('w.textContent = numbers'))!
+    expect(body).toMatch(/now >= 3000 && !root\.hasAttribute\("data-boot-late"\) && !\(boot && boot\.drawn && boot\.drawn\(\)\)\) \{ root\.dataset\.bootLate = ""; window\.__bootLateAt = now; \}/)
   })
 
   it('keeps the seconds and megabytes: as the bar\'s title with a total, as the line itself without', () => {

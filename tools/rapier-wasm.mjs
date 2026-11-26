@@ -55,7 +55,10 @@ export function physicsEarlyFetchTag(fileNames, base = '/') {
   // streams it). Counting on the loader's side instead stood still until the game's script ran
   // and started reading, seconds after the bytes had arrived (Slow 4G, 25 November 2026).
   const count = `function(r){if(!r||!r.body||typeof r.body.tee!=='function')return r;window.__miraPhysicsBytes=0;var t=r.body.tee(),d=t[0].getReader();(function n(){d.read().then(function(x){if(x.done)return;window.__miraPhysicsBytes+=x.value.byteLength;n()},function(){})})();return new Response(t[1],{status:r.status,statusText:r.statusText,headers:r.headers})}`
-  return { tag: 'script', children: `window.__miraPhysicsUrl=${url};window.__miraPhysicsWasm={url:${url},response:fetch(${url}).then(${count}).catch(function(e){return e})}`, injectTo: 'head-prepend' }
+  // abort: the loader ends a stalled first attempt with it (src/core/physicsWasm.ts), so the
+  // request stops, both branches of the body are released and the counter stops counting
+  // before a retry starts counting afresh.
+  return { tag: 'script', children: `window.__miraPhysicsUrl=${url};(function(c){window.__miraPhysicsWasm={url:${url},abort:function(){if(c)c.abort()},response:fetch(${url},c?{signal:c.signal}:{}).then(${count}).catch(function(e){return e})}})(typeof AbortController==='function'?new AbortController():null)`, injectTo: 'head-prepend' }
 }
 
 export function rapierWasmAsset() {

@@ -84,18 +84,35 @@ try {
     report.markup = markup ?? 'veil lifted before the check could run'
     await page.close()
   }
-  // The fast path: a warm cache. A load that ends before three seconds never shows the line.
-  {
-    const context = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+  // The fast path: a warm cache, on a desktop and on a phone at 4x CPU. The rule for the loading
+  // lines (index.html, LoadingScreen LATE_MIN_MS): they appear three seconds into a load only if
+  // the game has not drawn its first frame, never after it, and once shown the veil stays at
+  // least 800 ms, so they never flash. A load that ends before three seconds never shows them.
+  for (const [name, view, cpu] of [['desktop', { viewport: { width: 1280, height: 720 } }, 1], ['phone 4x CPU', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 3 }, 4]]) {
+    const context = await browser.newContext(view)
     for (let load = 0; load < 2; load++) {
       const page = await context.newPage()
-      await page.addInitScript(() => { window.__shownAt = null; const watch = () => { const w = document.querySelector('.boot-still'); if (document.documentElement.hasAttribute('data-boot-late') && window.__shownAt === null) window.__shownAt = performance.now(); if (document.documentElement?.dataset.boot !== 'done') requestAnimationFrame(watch); else window.__doneAt = performance.now() }; requestAnimationFrame(watch) })
+      if (cpu > 1) await (await context.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: cpu })
+      await page.addInitScript(() => {
+        window.__shownAt = null; window.__readyAt = null
+        addEventListener('mira:loading', e => { if (e.detail.phase === 'ready' && window.__readyAt === null) window.__readyAt = performance.now() })
+        new MutationObserver(() => {
+          const root = document.documentElement
+          if (root.hasAttribute('data-boot-late') && window.__shownAt === null) window.__shownAt = performance.now()
+          if (root.dataset.boot === 'done' && window.__doneAt === undefined) window.__doneAt = performance.now()
+        }).observe(document, { attributes: true, subtree: true, attributeFilter: ['data-boot-late', 'data-boot'] })
+      })
       await page.goto(`${base}?room=lines-warm-${Date.now()}`)
       await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-      const r = await page.evaluate(() => ({ shownAt: window.__shownAt, doneAt: Math.round(window.__doneAt) }))
+      const r = await page.evaluate(() => ({ shownAt: window.__shownAt && Math.round(window.__shownAt), readyAt: window.__readyAt && Math.round(window.__readyAt), doneAt: Math.round(window.__doneAt) }))
       if (load === 1) {
-        report.warm = r
-        if (r.doneAt < 3000) assert.equal(r.shownAt, null, 'a warm load under three seconds never shows the progress line')
+        report[`warm ${name}`] = r
+        if (r.doneAt < 3000) assert.equal(r.shownAt, null, `${name}: a warm load under three seconds never shows the lines`)
+        if (r.shownAt !== null) {
+          assert.ok(r.shownAt >= 3000, `${name}: the lines never appear before three seconds (${r.shownAt})`)
+          assert.ok(r.readyAt === null || r.shownAt < r.readyAt, `${name}: the lines never appear after the first frame (${JSON.stringify(r)})`)
+          assert.ok(r.doneAt - r.shownAt >= 800, `${name}: once shown, the lines stay at least 800 ms (${JSON.stringify(r)})`)
+        }
       }
       await page.close()
     }
@@ -105,7 +122,7 @@ try {
   {
     const { loadingMessages, phaseMessages } = await import('../../src/ui/data/loadingMessages.ts').catch(() => ({}))
     const page = await browser.newPage({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
-    await page.route(/\/src\/main\.ts/, () => {})
+    await page.route(/\/(src\/main\.ts|assets\/index-[\w-]+\.js)(\?|$)/, () => {})
     await page.goto(`${base}?room=lines-narrow-${Date.now()}`, { waitUntil: 'commit' })
     await page.waitForFunction(() => document.querySelector('.boot-status'))
     await page.waitForTimeout(1500)

@@ -21,8 +21,16 @@ export type VeilHold = (lift: () => void) => void
  * The progress meter the bootstrap script in index.html puts on `window`. `stage` marks a phase
  * done; the stages and their shares of the bar are that script's one table.
  */
-interface BootMeter { set(value: number): void; stage(phase: string): void; value(): number; stop(): void }
+interface BootMeter { set(value: number): void; stage(phase: string): void; value(): number; drawn(): boolean; stop(): void }
 const meter = (): BootMeter | undefined => (window as unknown as { __boot?: BootMeter }).__boot
+/**
+ * Once the loading lines have appeared (index.html sets html[data-boot-late] three seconds into a
+ * load that has not drawn its first frame, and window.__bootLateAt), the veil stays at least this
+ * long, so they are never seen for only a few frames.
+ */
+export const LATE_MIN_MS = 800
+/** The earliest the veil may lift, given when the loading lines appeared (if they did). */
+export const earliestLift = (lateAt: unknown): number => (typeof lateAt === 'number' && Number.isFinite(lateAt) ? lateAt + LATE_MIN_MS : 0)
 /** However slow the device, the veil never stays longer than this. */
 const LIMIT_MS = 45000
 
@@ -122,9 +130,10 @@ export class LoadingScreen {
     this.done = true
     meter()?.set(1)
     const started = performance.now()
+    const notBefore = earliestLift((window as unknown as { __bootLateAt?: number }).__bootLateAt)
     const settle = () => {
-      const current = meter()
-      if (!current || current.value() > 0.985 || performance.now() - started > 700) this.lift(hold)
+      const current = meter(), now = performance.now()
+      if ((!current || current.value() > 0.985 || now - started > 700) && now >= notBefore) this.lift(hold)
       else requestAnimationFrame(settle)
     }
     settle()
