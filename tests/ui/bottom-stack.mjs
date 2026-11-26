@@ -77,7 +77,7 @@ try {
       await steady(page, () => {
         const help = document.querySelector('.spawn-help')
         const line = document.querySelector('.chat-strip .chat-line:last-child')
-        return !help.hidden && help.checkVisibility({ visibilityProperty: true }) && line && Number(getComputedStyle(line).opacity) === 1
+        return !help.hidden && help.checkVisibility({ visibilityProperty: true }) && line && line.checkVisibility({ visibilityProperty: true }) && Number(getComputedStyle(line).opacity) === 1
       }, `${tag} ${kind} with Help and Chat`)
       const hud = await page.evaluate(layout)
       if (out) await page.screenshot({ path: `${out}/${tag}-${kind}-help-chat.png` })
