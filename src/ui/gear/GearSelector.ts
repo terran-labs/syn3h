@@ -15,6 +15,7 @@
  * README.md beside this file.
  */
 import './gear.css'
+import { isKey, keycap } from '../keycap'
 
 export interface GearAction {
   readonly id: string
@@ -85,6 +86,28 @@ export function slotPose(offset: number): { scale: number; opacity: number } {
   return { scale: [1, 0.76, 0.64][a], opacity: [1, 0.66, 0.32][a] }
 }
 
+/**
+ * The way to let go of what the gear holds, for the meter beside its status (the owner, 25
+ * November 2026: "When the grapple is active, you need to show the G or double-tap to let go
+ * message even when cursor input is locked"). Only while the gear holds something, which is
+ * when it has a status: a Grapple cord attached ("Cord 13 m"), a Yoink holding a vehicle. The
+ * key comes from the action itself (Gear.ts), never written here: a keyboard key as a keycap and
+ * the action, or on touch its gesture ("double-tap to let go"). An action let go of with the
+ * mouse button (Yoink's fling) reads "let go to fling".
+ */
+export function releaseHint(own: GearControls | undefined, touch: boolean): { key?: string; text: string } | null {
+  if (!own?.status) return null
+  const action = own.actions.find(a => a.id === 'release' || a.id === 'fling')
+  if (!action) return null
+  const label = action.label.toLowerCase()
+  if (touch) {
+    const gesture = action.keys.find(k => /\btap\b/i.test(k))
+    return { text: gesture ? `${gesture.toLowerCase().replace(/\s+/g, '-')} to ${label}` : label === 'let go' ? label : `let go to ${label}` }
+  }
+  const key = action.keys.find(k => !k.includes(' ') && isKey(k))
+  return key ? { key, text: label } : { text: label === 'let go' ? label : `let go to ${label}` }
+}
+
 /** A live level, quantised so a slowly creeping value does not write the DOM every frame. */
 export function levelStep(level: number | undefined): number {
   if (level === undefined || level !== level) return -1
@@ -144,6 +167,9 @@ export class GearSelector {
   private readonly meter = document.createElement('div')
   private readonly statusEl = document.createElement('p')
   private readonly levelEl = document.createElement('div')
+  /** The way out of what the gear holds (a cord, a grabbed vehicle), beside its status. */
+  private readonly releaseEl = document.createElement('p')
+  private releaseShown = ''
   private readonly levelFill = document.createElement('i')
   private readonly hintsEl = document.createElement('ul')
   private readonly keyHintEl = document.createElement('p')
@@ -213,7 +239,9 @@ export class GearSelector {
     // (placeMeter). Screen readers get the status as the row's description instead.
     this.meter.className = 'gs-meter'
     this.meter.setAttribute('aria-hidden', 'true')
-    this.meter.append(this.levelEl, this.statusEl)
+    this.releaseEl.className = 'gs-release'
+    this.releaseEl.hidden = true
+    this.meter.append(this.levelEl, this.statusEl, this.releaseEl)
     this.detail.append(this.descEl, this.hintsEl, this.keyHintEl)
 
     root.append(spine, window_, this.drum, this.detail)
@@ -474,6 +502,14 @@ export class GearSelector {
       this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status
       const row = this.meter.parentElement
       if (row && row !== this.element) { if (status) row.setAttribute('aria-description', status); else row.removeAttribute('aria-description') }
+    }
+    // The release hint follows the status: shown while the gear holds something.
+    const release = releaseHint(own, this.touch)
+    const releaseKey = release ? `${release.key ?? ''}|${release.text}` : ''
+    if (releaseKey !== this.releaseShown) {
+      this.releaseShown = releaseKey
+      this.releaseEl.replaceChildren(...(release ? [...(release.key ? [keycap(release.key), ' '] : []), release.text] : []))
+      this.releaseEl.hidden = !release
     }
     this.own = own
     this.showLevel(own)

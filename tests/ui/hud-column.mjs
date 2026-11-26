@@ -12,6 +12,9 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
+// 9. While a Grapple cord is attached the meter carries the way to let go, its key as a keycap,
+//    shown with the cursor captured (inside the column) and not twice with it free; with no
+//    cord it is absent (the owner, 25 November 2026).
 // 8. One name column: every visible gear name starts at the same x, the selected one's larger
 //    type included, and the charge bar (the meter) starts at the selected name's left edge, in
 //    both cursor modes and on phones (the owner, 25 November 2026).
@@ -183,6 +186,29 @@ try {
         oneColumn(await names(page), `charge ${charge.toFixed(2)}`)
       }
       await bar(-1)
+      // 9. A cord launched straight down (Bungee.launch's direction is for automated checks).
+      await page.evaluate(() => window.miraNet.gear.select('bungee'))
+      const release = () => page.evaluate(() => {
+        const e = document.querySelector('.gear-selector .gs-meter:not(.is-leaving) .gs-release'), col = document.querySelector('.gear-selector').getBoundingClientRect()
+        if (!e || e.hidden) return { shown: false }
+        const r = e.getBoundingClientRect()
+        return { shown: e.checkVisibility({ visibilityProperty: true, opacityProperty: true }), key: e.querySelector('kbd.keycap')?.textContent ?? null, text: e.textContent, inside: r.left >= col.left && r.right <= innerWidth / 2 && r.top >= col.top && r.bottom <= col.bottom + 40 }
+      })
+      assert.deepEqual(await release(), { shown: false }, 'no release hint without a cord')
+      await page.waitForFunction(() => window.miraNet.bungee.launch([0, -1, 0]), null, { timeout: 20000, polling: 250 })
+      await page.waitForFunction(() => window.miraNet.bungee.attached && window.miraNet.gear.controls().status, null, { timeout: 20000 })
+      await page.waitForTimeout(300)
+      assert.equal((await release()).shown, false, 'cursor free: the detail lists the way to let go, so the meter does not repeat it')
+      await page.mouse.click(w / 2, h * .3)
+      await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-focus'), null, { timeout: 5000 })
+      await page.waitForTimeout(400)
+      const locked = await release()
+      assert.ok(locked.shown && locked.inside && locked.key && /let go/i.test(locked.text), `captured with a cord: the release hint shows in the column ${JSON.stringify(locked)}`)
+      await page.keyboard.press(`Key${locked.key}`)
+      await page.waitForFunction(() => !window.miraNet.bungee.attached, null, { timeout: 5000 })
+      await page.waitForTimeout(200)
+      assert.equal((await release()).shown, false, 'the hint goes with the cord')
+      await page.keyboard.press('Escape'); await page.waitForTimeout(300)
       await page.keyboard.press('1')
       // Room chat off (the host's chat.on): no Chat row, and the line ends at the last row left.
       for (const [id, value] of [['chat.on', false], ['chat.show', false]]) {

@@ -92,6 +92,10 @@
 @keyframes gs-meter-in { from { opacity: 0; } }
 @keyframes gs-meter-out { to { opacity: 0; } }
 .gear-selector .gs-meter > * { margin: 0; }
+/* The release hint beside the status (GearSelector releaseHint): its key as a keycap and the
+   action, quieter than the status, coming in with the bar's .15 s fade. */
+.gear-selector .gs-release { margin-left: 4px; color: var(--s3-dim); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; animation: gs-release-in .15s ease; }
+@keyframes gs-release-in { from { opacity: 0; } }
 .gear-selector .gs-status { color: var(--s3-accent-2); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
 /* The charge bar (Plasma Thunder's charge, Grapple's cord tension, Yoink's hold): only the
    filled length is drawn, a 2 px white light with its own glow, and no track, outline or
@@ -105,7 +109,7 @@
 .gear-selector .gs-hints { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 5px; }
 .gear-selector .gs-hints li { display: flex; align-items: center; gap: 8px; min-height: 18px; white-space: nowrap; }
 .gear-selector .gs-keys { display: inline-flex; align-items: center; gap: 3px; }
-.gear-selector kbd {
+.gear-selector kbd:not(.keycap) {
   display: inline-block; padding: 3px 8px 2px; min-width: 22px; text-align: center;
   font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--s3-ink);
   border: 1px solid var(--s3-line); border-radius: 999px; background: none; box-shadow: var(--gs-glow);
@@ -181,6 +185,7 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
 
 @media (prefers-reduced-motion: reduce) {
   .gear-selector, .gear-selector .gs-window, :root .gear-selector .gs-drum button.gs-item, .gear-selector .gs-label, .gear-selector .gs-level, .gear-selector .gs-level i { transition: none; }
+  .gear-selector .gs-release { animation: none; }
 }
 
 /* Every screen, every material stop (the owner, 21 November 2026): floating white text, no pill

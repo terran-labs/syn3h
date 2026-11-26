@@ -100,7 +100,10 @@
 /* The gear's name in the column's type; its number is its key cap. */
 :root .mira-shell.exploration-ui .gear-selector .gs-text { letter-spacing: var(--col-track); }
 :root .mira-shell.exploration-ui .gear-selector .gs-keyhint,
-:root .mira-shell.exploration-ui .gear-selector .gs-status { font: var(--col-type); letter-spacing: var(--col-track); }
+:root .mira-shell.exploration-ui .gear-selector :is(.gs-status, .gs-release) { font: var(--col-type); letter-spacing: var(--col-track); }
+/* With the cursor free the detail beside the drum already lists the way to let go (its hints):
+   shown there, not twice. The meter's hint is for the captured cursor, and for touch. */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=free] .gs-release { visibility: hidden; }
 :root .mira-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-dim); }
 /* For the owner to compare on the preview, off by default (set on .mira-shell):
    data-gear-floor=75      the drum's fade ends at 75% instead of nothing, neighbours in ink
@@ -192,7 +195,7 @@
    A plain bright glyph with no outline (the owner: "eliminate the pill button shape"), so the
    only outlined thing in the column is the minimap's ring; the key reads brighter and bolder
    than the dim name or action beside it. Touch has no keys and shows none (gear.css). */
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .hud-chat) kbd {
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.gear-selector, .hud-accessories, .hud-chat) kbd:not(.keycap) {
   display: inline-block; flex: none; min-width: 0; padding: 0; box-sizing: border-box; text-align: left; white-space: nowrap;
   font: var(--col-cap-type); font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--s3-accent-2); text-shadow: var(--col-text-under);
   border: 0; border-radius: 0; background: none; box-shadow: none; opacity: 1;
