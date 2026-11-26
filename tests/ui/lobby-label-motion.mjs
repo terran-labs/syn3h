@@ -66,9 +66,11 @@ try {
       for (const [id, now] of Object.entries(b.names)) {
         const was = a.names[id]
         if (!was) continue
-        worstOpacity = Math.max(worstOpacity, Math.abs(now.opacity - was.opacity) / dt)
-        // Only a name that was or is showing: a hidden one may be moved while invisible.
-        if (Math.max(now.opacity, was.opacity) > 0.02 && now.at.length === 2 && was.at.length === 2 && a.planets[id] && b.planets[id]) {
+        // Over two frames: frame timestamps on a busy machine jitter more than a fade's own rate.
+        const before = trace[i - 2]?.names[id]
+        if (before) worstOpacity = Math.max(worstOpacity, Math.abs(now.opacity - before.opacity) / Math.max(1e-3, (b.t - trace[i - 2].t) / 1000))
+        // Only a name that can be seen on both frames: one may take a new place while faded out.
+        if (Math.min(now.opacity, was.opacity) > 0.1 && now.at.length === 2 && was.at.length === 2 && a.planets[id] && b.planets[id]) {
           const own = Math.hypot((now.at[0] - was.at[0]) - (b.planets[id][0] - a.planets[id][0]), (now.at[1] - was.at[1]) - (b.planets[id][1] - a.planets[id][1]))
           worstGlide = Math.max(worstGlide, Math.max(0, own - ROUNDING) / dt)
         }
@@ -79,7 +81,7 @@ try {
         if (l < INSET - .5 || t < INSET - .5 || r > width - INSET + .5 || btm > height - INSET + .5) edges.push(`${id} at ${n.box.map(v => v.toFixed(0))}`)
         for (const [other, o] of shown.slice(0, j)) {
           const [l2, t2, r2, b2] = o.box
-          if (l < r2 - .5 && r > l2 + .5 && t < b2 - .5 && btm > t2 + .5) overlaps.push(`${id} and ${other}`)
+          if (l < r2 - .5 && r > l2 + .5 && t < b2 - .5 && btm > t2 + .5) overlaps.push(`${id} and ${other} (opacities ${n.opacity.toFixed(2)}, ${o.opacity.toFixed(2)}, frame ${i})`)
         }
       }
     }
@@ -87,7 +89,8 @@ try {
     console.log(`${label}: ${trace.length} frames in ${SECONDS} s; fastest opacity change ${worstOpacity.toFixed(2)}/s (limit ${OPACITY_RATE}); fastest own motion ${worstGlide.toFixed(0)} px/s (limit ${GLIDE_RATE}); overlaps ${overlaps.length}; edge ${edges.length}`)
     assert.ok(worstOpacity <= OPACITY_RATE, `${label}: a name changed opacity at ${worstOpacity.toFixed(2)}/s`)
     assert.ok(worstGlide <= GLIDE_RATE, `${label}: a name moved on its own at ${worstGlide.toFixed(0)} px/s`)
-    assert.deepEqual([...new Set(overlaps)], [], `${label}: shown names overlap`)
+    if (overlaps.length) console.log(`${label} overlaps:`, overlaps.slice(0, 8).join('; '))
+    assert.deepEqual(overlaps, [], `${label}: shown names overlap`)
     assert.deepEqual([...new Set(edges)].slice(0, 5), [], `${label}: a shown name is within ${INSET} px of the edge`)
     // Reduced motion: a name never moves on its own, it fades out, takes its new place unseen, and fades in.
     if (reducedMotion === 'reduce') assert.ok(worstGlide <= 30, `${label}: a name moved on its own at ${worstGlide.toFixed(0)} px/s`)

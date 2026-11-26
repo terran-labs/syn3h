@@ -2102,10 +2102,8 @@ export class Shell implements System {
         const sun = this.galaxy?.sunScreen
         const candidates = []
         const visible = new Set<string>()
-        // Where names are on screen now, not only where the layout last put them: a name fading
-        // out, gliding, or waiting to move keeps its drawn box, and no other name may take it.
         const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
-        const reserved = this.drawnReservations(now)
+        this.drawnReservations(now)
         for (const place of places) {
           const chip = chips.get(place.id)!
           if (place.visible) visible.add(place.id)
@@ -2121,8 +2119,7 @@ export class Shell implements System {
           const name = this.chipSize.get(row.name), biome = this.chipSize.get(row.biome)
           if (!name?.width || !name.height || !biome?.width || !biome.height) continue
           const count = row.count?.textContent ? this.chipSize.get(row.count) : undefined
-          const others = [...reserved].filter(([other]) => other !== place.id).map(([, box]) => box)
-          const options = captionOptions(place, { scale, name, biome, count, moon: row.moon }, others.length ? { ...space, blockers: [...space.blockers, ...others] } : space, places, sun)
+          const options = captionOptions(place, { scale, name, biome, count, moon: row.moon }, space, places, sun)
           if (!options.length) continue
           const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
           candidates.push({ id: place.id, options, priority, moon: row.moon })
@@ -2220,7 +2217,8 @@ export class Shell implements System {
     let glide = this.captionGlide.get(id)
     if (!glide) { glide = { x: 0, y: 0, key, left: placement.box.left, top: placement.box.top, until: 0 }; this.captionGlide.set(id, glide) }
     if (glide.key !== key) {
-      // Glide only along a clear path: past another shown name it fades out, moves, and fades in.
+      // Glide only along a clear path, clear of every name still on screen (shown, gliding, or
+      // fading out): otherwise it fades out where it was, moves unseen, and fades in.
       const from = this.drawnBox(id, chip)
       const crossing = !still && !!from && this.pathCrosses(id, from, placement.box)
       if (still || crossing) {
