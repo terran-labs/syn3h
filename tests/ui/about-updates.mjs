@@ -98,7 +98,8 @@ for (const mode of ['desktop', 'phone']) {
       const box = el => el.getBoundingClientRect(), x = box(root.querySelector('.lobby-sheet-close')), title = box(root.querySelector('.lobby-sheet-title'))
       const gh = box(root.querySelector('.updates-github')), body = root.querySelector('.lobby-sheet-body'), b = box(body), cs = getComputedStyle(body)
       return { dy: Math.abs((x.top + x.bottom) / 2 - (title.top + title.bottom) / 2), inside: x.left >= b.left + parseFloat(cs.paddingLeft) - 1 && x.right <= b.right - parseFloat(cs.paddingRight) + 1,
-        clear: gh.right <= x.left, x: Math.round(x.top), title: Math.round(title.top) }
+        // Measured from the panel's top: on a phone the whole panel follows the name while it rises.
+        clear: gh.right <= x.left, x: Math.round(x.top - box(root.querySelector('.lobby-sheet-panel')).top), title: Math.round(title.top - box(root.querySelector('.lobby-sheet-panel')).top) }
     })
     const atRest = await header()
     assert.ok(atRest.dy <= 2, `${mode}: the X is ${atRest.dy.toFixed(1)} px off the header row`)
