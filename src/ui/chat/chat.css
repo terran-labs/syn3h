@@ -3,27 +3,43 @@
    this file draws what is inside it, and the strip.
 
    The strip, where nothing else lives:
-   desktop  above the controls help, right of the minimap, left of the player's vehicle.
-   phone    on the left under the speed readout; it never takes a touch. */
+   desktop  the upper right while driving (below); nothing with the cursor free.
+   phone    upright: below the readouts; on its side: top right (below). Never takes a touch. */
 .chat-strip {
   position: fixed; z-index: 22; left: 242px; bottom: var(--edge-bottom); width: clamp(260px, calc(50vw - 352px), 360px);
   display: flex; flex-direction: column; gap: 3px; pointer-events: none; transition: opacity .4s ease;
   color: var(--s3-ink, #f4f4f4); font: 400 13.5px/1.35 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
 }
-/* Help holds the bottom edge. Chat follows the rendered help height, including vehicle
-   changes and the expanded H list. With no chat, the empty strip takes no space. */
-.help-chat-column {
-  position: fixed; z-index: 22; left: 240px; bottom: var(--edge-bottom);
-  max-width: calc(100% - 240px - var(--edge-right, 16px));
-  display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 8px; pointer-events: none;
+/* A desktop shows incoming chat in the upper right while driving, like notifications: newest at
+   the bottom, so an arrival never moves the lines already there (the owner, 25 November 2026).
+   With the cursor free the sidebar is there and its Chat card counts what is unread, so no
+   toasts. */
+.mira-shell:not(.has-touch) .chat-strip {
+  top: 16px; right: 16px; left: auto; bottom: auto; width: 340px;
+  align-items: flex-end;
 }
-.mira-shell.exploration-ui .help-chat-column > .spawn-help,
-.help-chat-column > .chat-strip { position: relative; inset: auto; box-sizing: border-box; }
-.help-chat-column > .chat-strip { margin-left: 2px; max-width: calc(100% - 2px); }
-.help-chat-column > .chat-strip:empty { display: none; }
-@media (max-width: 700px) {
-  .help-chat-column { left: var(--edge-left); max-width: calc(100% - var(--edge-left) - var(--edge-right)); }
+/* A notification card: round on every corner, 16 px in from the edges. */
+.mira-shell:not(.has-touch) .chat-strip .chat-line { border-radius: var(--chat-bubble-radius); }
+/* Panels showing (a desktop with the cursor free, a phone with its panels up): Chat is a card
+   there, with its unread count, so no toasts over it. */
+.mira-shell:has(.world-inspector:not([hidden], .lobby-settings)) .chat-strip { display: none; }
+/* Phones: one line at a time, the newest. Upright, full width just below the speed and altitude
+   readouts (--readouts-bottom, Shell.measureBands; the tips hold the band above them); on its side, top right, its
+   left edge kept right of the centre column the system toasts use (the owner's plan, 25 November
+   2026, approved from the mock). */
+.mira-shell.has-touch .chat-strip { --chat-bubble-radius: 17px; font-size: 12.5px; }
+.mira-shell.has-touch .chat-strip .chat-line:not(:last-child) { display: none; }
+@media (orientation: portrait) {
+  .mira-shell.has-touch .chat-strip { top: calc(var(--readouts-bottom, 290px) + 8px); bottom: auto; left: var(--edge-left, 16px); right: var(--edge-right, 16px); width: auto; align-items: flex-end; }
 }
+@media (orientation: landscape) {
+  .mira-shell.has-touch .chat-strip { top: var(--edge-top, 16px); bottom: auto; right: var(--edge-right, 16px); left: max(calc(50% + 150px), calc(100% - var(--edge-right, 16px) - 300px)); width: auto; align-items: flex-end; }
+}
+/* Upright, a phone's system toast ("Joined room ...") takes the same band for a moment: the chat
+   line waits, unseen but kept, and shows when the toast goes. On its side they never meet. */
+@media (orientation: portrait) { .mira-shell.has-touch:has(.shell-toast:not([hidden])) .chat-strip { visibility: hidden; } }
+/* Phones too: a notification card, round on every corner. */
+.mira-shell.has-touch .chat-strip .chat-line { border-radius: var(--chat-bubble-radius); }
 .mira-shell:not(.is-playing) .chat-strip { display: none; }
 /* A name label or readout passed behind the strip: it steps back until they part. */
 .chat-strip.is-yielding { opacity: .18; }
@@ -48,15 +64,6 @@
 .chat-strip .chat-line.is-leaving { opacity: 0; }
 .chat-strip .chat-time { display: none; }
 .chat-strip .chat-name { pointer-events: none; }
-.mira-shell.has-touch .chat-strip { left: var(--edge-left); bottom: calc(max(18px, env(safe-area-inset-bottom)) + 250px); width: calc(100% - 84px); font-size: 12.5px; }
-@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
-  .mira-shell.has-touch .chat-strip { left: var(--edge-left); top: 150px; bottom: auto; width: min(280px, 33vw); }
-  .mira-shell.has-touch .chat-strip.is-left-hand { left: max(76px, calc(var(--safe-left) + 64px)); }
-  /* Left-handed, the Panels tab and the action buttons stand below the strip on this side
-     (from 52 px under its top at 390 px tall): only the newest line shows, so a second line
-     never covers the tab. */
-  .mira-shell.has-touch .chat-strip.is-left-hand .chat-line:not(:last-child) { display: none; }
-}
 /* While the sidebar is open the strip is not needed: the card is there. */
 .mira-shell:has(.world-inspector:not([hidden], .lobby-settings) .wi-card[data-section="chat"].is-open) .chat-strip { display: none; }
 

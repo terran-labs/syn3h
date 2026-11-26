@@ -105,6 +105,11 @@ import { shareLocation } from './players/shareLocation'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 import { ReportSheet, chatOnPage } from './report/ReportSheet'
 import { REPORT_ICON } from './report/sheetHtml'
+import { Lessons, type TipInput, type TipLine } from './help/lessons'
+import { keyFor } from './help/bindings'
+import { keycap } from './keycap'
+import { controlTips } from './help/params'
+import './help/help.css'
 
 /**
  * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
@@ -402,6 +407,14 @@ export class Shell implements System {
       closePanels: () => this.returnToDriving(),
       phonePanels: () => this.touch.available && matchMedia(PHONE_SIDEBAR).matches,
       rememberOpen: 'mira.sidebar.open',
+      // Under the Control tips switch: bring every tip back, for a player who wants them again.
+      groupActions: group => {
+        if (group !== 'Input') return null
+        const row = document.createElement('div'); row.className = 'card-actions'; row.dataset.search = 'control tips show again help keys'
+        const again = document.createElement('button'); again.type = 'button'; again.className = 'panel-action'; again.textContent = 'Show tips again'
+        again.addEventListener('click', () => { this.tips.forget(); this.inspector.setStatus('Tips will show again for each vehicle.') })
+        row.append(again); return row
+      },
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
     // function of cursor locking." With the cursor captured you are driving and only the
@@ -2439,6 +2452,9 @@ export class Shell implements System {
    */
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
+    // The first look is the control tips (updateTips), taught by use: keys on a keyboard, the
+    // on-screen buttons' names on touch.
+    if (!full) { this.tips.restart(); if (!hint.classList.contains('is-tips')) this.hideHelp(); return }
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint', 'is-quiet'); this.touch.highlight(null)
     fillHelpLine(hint.querySelector('small')!, touch ? '' : full ? 'H or ?: hide' : 'H: all controls')
@@ -2457,7 +2473,73 @@ export class Shell implements System {
   private hideHelp(): void {
     clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     this.touch.highlight(null)
-    this.element.querySelector<HTMLElement>('.spawn-help')!.hidden = true
+    const card = this.element.querySelector<HTMLElement>('.spawn-help')!
+    card.hidden = true; card.classList.remove('is-tips', 'is-fading', 'is-full', 'is-hint', 'is-quiet'); this.tipsShown = ''
+  }
+  private bandsIn = 0
+  /**
+   * The free bands the tips, chat and full sheet fit between (help.css, chat.css), as CSS
+   * variables on the shell, four times a second: the lowest visible line of the gear list
+   * (a Grapple's cord status included), and the top, centre and bottom of the speed and
+   * altitude readouts (their THRUST line included). Only a change is written.
+   */
+  private measureBands(): void {
+    const visible = (el: Element) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden' ? r : null }
+    const gear = this.gearSelector.element, boxes = [gear, ...gear.querySelectorAll('.gs-meter, .gs-status, .gs-release, .gs-drum')].map(visible).filter((r): r is DOMRect => !!r)
+    const reads = [...this.element.querySelectorAll('.focus-hud .fh-read.fh-left, .focus-hud .fh-read.fh-right')].map(visible).filter((r): r is DOMRect => !!r)
+    const vars: Record<string, number | null> = {
+      '--gear-bottom': boxes.length ? Math.max(...boxes.map(r => r.bottom)) : null,
+      '--readouts-top': reads.length ? Math.min(...reads.map(r => r.top)) : null,
+      '--readouts-mid': reads.length ? Math.max(...reads.map(r => (r.top + r.bottom) / 2)) : null,
+      '--readouts-bottom': reads.length ? Math.max(...reads.map(r => r.bottom)) : null,
+    }
+    for (const [name, value] of Object.entries(vars)) {
+      const text = value === null ? '' : `${Math.round(value)}px`
+      if (this.element.style.getPropertyValue(name) !== text) { if (text) this.element.style.setProperty(name, text); else this.element.style.removeProperty(name) }
+    }
+  }
+  /** The control tips (help/lessons.ts): what each vehicle's keys do, until the player has used them. */
+  readonly tips = new Lessons()
+  /** The lines last drawn, to touch the DOM only when they change. */
+  private tipsShown = ''
+  private tipsFade?: ReturnType<typeof setTimeout>
+  /**
+   * Every frame: draw the tips the lessons give, in the controls card's place, unless the full
+   * sheet (H) or a stuck hint holds it. On touch the lines name the on-screen buttons.
+   */
+  updateTips(dt: number, input: Omit<TipInput, 'touch' | 'tagAllowed'>): void {
+    const touch = this.touch.available
+    this.bandsIn -= dt; if (this.bandsIn <= 0) { this.bandsIn = 0.25; this.measureBands() }
+    const card = this.element.querySelector<HTMLElement>('.spawn-help')!
+    const busy = !card.hidden && !card.classList.contains('is-tips')
+    const on = controlTips.value && this.started && this.playing && !this.menuVisible && !busy
+    const lines: TipLine[] = on ? this.tips.update(dt, { ...input, touch, tagAllowed: Boolean(params.get('laser.allowed')?.value ?? true) }) : []
+    if (busy) return
+    const key = lines.map(l => `${l.id}${l.learned ? '+' : ''}`).join(' ')
+    if (key === this.tipsShown) return
+    this.tipsShown = key
+    if (!lines.length) {
+      // Nothing left to teach: the box fades where it stands, then leaves.
+      if (!card.classList.contains('is-tips') || card.hidden) return
+      card.classList.add('is-fading'); clearTimeout(this.tipsFade)
+      this.tipsFade = setTimeout(() => { if (card.classList.contains('is-fading')) this.hideHelp() }, 450)
+      return
+    }
+    clearTimeout(this.tipsFade)
+    const body = card.querySelector('div')!
+    body.replaceChildren(...lines.map(line => {
+      const row = document.createElement('div'); row.dataset.tip = line.id; row.classList.toggle('is-learned', line.learned)
+      if (touch) { row.textContent = line.text; return row }
+      for (const part of line.parts) {
+        // Keys as the shared keycap (keycap.ts), with a plain space after each, as the cap has no margin.
+        if ('key' in part) { row.append(keycap(keyFor(part.key)), ' ') }
+        else row.append(`${part.text} `)
+      }
+      return row
+    }))
+    const foot = card.querySelector('small')!; foot.replaceChildren()
+    if (!touch) foot.append(keycap(keyFor('help')), ' all controls')
+    card.classList.remove('is-full', 'is-hint', 'is-quiet', 'is-fading'); card.classList.add('is-tips'); card.hidden = false
   }
   /**
    * One line in the controls card for a player who seems stuck, for example pushing W on a
@@ -2753,6 +2835,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain, ent
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut, zorbed: activePlayer.zorbed, zorbAvailable: zorbSpeed.value > 0 })
     if (hint) shell.showHint(hint)
     shell.cueZorb(hints.zorbCue)
+    shell.updateTips(dt, { kind: activePlayer.kind, x: input.x, y: input.y, z: input.z, brakes: input.brakes, special: input.special, fire: input.fire, zorbed: activePlayer.zorbed })
   } }, 'Telemetry and hints')
   game.add(audio, 'Game audio')
   return { shell, audio, setPlayer(next) { activePlayer = next; height = new HeightAboveGround(); hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }

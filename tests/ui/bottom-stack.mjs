@@ -6,7 +6,8 @@
 // - paused: every pause button lies wholly inside the viewport (four of them on a phone);
 // - in play, with the build notice and the slow-frames offer: likewise, and none
 //   covers a thumb control;
-// - Help and incoming Chat can both be read before and after a vehicle change.
+// - Help and incoming Chat can both be read before and after a vehicle change. On a desktop that
+//   is the driving view: with the cursor free the sidebar holds Chat and no toasts show.
 // Every state measured is made the way the game makes it (its new-build event, a recommendation in
 // its performance history, Shell.requestPause) and measured only once it holds and has stopped
 // moving for several frames (steady), never after a fixed wait: a loaded machine is slower, not wrong.
@@ -62,6 +63,8 @@ try {
     await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
     await page.locator('.entry-warm-progress').waitFor({ state: 'hidden', timeout: 120000 })
     await page.waitForFunction(() => window.miraChat, null, { timeout: 30000 })
+    // A desktop shows chat toasts only while driving (the cursor captured, or Interface: Driving).
+    if (!touch) await page.evaluate(() => { window.mira.params.set('hud.mode', 1, 'local'); window.mira.shell.inspector.open = false })
     for (const kind of ['buggy', touch ? 'jet' : 'hovercraft']) {
       const line = `Welcome to Mira. Take your time exploring the islands and see what’s beyond the ridge. (${kind})`
       await page.evaluate(({ kind, line }) => {
@@ -74,7 +77,7 @@ try {
       await steady(page, () => {
         const help = document.querySelector('.spawn-help')
         const line = document.querySelector('.chat-strip .chat-line:last-child')
-        return !help.hidden && help.checkVisibility({ visibilityProperty: true }) && line && Number(getComputedStyle(line).opacity) === 1
+        return !help.hidden && help.checkVisibility({ visibilityProperty: true }) && line && line.checkVisibility({ visibilityProperty: true }) && Number(getComputedStyle(line).opacity) === 1
       }, `${tag} ${kind} with Help and Chat`)
       const hud = await page.evaluate(layout)
       if (out) await page.screenshot({ path: `${out}/${tag}-${kind}-help-chat.png` })
@@ -85,6 +88,7 @@ try {
       }
     }
     await page.evaluate(() => window.mira.swapVehicle('buggy'))
+    if (!touch) await page.evaluate(() => { window.mira.params.set('hud.mode', 0, 'local'); window.mira.shell.inspector.open = true })
     // A new build arrives (the dev server's own event and button, tools/manual-reload.mjs).
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('mira:new-build')))
     await page.waitForFunction(() => document.querySelector('.bottom-stack > #mira-build-notice'), null, { timeout: 5000 })

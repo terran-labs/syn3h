@@ -1,0 +1,38 @@
+/* Control tips and the full controls sheet (H), right of the minimap (Shell.updateTips).
+   Both sit on the house panel (the system toast's and match card's fill, line and radius,
+   theme-halo.css), with no shadow on the text inside: glass carries its own contrast. */
+.mira-shell.exploration-ui .spawn-help:is(.is-tips, .is-full) {
+  border: 1px solid var(--s3-line); border-radius: var(--halo-r, 14px);
+  background: var(--halo-fill, rgb(18 18 18 / .76)); background-image: none;
+  box-shadow: var(--halo-glow, none), var(--halo-spread, 0 0 0 transparent);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  color: var(--s3-ink, #f4f4f4); text-shadow: none;
+  padding: 9px 13px; transition: opacity .4s ease;
+}
+.mira-shell.exploration-ui .spawn-help.is-full { padding: 12px 16px; }
+/* 14 px on a desktop: the shared keycap is .72em of the text beside it, so at 13 px a cap's letter
+   was about 9 px and Q read as O (the Foreman, 26 November 2026: raise the text, not the cap). */
+.mira-shell.exploration-ui .spawn-help.is-tips { font-size: 14px; line-height: 1.55; max-width: none; }
+.mira-shell.exploration-ui .spawn-help.is-tips small { font-size: 13px; }
+.mira-shell .spawn-help.is-tips > div > div { white-space: nowrap; transition: opacity .3s ease; }
+/* A lesson just learned dims, then goes (lessons.ts LEARNED_SECONDS). */
+.mira-shell .spawn-help.is-tips .is-learned { opacity: .38; }
+.mira-shell .spawn-help.is-fading { opacity: 0; }
+
+/* Phones. The tips keep the touch slot's place on a phone on its side (beside the minimap,
+   exploration.css). Upright they take the empty sky band between the gear list and the speed
+   and altitude readouts, full width, off the vehicle (the Foreman, 25 November 2026); the band's
+   edges are measured by Shell.measureBands. */
+.mira-shell.exploration-ui.has-touch .spawn-help.is-tips { white-space: normal; max-width: none; padding: 7px 12px; font-size: 13px; }
+.mira-shell.has-touch .spawn-help.is-tips > div > div { white-space: normal; }
+@media (orientation: portrait) {
+  html .mira-shell.exploration-ui.has-touch .spawn-help.is-tips {
+    left: var(--edge-left, 16px); right: var(--edge-right, 16px); transform: none;
+    top: calc(var(--gear-bottom, 130px) + 8px); bottom: auto;
+    max-height: calc(var(--readouts-top, 230px) - var(--gear-bottom, 130px) - 16px); overflow: hidden;
+    padding: 5px 11px; font-size: 12px; line-height: 1.35;
+  }
+}
+/* The full sheet keeps its width but never reaches above the readouts' centre line; it scrolls
+   inside when the list is longer (the Foreman, 25 November 2026). */
+.mira-shell.exploration-ui .spawn-help.is-full { max-height: calc(100dvh - var(--readouts-mid, 50dvh) - 28px); overflow-y: auto; }
