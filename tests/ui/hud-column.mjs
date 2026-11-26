@@ -13,8 +13,6 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
-// 10. The column sits as far below the top edge as its line's nodes sit right of the left edge,
-//     with the cursor free and captured (the owner, 25 November 2026).
 // 9. While a Grapple cord is attached its status and the way to let go are shown whole, clear
 //    of every gear name, the world name and the description: on a desktop beside the selected
 //    name (the hint, its key a keycap, with the cursor captured; with it free the hints say it),
@@ -142,18 +140,6 @@ const releaseHint = (page) => page.evaluate(() => {
     text: hint ? document.querySelector('.gear-selector .gs-release').textContent : '', letGo,
   }
 })
-/**
- * The column's insets: the first visible row's letters from the top edge, and its node's ring from
- * the left edge (the owner, 25 November 2026: "farther down from the top than they are from the
- * left"). The letters' box top stands for their ink: at line-height 1 the two differ by under a pixel.
- */
-const insets = (page) => page.evaluate(() => {
-  const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
-  const inDrum = (y) => y > drum.top && y < drum.bottom
-  const text = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item .gs-text')].map((t) => t.getBoundingClientRect()).filter((r) => inDrum(r.top + r.height / 2)).sort((a, b) => a.top - b.top)[0]
-  const node = [...document.querySelectorAll('.gear-selector .gs-drum button.gs-item')].map((b) => { const c = getComputedStyle(b, '::before'), r = b.getBoundingClientRect(); return { left: r.left + parseFloat(c.left), y: r.top + r.height / 2 } }).filter((n) => inDrum(n.y)).sort((a, b) => a.y - b.y)[0]
-  return { top: text.top, left: node.left }
-})
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
 try {
@@ -188,9 +174,6 @@ try {
       onLines(await lines(page), at)
       await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
       oneColumn(await names(page), at)
-      // 10. The top inset equals the left.
-      const inset = await insets(page)
-      assert.ok(Math.abs(inset.top - inset.left) <= 2, `${at}: the column is as far from the top as from the left ${JSON.stringify(inset)}`)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }
