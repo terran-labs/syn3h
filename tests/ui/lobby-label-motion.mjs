@@ -41,23 +41,33 @@ try {
       document.querySelectorAll('.galaxy-label:not([hidden])').length > 2, null, { timeout: 180000 })
     await page.evaluate(() => document.fonts.ready.then(() => true))
     await page.waitForTimeout(2000)
-    // Sample inside the galaxy's layout callback: planets and names from the same frame.
+    // Sample every animation frame, with the planets the galaxy last laid out (its layout callback
+    // runs each frame while it moves; with reduced motion it holds still and calls it rarely).
     const trace = await page.evaluate(seconds => new Promise(resolve => {
       const galaxy = window.mira.shell.galaxy, options = galaxy.options, original = options.onLayout
       const frames = []
+      let planets = {}
+      for (const p of galaxy.screen ?? []) planets[p.id] = [p.x, p.y]
       options.onLayout = (places, chosen) => {
         original(places, chosen)
-        const t = performance.now(), planets = {}
+        planets = {}
         for (const p of places) planets[p.id] = [p.x, p.y]
+      }
+      let running = true
+      const sample = () => {
+        if (!running) return
+        const t = performance.now()
         const names = {}
         for (const chip of document.querySelectorAll('.galaxy-label')) {
           if (chip.hidden) continue
           const r = chip.getBoundingClientRect(), at = (chip.style.translate || '').split(' ').map(parseFloat)
           names[chip.dataset.world] = { opacity: Number(getComputedStyle(chip).opacity), box: [r.left, r.top, r.right, r.bottom], at }
         }
-        frames.push({ t, planets, names })
+        frames.push({ t, planets: { ...planets }, names })
+        requestAnimationFrame(sample)
       }
-      setTimeout(() => { options.onLayout = original; resolve(frames) }, seconds * 1000)
+      requestAnimationFrame(sample)
+      setTimeout(() => { running = false; options.onLayout = original; resolve(frames) }, seconds * 1000)
     }), SECONDS)
     assert.ok(trace.length > 20, `${name}: frames sampled (${trace.length})`)
     let worstOpacity = 0, worstGlide = 0, overlaps = [], edges = []

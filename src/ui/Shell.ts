@@ -114,6 +114,8 @@ const CAPTION_FADE_MS = 400
 const CAPTION_GLIDE_SECONDS = 0.117
 /** The fastest a gliding name moves, px/s: about 4 px a frame at 60 fps, so a long move never leaps. */
 export const CAPTION_GLIDE_SPEED = 240
+/** A planet that moves further than this in one layout has leapt, px: orbits move a few px a frame. */
+const CAPTION_TELEPORT_PX = 40
 const clampTo = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 /** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
 const SHEET_BACKDROP = 0.7
@@ -2104,6 +2106,14 @@ export class Shell implements System {
         const visible = new Set<string>()
         const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
         this.drawnReservations(now)
+        // A planet that leapt (the clock set, a resize, the galaxy reframed) is a teleport, not an
+        // orbit: its name goes straight to its new place, with no glide, hold or wait to return.
+        const leapt = new Set<string>()
+        for (const place of places) {
+          const last = this.planetDrawn.get(place.id)
+          if (last && Math.hypot(place.x - last.x, place.y - last.y) > CAPTION_TELEPORT_PX) leapt.add(place.id)
+          this.planetDrawn.set(place.id, { x: place.x, y: place.y })
+        }
         for (const place of places) {
           const chip = chips.get(place.id)!
           if (place.visible) visible.add(place.id)
@@ -2135,7 +2145,7 @@ export class Shell implements System {
           if (placement && chip.classList.contains('is-suppressed')) {
             const since = this.captionFree.get(id) ?? now
             this.captionFree.set(id, since)
-            if (now - since < CAPTION_SHOW_HOLD_MS) placement = undefined
+            if (now - since < CAPTION_SHOW_HOLD_MS && !leapt.has(id)) placement = undefined
           } else if (!placement) this.captionFree.delete(id)
           const suppressed = !placement
           // Leaving: its drawn box stays reserved while it fades, so nothing lands on it.
@@ -2157,7 +2167,7 @@ export class Shell implements System {
           const tabIndex = suppressed || useKey ? -1 : 0
           if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
           if (!placement) continue
-          placement = this.captionMotion(id, chip, placement, now, dt, still)
+          placement = this.captionMotion(id, chip, placement, now, dt, still, leapt.has(id))
           if (chip.dataset.captionContent !== placement.content) chip.dataset.captionContent = placement.content
           const inline = placement.inline ?? 'center'
           if (chip.dataset.captionInline !== inline) chip.dataset.captionInline = inline
@@ -2212,10 +2222,15 @@ export class Shell implements System {
    * old one and eases away (about 95 percent in .35 s), so the text never jumps. With reduced
    * motion it does not move: it fades out where it was, takes its new place, and fades back in.
    */
-  private captionMotion(id: string, chip: HTMLButtonElement, placement: CaptionOption, now: number, dt: number, still: boolean): CaptionOption {
+  private captionMotion(id: string, chip: HTMLButtonElement, placement: CaptionOption, now: number, dt: number, still: boolean, leapt = false): CaptionOption {
     const key = captionKey(placement)
     let glide = this.captionGlide.get(id)
     if (!glide) { glide = { x: 0, y: 0, key, left: placement.box.left, top: placement.box.top, until: 0 }; this.captionGlide.set(id, glide) }
+    if (leapt) {
+      glide.x = glide.y = 0; glide.key = key; glide.held = undefined; chip.classList.remove('is-reflowing'); this.captionReserve.delete(id)
+      this.captionKeys.set(id, key); this.lastPlacement.set(id, placement)
+      return placement
+    }
     if (glide.key !== key) {
       // Glide only along a clear path, clear of every name still on screen (shown, gliding, or
       // fading out): otherwise it fades out where it was, moves unseen, and fades in.
@@ -2247,6 +2262,8 @@ export class Shell implements System {
     return placement
   }
   private readonly lastPlacement = new Map<string, CaptionOption>()
+  /** Each planet's screen position on the last layout, to tell an orbit from a leap. */
+  private readonly planetDrawn = new Map<string, { x: number; y: number }>()
   /** Drawn boxes held for names that are fading out or waiting to move, until a time. */
   private readonly captionReserve = new Map<string, { box: ScreenBox; until: number }>()
   /** A name's box where it is drawn now: its last placement's size at its drawn position. */
