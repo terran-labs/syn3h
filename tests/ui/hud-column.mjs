@@ -12,6 +12,8 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
+// 7. The charge bar (Plasma Thunder's charge here) paints nothing when idle, keeping its place,
+//    and part filled paints only its filled length (the owner, 25 November 2026).
 // 6. Every node sits on its line: each circle's centre x is its line's centre x (half a pixel),
 //    and each line runs from its first circle's centre to its last's (the owner, 25 November
 //    2026: the line ran past Wings and the circles sat left of it). Chat's unread count never
@@ -140,6 +142,26 @@ try {
         assert.deepEqual(await keyX(), still, `an unread count of ${n} moves no key`)
         onLines(await lines(page), `${w}x${h} unread ${n}`)
       }
+      // 7. The charge bar, driven through Plasma Thunder's own charge (0 to 1; below 0 is idle).
+      await page.keyboard.press('2')
+      await page.waitForFunction(() => document.querySelector('.gear-selector')?.dataset.gear === 'red' && !document.querySelector('.gear-selector .gs-level').hidden, null, { timeout: 10000 })
+      const bar = async (charge) => {
+        await page.evaluate((c) => { window.miraChat.net.bigRed.charge = c }, charge)
+        await page.waitForTimeout(500)
+        return page.evaluate(() => {
+          const level = document.querySelector('.gear-selector .gs-meter:not(.is-leaving) .gs-level'), fill = level.querySelector('i'), s = getComputedStyle(level)
+          return { opacity: +s.opacity, track: [s.backgroundColor, s.boxShadow, s.filter], width: level.getBoundingClientRect().width, fill: fill.getBoundingClientRect().width }
+        })
+      }
+      const idle = await bar(-1)
+      assert.ok(idle.opacity === 0 && idle.width > 0, `an idle bar paints nothing and keeps its place ${JSON.stringify(idle)}`)
+      assert.deepEqual(idle.track, ['rgba(0, 0, 0, 0)', 'none', 'none'], 'no track, outline or shadow along the bar')
+      for (const charge of [1 / 3, 1]) {
+        const part = await bar(charge)
+        assert.ok(part.opacity === 1 && Math.abs(part.fill - charge * part.width) <= 1, `a bar ${charge.toFixed(2)} charged paints that share of its length ${JSON.stringify(part)}`)
+      }
+      await bar(-1)
+      await page.keyboard.press('1')
       // Room chat off (the host's chat.on): no Chat row, and the line ends at the last row left.
       for (const [id, value] of [['chat.on', false], ['chat.show', false]]) {
         await page.evaluate(([id, value]) => window.mira.params.set(id, value), [id, value])

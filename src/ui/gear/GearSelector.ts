@@ -256,6 +256,8 @@ export class GearSelector {
     if ((level < 0) !== (this.level < 0)) this.levelEl.hidden = level < 0
     this.level = level
     if (level >= 0) this.levelFill.style.transform = `scaleX(${level})`
+    // Idle (nothing charged, taut or held) the bar paints nothing but keeps its place (gear.css).
+    this.levelEl.classList.toggle('is-idle', level <= 0)
   }
 
   dispose(): void {
