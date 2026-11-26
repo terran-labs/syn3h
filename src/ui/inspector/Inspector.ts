@@ -27,7 +27,7 @@ import { bindSwitch } from './switch'
 import { cardsToClose, shareHeights, type FitCard } from './cardFit'
 import './me-card.css'
 import { creatorKeyRow } from '../creatorKeyRow'
-import { savePlayerName } from '../playerName'
+import { restorePlayerName, savedPlayerName, savePlayerName } from '../playerName'
 
 /** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
 const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="currentColor" d="M5 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM8 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-3 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>'
@@ -258,7 +258,9 @@ export class Inspector {
     this.nameControl = this.nameEditor()
     // Escape in the name field cancels the edit. This runs before the shell's own Escape,
     // which only blurs a text field (and the blur would otherwise save).
-    window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) this.nameInput.value = this.options.playerName?.() ?? '' }, { capture: true, signal: this.abort.signal })
+    // The name is saved as it is typed (feat/creator-badge), so cancelling also puts back the name
+    // saved before the edit began; otherwise the next visit opens with the abandoned text.
+    window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) { this.nameInput.value = this.options.playerName?.() ?? ''; if (this.nameBefore) restorePlayerName(this.nameBefore) } }, { capture: true, signal: this.abort.signal })
     this.restoring = this.recall()
     this.build()
     this.unsubscribe = params.onChange((id, value) => {
@@ -656,7 +658,7 @@ export class Inspector {
     // Saved on this device as it is typed, so closing the page mid-edit keeps it; the room is
     // told only on Enter or blur (a rename per keystroke would hit its rate limit).
     if (this.options.onRename) input.addEventListener('input', () => savePlayerName(input.value, 'typed'), { signal: this.abort.signal })
-    input.addEventListener('focus', () => input.select(), { signal: this.abort.signal })
+    input.addEventListener('focus', () => { this.nameBefore = savedPlayerName(); input.select() }, { signal: this.abort.signal })
     row.append(label, input)
     if (this.options.rollName && this.options.onRename) {
       const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
@@ -667,6 +669,8 @@ export class Inspector {
     return row
   }
   private nameControl!: HTMLElement
+  /** The saved name and its source when the name field took focus, for Escape. */
+  private nameBefore: ReturnType<typeof savedPlayerName> = null
   private nameInput!: HTMLInputElement
   private vehicleControl!: HTMLElement
   private liveSets?: { cards: HTMLCollectionOf<HTMLElement>; colourDots: HTMLCollectionOf<HTMLElement>; vehicleOptions: HTMLCollectionOf<HTMLElement>; vehicleNotes: HTMLCollectionOf<HTMLElement> }
@@ -1391,6 +1395,9 @@ export class Inspector {
           const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${row.dataset.where ?? ''} ${describe(def)}`.toLowerCase()
           const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
         }
+        // Controls built by hand in a section (the vehicle picker and Name in Game > Me) match by
+        // their data-search words, set above: a match keeps their section showing and open.
+        if (words.length) for (const control of fold.querySelectorAll<HTMLElement>(':scope > [data-search]')) if (!control.hidden) hits++
         fold.hidden = words.length > 0 && hits === 0; if (words.length) fold.open = hits > 0
         if (!fold.parentElement?.closest('.wi-group')) cardHits += hits
       }

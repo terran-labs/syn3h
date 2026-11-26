@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cleanPlayerName, loadPlayerName, savePlayerName } from '../../src/ui/playerName'
+import { cleanPlayerName, loadPlayerName, restorePlayerName, savedPlayerName, savePlayerName } from '../../src/ui/playerName'
 import { MAX_NAME_LENGTH } from '../../shared/protocol'
 
 const memory = () => { const m = new Map<string, string>(); return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), m } }
@@ -33,5 +33,15 @@ describe('the player name', () => {
     expect(cleanPlayerName('\n\t ')).toBe('')
     expect([...cleanPlayerName('x'.repeat(100))].length).toBe(MAX_NAME_LENGTH)
     expect(savePlayerName('   ', 'typed', memory())).toBe(false)
+  })
+  // Bug: a name typed and then cancelled with Escape was already saved keystroke by keystroke, so
+  // the next visit opened with the abandoned text.
+  it('a cancelled edit puts back exactly the name saved before it', () => {
+    const store = memory()
+    savePlayerName('Captain Ozzie', 'typed', store)
+    const before = savedPlayerName(store)!
+    savePlayerName('xyz', 'typed', store)
+    restorePlayerName(before, store)
+    expect(loadPlayerName(store)).toEqual({ name: 'Captain Ozzie', source: 'typed' })
   })
 })

@@ -58,3 +58,17 @@ export function savePlayerName(name: string, source: NameSource, store: Store | 
     return true
   } catch { return false }
 }
+
+/** Exactly what is saved now (name and source keys), or null without storage. For undoing an edit. */
+export function savedPlayerName(store: Store | null = storage()): { name: string | null; source: string | null } | null {
+  try { return store ? { name: store.getItem(NAME_KEY), source: store.getItem(SOURCE_KEY) } : null } catch { return null }
+}
+/** Put back what savedPlayerName returned, as it was: a cancelled edit leaves no trace. */
+export function restorePlayerName(saved: { name: string | null; source: string | null }, store: (Store & Partial<Pick<Storage, 'removeItem'>>) | null = storage()): void {
+  if (!store) return
+  try {
+    for (const [key, value] of [[NAME_KEY, saved.name], [SOURCE_KEY, saved.source]] as const) {
+      if (value === null) store.removeItem?.(key); else store.setItem(key, value)
+    }
+  } catch { /* Storage is optional. */ }
+}
