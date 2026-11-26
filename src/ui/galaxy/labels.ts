@@ -256,6 +256,21 @@ export interface CaptionCandidate {
 
 const overlaps = (a: CaptionOption, b: CaptionOption): boolean => boxesOverlap(a.box, b.box, CAPTION_SEPARATION)
 
+/**
+ * Drop any option that would overlap a name drawn on screen now but not where the layout last
+ * put it (one gliding to a new place, or fading out): the layout knows only targets, and two
+ * names must never meet on the way.
+ */
+export function avoidDrawn(captions: readonly CaptionCandidate[], drawn: ReadonlyMap<string, ScreenBox>): CaptionCandidate[] {
+  if (!drawn.size) return [...captions]
+  return captions.map(caption => {
+    const others = [...drawn].filter(([id]) => id !== caption.id).map(([, box]) => box)
+    if (!others.length) return caption
+    const options = caption.options.filter(option => others.every(box => !boxesOverlap(option.box, box, CAPTION_SEPARATION)))
+    return options.length === caption.options.length ? caption : { ...caption, options }
+  })
+}
+
 /** One placement decision, as a string: same key, same side, lines and alignment. */
 export const captionKey = (option: CaptionOption): string => `${option.content}|${option.anchor ?? ''}|${option.inline ?? ''}|${option.blockEnd ? 1 : 0}`
 

@@ -35,7 +35,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, pickLobbyTarget, type GalaxyWorld } from './galaxy/Galaxy'
-import { CAPTION_INSET, captionClearance, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
+import { CAPTION_INSET, avoidDrawn, captionClearance, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -2105,7 +2105,7 @@ export class Shell implements System {
         const candidates = []
         const visible = new Set<string>()
         const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
-        this.drawnReservations(now)
+        const drawn = this.drawnReservations(now)
         // A planet that leapt (the clock set, a resize, the galaxy reframed) is a teleport, not an
         // orbit: its name goes straight to its new place, with no glide, hold or wait to return.
         const leapt = new Set<string>()
@@ -2135,7 +2135,7 @@ export class Shell implements System {
           candidates.push({ id: place.id, options, priority, moon: row.moon })
         }
         // A name keeps its side and lines while they still work (labels.ts preferPrevious).
-        const layout = captionLayout(preferPrevious(candidates, this.captionKeys))
+        const layout = captionLayout(avoidDrawn(preferPrevious(candidates, this.captionKeys), drawn))
         const dt = Math.min(0.1, Math.max(0, (now - this.captionClock) / 1000)); this.captionClock = now
         const canChoose = !chosen && !this.dropping && !this.overlay.inert && this.element.classList.contains('galaxy-open')
         for (const [id, chip] of chips) {
@@ -2240,7 +2240,7 @@ export class Shell implements System {
       // Glide only along a clear path, clear of every name still on screen (shown, gliding, or
       // fading out): otherwise it fades out where it was, moves unseen, and fades in.
       const from = this.drawnBox(id, chip)
-      const crossing = !still && !!from && this.pathCrosses(id, from, placement.box)
+      const crossing = !still && !!from && (this.pathCrosses(id, from, placement.box) || !this.pathClear(from, placement.box, clear))
       if (still || crossing) {
         // Fade out in place first; the change is applied once the name is gone.
         if (!glide.held) {
@@ -2290,6 +2290,14 @@ export class Shell implements System {
       if (box) out.set(id, box)
     }
     return out
+  }
+  /** Whether every step of a straight glide between two boxes passes `clear` (no nearer globe or the sun). */
+  private pathClear(from: ScreenBox, to: ScreenBox, clear: (box: ScreenBox) => boolean): boolean {
+    for (let i = 1; i <= 8; i++) {
+      const t = i / 8, dx = (to.left - from.left) * t, dy = (to.top - from.top) * t
+      if (!clear({ left: from.left + dx, right: from.right + dx, top: from.top + dy, bottom: from.bottom + dy })) return false
+    }
+    return true
   }
   /** Whether a straight glide from one box to another would pass over another shown name. */
   private pathCrosses(id: string, from: ScreenBox, to: ScreenBox): boolean {
