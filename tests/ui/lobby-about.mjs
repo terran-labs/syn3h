@@ -173,4 +173,128 @@ for(const mode of ['desktop','phone','short-phone','ipad-portrait','ipad-landsca
   assert.deepEqual(errors,[]);console.log(JSON.stringify({notice:'ok',actions:n}))
  }finally{await browser.close()}
 }
+// Welcome's carousel (src/ui/welcome/ring.ts), at the four sizes the owner checks: a phone upright
+// and on its side, a small phone and a large computer. Bugs caught: a Welcome picture requested
+// before the player opens Welcome (the owner's rule in AGENTS.md); the arrows, a key, a swipe, a
+// dot or a tap on a side picture not bringing a new picture to the front with its own title; the
+// carousel running off the screen or sitting on the logo, the X or the lobby's buttons; a caption
+// cut off; the ring turning by itself and keeping an idle lobby busy; a move gliding under reduced
+// motion. Nothing here pins a size, an angle or a duration.
+// Also (the owner, 25 November 2026): the carousel is one element among the guide's, so at the top of the
+// sheet the next section shows without scrolling (the caption and dots on a 320 px phone), and on a phone
+// held upright the Settings and Welcome pair stands centred, with or without a sheet, clear of the version.
+for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['phone-side',844,390,null],['small-phone',320,568,'dots'],['desktop',1280,800,'section'],['large',1700,1100,'section']]){
+ const touch=width<600||height<500
+ const browser=await(touch?webkit.launch():chromium.launch({channel:'chrome',headless:true}))
+ try{
+  const context=await browser.newContext({viewport:{width,height},hasTouch:touch,isMobile:touch,deviceScaleFactor:touch?2:1,reducedMotion:name==='large'?'no-preference':undefined})
+  const page=await context.newPage(), errors=[], pictures=[]; page.on('pageerror',e=>errors.push(e.message))
+  page.on('request',r=>{if(/\/welcome\/[^/]+\.(webp|avif|jpe?g|png)$/.test(new URL(r.url()).pathname))pictures.push(r.url())})
+  await page.goto(`${process.env.MIRA_URL}?room=about-ring-${name}-${Date.now()}`)
+  await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+  await page.waitForTimeout(1500)
+  assert.deepEqual(pictures,[],`${name}: no Welcome picture requested before Welcome is opened`)
+  await page.locator('.lobby-gear-dock .lobby-about').click()
+  const ring=page.locator('dialog.lobby-sheet-about[open] .welcome-ring')
+  await ring.waitFor({state:'visible'})
+  await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
+  assert.ok(pictures.length>0,`${name}: the pictures load once Welcome is open`)
+  const state=()=>ring.evaluate(r=>({title:r.querySelector('.welcome-ring-caption strong').textContent,front:[...r.querySelectorAll('.welcome-ring-card')].findIndex(c=>c.dataset.slot==='front'),dot:[...r.querySelectorAll('.welcome-ring-dot')].findIndex(d=>d.getAttribute('aria-current')==='true'),status:r.querySelector('.welcome-ring-status').textContent}))
+  const settled=()=>page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .welcome-ring').getAnimations({subtree:true}).some(a=>a.playState==='running'),null,{timeout:5000})
+  const titles=await ring.evaluate(r=>[...r.querySelectorAll('.welcome-ring-dot')].map(d=>d.getAttribute('aria-label').replace(/^Picture \d+ of \d+: /,'')))
+  const expect=async(index,how)=>{const s=await state();assert.equal(s.front,index,`${name} ${how}: picture ${index+1} in front`);assert.equal(s.dot,index,`${name} ${how}: its dot is current`);assert.equal(s.title,titles[index],`${name} ${how}: its title shows`)}
+  await expect(0,'opened')
+  if(below){
+   // At the top of the sheet: what must show without scrolling, inside the body and above its bottom fade.
+   const shown=await ring.evaluate((r,below)=>{
+    const body=r.closest('.lobby-sheet-body'), b=body.getBoundingClientRect(), top=b.top+28, bottom=b.bottom-44
+    // `part`: how much of the box from its top must show (a dot is drawn at its 40 px target's middle).
+    const inView=(el,part=1)=>{const e=el.getBoundingClientRect();return e.top>=top-1&&e.top+e.height*part<=bottom+1}
+    const out={scrollTop:body.scrollTop,caption:inView(r.querySelector('.welcome-ring-caption')),dots:inView(r.querySelector('.welcome-ring-dots'),0.6)}
+    // The next section: its heading, and the top of its first card (its title row, 40 px).
+    if(below==='section'){let h=r.nextElementSibling;while(h&&h.tagName!=='H3')h=h.nextElementSibling;out.heading=!!h&&inView(h);const card=h?.nextElementSibling?.querySelector('li');if(card){const e=card.getBoundingClientRect();out.card=e.top>=top-1&&e.top+40<=bottom+1}else out.card=false}
+    return out
+   },below)
+   console.log(JSON.stringify({ring:name,atTop:shown}))
+   assert.ok(shown.scrollTop===0&&Object.entries(shown).every(([k,v])=>k==='scrollTop'||v===true),`${name}: at the top of Welcome, the caption, dots${below==='section'?' and the next section':''} show without scrolling ${JSON.stringify(shown)}`)
+  }
+  if(width<600&&height>width){
+   // The pair in the middle of the bottom edge, unless that would reach the version label.
+   const pair=async()=>page.evaluate(()=>{const r=[...document.querySelectorAll('.lobby-gear-dock .lobby-control')].filter(e=>e.getClientRects().length).map(e=>e.getBoundingClientRect()),v=document.querySelector('.lobby-version-dock .lobby-version'),vb=v&&getComputedStyle(v).visibility!=='hidden'&&!v.closest('[hidden]')?v.getBoundingClientRect():null;return{l:Math.min(...r.map(b=>b.left)),r:Math.max(...r.map(b=>b.right)),t:Math.min(...r.map(b=>b.top)),b:Math.max(...r.map(b=>b.bottom)),version:vb&&vb.width?{r:vb.right,t:vb.top,b:vb.bottom}:null,w:innerWidth}})
+   const centred=(p,what)=>{const off=(p.l+p.r)/2-p.w/2,clash=p.version&&p.l<p.version.r&&p.t<p.version.b&&p.b>p.version.t;assert.ok(!clash,`${name} ${what}: the buttons clear the version ${JSON.stringify(p)}`);const room=p.version?Math.max(0,p.version.r+4-(p.w/2-(p.r-p.l)/2)):0;assert.ok(Math.abs(off)<=8+room,`${name} ${what}: the buttons are centred (${Math.round(off)} px off) ${JSON.stringify(p)}`)}
+   centred(await pair(),'with Welcome open')
+   await page.keyboard.press('Escape');await ring.waitFor({state:'hidden'});await page.waitForTimeout(600)
+   centred(await pair(),'with no sheet open')
+   await page.locator('.lobby-gear-dock .lobby-about').click();await ring.waitFor({state:'visible'})
+   await page.waitForFunction(()=>!document.querySelector('.lobby-sheet-about .lobby-sheet-panel').getAnimations({subtree:true}).some(a=>a.playState==='running'))
+  }
+  // The ring holds still by itself: an idle Welcome keeps nothing moving.
+  await page.waitForTimeout(6500);await expect(0,'left alone');await settled()
+  const foot=ring.locator('.welcome-ring-foot')
+  await foot.locator('[data-ring=next]').click();await expect(1,'next')
+  assert.match((await state()).status,/2 of 6/,`${name}: a screen reader hears the move`)
+  await foot.locator('[data-ring=prev]').click();await expect(0,'previous')
+  await foot.locator('[data-ring=prev]').click();await expect(titles.length-1,'previous past the first')
+  await foot.locator('[data-ring=next]').focus();await page.keyboard.press('ArrowRight');await expect(0,'the right arrow key, round from the last')
+  await page.keyboard.press('ArrowLeft');await expect(titles.length-1,'the left arrow key')
+  await ring.locator('.welcome-ring-dot').nth(3).click();await expect(3,'the fourth dot')
+  // A swipe: a sideways drag across the front picture.
+  const box=await ring.locator('.welcome-ring-track').boundingBox()
+  const cy=box.y+box.height/2
+  // Playwright cannot drag a finger: on touch the finger's pointer events are sent to the picture itself.
+  if(touch)await ring.locator('.welcome-ring-card[data-slot=front] img').evaluate((img,[x0,x1,y])=>{const at=(type,x)=>img.dispatchEvent(new PointerEvent(type,{pointerId:7,pointerType:'touch',isPrimary:true,clientX:x,clientY:y,bubbles:true,cancelable:true}));at('pointerdown',x0);at('pointermove',(x0+x1)/2);at('pointermove',x1);at('pointerup',x1)},[box.x+box.width*.75,box.x+box.width*.25,cy])
+  else{await page.mouse.move(box.x+box.width*.75,cy);await page.mouse.down();await page.mouse.move(box.x+box.width*.45,cy,{steps:4});await page.mouse.move(box.x+box.width*.25,cy,{steps:4});await page.mouse.up()}
+  await expect(4,'a swipe to the left')
+  await settled()
+  const sides=await ring.evaluate(r=>r.hasAttribute('data-sides'))
+  if(sides){
+   // A tap on the picture beside the front one, just past the hinge, brings it to the front.
+   const side=ring.locator('.welcome-ring-card').nth(5), sb=await side.boundingBox()
+   await side.click({position:{x:Math.min(24,sb.width/4),y:sb.height/2},timeout:5000});await expect(5,'a tap on a side picture')
+   await settled()
+  }
+  // Only the front picture is offered to a screen reader; the side ones are not focusable duplicates.
+  assert.deepEqual(await ring.evaluate(r=>[...r.querySelectorAll('.welcome-ring-card')].filter(c=>c.getAttribute('aria-hidden')!=='true').length),1,`${name}: one picture is offered to a screen reader`)
+  assert.equal(await ring.locator('.welcome-ring-card [tabindex]:not([tabindex="-1"]), .welcome-ring-card a, .welcome-ring-card button').count(),0,`${name}: nothing in the pictures takes focus`)
+  // Fit: with the ring scrolled into view, every control and line of text is on screen, the caption
+  // is not cut off, nothing scrolls sideways, and nothing visible of the ring touches the logo, the
+  // X or the lobby's buttons.
+  await ring.locator('.welcome-ring-track').evaluate(el=>el.scrollIntoView({block:'start'}));await page.waitForTimeout(300)
+  for(const scrolled of [false,true]){
+   if(!scrolled)await page.locator('.lobby-sheet-about .lobby-sheet-body').evaluate(b=>{b.scrollTop=0})
+   else await ring.locator('.welcome-ring-dots').evaluate(el=>el.scrollIntoView({block:'nearest'}))
+   await page.waitForTimeout(200)
+   const fit=await ring.evaluate(r=>{
+    const problems=[], body=r.closest('.lobby-sheet-body').getBoundingClientRect(), rr=r.getBoundingClientRect(), cs=getComputedStyle(r), reach=k=>parseFloat(cs.getPropertyValue(`--reach-${k}`))||0
+    // What can be seen: inside the sheet's scrolling body below its top fade (28 px, or once scrolled
+    // transparent down to the X's foot, --sheet-lift; lobby-sheet.css), the screen, and the ring's own clip (welcome.css).
+    const bodyEl=r.closest('.lobby-sheet-body'), lift=parseFloat(bodyEl.style.getPropertyValue('--sheet-lift'))||0
+    const clip={l:Math.max(0,rr.left-reach('left')),t:body.top+Math.max(28,lift),r:Math.min(innerWidth,rr.right+reach('right')),b:body.bottom}
+    const seen=el=>{const b=el.getBoundingClientRect();const l=Math.max(b.left,clip.l),t=Math.max(b.top,clip.t),rt=Math.min(b.right,clip.r),bt=Math.min(b.bottom,clip.b);return rt-l>1&&bt-t>1?{l,t,r:rt,b:bt}:null}
+    const hit=(a,b)=>a&&b&&a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1
+    const box=sel=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();return b.width?{l:b.left,t:b.top,r:b.right,b:b.bottom}:null}
+    const keep={logo:box('.shell-logo'),close:box('.lobby-sheet-about .lobby-sheet-close'),buttons:box('.lobby-sheet-about .lobby-gear-dock')??box('.lobby-gear-dock')}
+    const parts=[...r.querySelectorAll('.welcome-ring-arrow, .welcome-ring-dot, .welcome-ring-caption, .welcome-ring-card')].filter(el=>getComputedStyle(el).display!=='none'&&Number(getComputedStyle(el).opacity)>0.01)
+    for(const el of parts){
+     const b=el.getBoundingClientRect(), what=el.className
+     if(!el.matches('.welcome-ring-card')&&b.width>0&&(b.left<-1||b.right>innerWidth+1))problems.push(`${what} runs off the screen`)
+     for(const [k,v] of Object.entries(keep))if(hit(seen(el),v))problems.push(`${what} overlaps the ${k} ${JSON.stringify({seen:seen(el),[k]:v})}`)
+    }
+    const front=r.querySelector('.welcome-ring-card[data-slot=front]').getBoundingClientRect()
+    if(front.left<-1||front.right>innerWidth+1)problems.push('the front picture runs off the screen')
+    const cap=r.querySelector('.welcome-ring-caption');if(cap.scrollHeight>cap.clientHeight+1)problems.push('the caption is cut off')
+    if(document.scrollingElement.scrollWidth>innerWidth+1)problems.push('the page scrolls sideways')
+    return {problems,column:Math.round(r.getBoundingClientRect().width),front:{w:Math.round(front.width),h:Math.round(front.height)},sides:r.hasAttribute('data-sides')}
+   })
+   console.log(JSON.stringify({ring:name,scrolled,...fit}))
+   assert.deepEqual(fit.problems,[],`${name}${scrolled?' scrolled':''}: the carousel fits`)
+   await page.screenshot({path:`${out}/ring-${name}${scrolled?'-scrolled':''}.png`})
+  }
+  // Reduced motion: a move is instant, with nothing left gliding.
+  await page.emulateMedia({reducedMotion:'reduce'})
+  await foot.locator('[data-ring=next]').click()
+  assert.equal(await ring.evaluate(r=>r.getAnimations({subtree:true}).filter(a=>a.playState==='running').length),0,`${name}: under reduced motion a move is instant`)
+  assert.deepEqual(errors,[])
+ }finally{await browser.close()}
+}
 await writeFile(`${out}/report.json`,JSON.stringify(report,null,2))

@@ -15,7 +15,7 @@ import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { metalUniforms } from '../brand/wordmarkMetal'
-import { liftPlacement, placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
+import { liftPlacement, placementOf, placeWordmark, poseView, raisePlacement, surfacePoint, type Placement, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement, wordmarkSolid } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { recordStartupLobbyFrame, startupTiming } from '../../core/diagnostics'
@@ -89,6 +89,12 @@ export interface GalaxyOptions {
    * bottom edge where it was; 0 restores the usual framing. At most 30% of the height.
    */
   topInset?(): number
+  /**
+   * Where the lifted name's top should stand while a lobby sheet is open, in CSS pixels from the
+   * host's top, asked each frame; undefined keeps the usual lift (liftPlacement). A phone held
+   * upright puts it near the top, so the sheet under it gets the screen's height.
+   */
+  liftTop?(): number | undefined
   onPresence?(values: Populations): void
   presenceVisible?(): boolean
 }
@@ -825,6 +831,8 @@ export function arrivalPose(bodies: readonly OrbitBody[], width: number, height:
 }
 /** Milliseconds returnHome takes back to the fresh-load view. */
 const RETURN_MS = RETURN_VIEW_SECONDS * 1000
+/** How far the Mira mark's star stands above its letters' top line, as a share of their height (aimLift). */
+const MARK_STAR = 0.4
 /** Milliseconds frameName takes to bring the name into view behind a lobby sheet. */
 const FRAME_MS = 900
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
@@ -1814,7 +1822,8 @@ export class Galaxy {
     this.liftShown = this.reduced.matches ? liftGoal : this.liftShown + (liftGoal - this.liftShown) * (1 - Math.exp(-Math.max(0, elapsed) / 0.16))
     if (Math.abs(this.liftShown - liftGoal) < 0.002) this.liftShown = liftGoal
     const lift = this.liftShown * this.liftShown * (3 - 2 * this.liftShown)
-    const placement = liftPlacement(placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen, system), lift)
+    const markView = poseView(this.markRig.pose!, VIEW_TAN)
+    const placement = this.aimLift(liftPlacement(placeWordmark(mode, markView, screen, system), lift), markView, lift)
     this.markFrame = { mode, screen, system }
     if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
       this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
@@ -1838,6 +1847,39 @@ export class Galaxy {
   markLift = 0
   /** The eased lift drawn this frame, 0 to 1; 1 when the name has finished moving. */
   liftShown = 0
+  /**
+   * The lifted name raised further, so its top stands at liftTop() (CSS px from the host's top),
+   * in proportion to `lift`. Only ever up: a name already above that line stays. Its height on
+   * screen changes little with a small rise, so one secant step from two projections lands it.
+   */
+  private aimLift(p: Placement, v: ReturnType<typeof poseView>, lift: number): Placement {
+    const goal = lift > 0 ? this.options.liftTop?.() : undefined
+    if (goal === undefined) return p
+    // The drawn top: the star stands above the letters' top line by MARK_STAR of their height.
+    const top = (q: Placement) => {
+      const t = Math.min(...this.projectLine(q, v, 0.5, 6).map(pt => pt[1])), b = Math.max(...this.projectLine(q, v, -0.5, 6).map(pt => pt[1]))
+      return t - (b - t) * MARK_STAR
+    }
+    // A few secant steps: the cylinder and the perspective make the rise a little non-linear.
+    let d = 0, y = top(p)
+    if (!(y > goal)) return p
+    let step = Math.hypot(...p.up) * 0.25
+    for (let i = 0; i < 4 && Math.abs(y - goal) > 0.5; i++) {
+      const y1 = top(raisePlacement(p, d + step))
+      if (!(y1 < y)) break
+      const next = d + (y - goal) / (y - y1) * step
+      step = next - d; d = next; y = top(raisePlacement(p, d))
+    }
+    return raisePlacement(p, Math.max(0, d) * lift)
+  }
+  /** A line across the name (`along` from -0.5 bottom to 0.5 top) on screen, CSS px of the host. */
+  private projectLine(p: Placement, v: ReturnType<typeof poseView>, along: number, steps: number): [number, number][] {
+    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
+    return Array.from({ length: steps + 1 }, (_, i): [number, number] => {
+      const w = surfacePoint(p, (i / steps - 0.5) * ASPECT, along), d = sub(w, v.eye), z = Math.max(0.001, dot(d, v.forward))
+      return [width * this.framing[0] + dot(d, v.right) / (z * v.tan) * short / 2, height * (1 - this.framing[1]) - dot(d, v.up) / (z * v.tan) * short / 2]
+    })
+  }
   /** Where the in-space wordmark is on screen now, in CSS pixels of the host (its bounding box), or null. */
   wordmarkScreenBox(): { x: number; y: number; width: number; height: number } | null {
     const edges = this.wordmarkEdges(8, true)
@@ -1861,7 +1903,8 @@ export class Galaxy {
     const r = this.returnTo, f = this.markFrame
     if (r?.framing && f && !now) {
       v = poseView({ yaw: r.to.yaw, pitch: r.to.pitch, reach: r.to.distance, target: [0, 0, 0] }, VIEW_TAN)
-      p = liftPlacement(placeWordmark(f.mode, v, f.screen, f.system), this.markLift > 0 ? 1 : 0)
+      const lift = this.markLift > 0 ? 1 : 0
+      p = this.aimLift(liftPlacement(placeWordmark(f.mode, v, f.screen, f.system), lift), v, lift)
     }
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     const line = (along: number) => Array.from({ length: steps + 1 }, (_, i): [number, number] => {

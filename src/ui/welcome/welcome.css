@@ -50,57 +50,120 @@
 .welcome-shot figcaption { margin-top: 8px; font-size: 13px; line-height: 1.4; color: var(--w-soft); }
 @media (prefers-reduced-motion: reduce) { .welcome-shot img { transition: none; } }
 
-/* The ring (ring.ts): the front picture is the column's full width (--w); one either side, at
-   78 % and dimmed, stands outside the column with a gap, so only its inner part shows where the
-   host lets it: a lobby sheet's body reaches past the column to the screen's edges (LobbySheet
-   bleed) and says how far on each side in --sheet-reach-left and -right; the in-play guide has
-   its own padding. A turn moves every card one place and each glides there. */
+/* The ring (ring.ts), after the "in Action" carousel on the owner's site. The front picture is
+   the column's full width (--w), or less on a short screen so all of it fits the panel's height.
+   The one either side, the same size, is hinged at the front picture's edge and turned about a
+   third of a right angle away in perspective, so about half of it shows, and dimmed by a shade
+   light enough that a dark picture still reads; standing outside the column where the host lets it show: a lobby
+   sheet's body reaches past the column to the screen's edges (LobbySheet bleed) and says how far
+   on each side in --sheet-reach-left and -right; the in-play guide has its own padding. ring.ts
+   sets data-sides when there is room for them.
+   Each card's transform is one list, translate, turn, scale, translate, whose terms follow from
+   --side (-1, 0 or 1), --near (beside the front or further) and --far (beyond the sides): the
+   last translate puts the hinge on the card's inner edge, the first carries the hinge to the
+   front picture's edge. A move interpolates the list, so the panels swing round their hinges. */
 .welcome-body .welcome-ring {
-  --w: 100cqi; --gap: clamp(8px, 2.5cqi, 18px);
-  display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: visible;
-  clip-path: inset(-40px calc(-1 * var(--sheet-reach-right, 32px)) -40px calc(-1 * var(--sheet-reach-left, 32px)));
+  /* The front picture is one element among the guide's, with air round it (the owner, 25 November
+     2026: "smaller and more tasteful and show other contents below without scrolling"): 58 % of
+     the column, less on a screen short enough that the next section would not show. */
+  --w: clamp(280px, (100dvh - 650px) * 16 / 9, 58cqi); --gap: clamp(6px, 1.4cqi, 12px);
+  --turn: 35deg; --side-scale: 1; --dim: .42; --ease: cubic-bezier(.22, 1, .36, 1);
+  position: relative; display: flex; flex-direction: column; align-items: center; margin: 4px 0 26px; overflow: visible;
+  /* How far past the column the pictures may show either side: to the screen's edges in a lobby
+     sheet; inside the column on a phone held on its side, where the X keeps a lane beside it. */
+  --reach-left: var(--sheet-reach-left, 32px); --reach-right: var(--sheet-reach-right, 32px);
+  clip-path: inset(-40px calc(-1 * var(--reach-right)) -40px calc(-1 * var(--reach-left)));
 }
-.welcome-ring-stage { width: 100%; padding: 6px 0 18px; }
-/* Isolated, so the cards' z-index orders them among themselves and never over the host's controls (a sheet's X and its tip). */
-.welcome-ring-track { position: relative; isolation: isolate; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none; }
+/* A narrow column (a phone held upright): 72 % of it, so the neighbours still peek in. */
+@container welcome (max-width: 520px) { .welcome-body .welcome-ring { --w: 72cqi; } }
+/* The narrowest (a 320 px phone): smaller still, so the caption and dots show without scrolling. */
+@container welcome (max-width: 300px) {
+  .welcome-body .welcome-ring { --w: 44cqi; margin-top: -8px; }
+  .mira-shell .welcome-body.welcome-body .welcome-ring p.welcome-ring-caption, .welcome-body .welcome-ring p.welcome-ring-caption { height: calc(14px * 1.5 + 2px + 13px * 1.35 * 3); }
+  .welcome-ring .welcome-ring-caption span { font-size: 13px; line-height: 1.35; }
+  .welcome-ring-stage { padding-bottom: 6px; }
+  .welcome-ring .welcome-ring-foot { gap: 6px; }
+  .welcome-ring .welcome-ring-caption strong { font-size: 14px; }
+  .mira-shell .welcome-body .welcome-ring .welcome-ring-dot.welcome-ring-dot { height: 36px; }
+  .welcome-ring .welcome-ring-dots { margin-top: 0; }
+}
+/* A short screen (a phone on its side): sized by the height, and kept inside the column. */
+@media (max-height: 500px) { .welcome-body .welcome-ring { --w: min(58cqi, (100dvh - 270px) * 16 / 9); --reach-left: 0px; --reach-right: 0px; } }
+.welcome-ring-stage { position: relative; width: 100%; padding: 2px 0 10px; }
+/* Isolated, so the cards' z-index orders them among themselves and never over the host's controls (a sheet's X and its tip).
+   A sideways drag is the ring's (a swipe); an upright one still scrolls the panel. */
+.welcome-ring-track {
+  position: relative; isolation: isolate; width: var(--w); aspect-ratio: 16 / 9; margin: 0 auto; padding: 0; list-style: none;
+  perspective: calc(var(--w) * 2); touch-action: pan-y;
+}
 .welcome-ring-card {
   position: absolute; inset: 0; margin: 0;
-  /* Slot n's centre is n times (half the front, the gap, half a side card) out from the middle. */
-  transform: translateX(calc(var(--x, 0) * (var(--w) * (.5 + .78 / 2) + var(--gap)))) scale(var(--s, 1));
-  /* The side cards dim; the ones beyond them are not seen at all. */
-  opacity: calc(1 - min(1, var(--away, 0) * .55) - max(0, var(--away, 0) - 1) * .45);
-  transition: transform 1.2s cubic-bezier(.22, 1, .36, 1), opacity .8s;
+  transform:
+    translateX(calc(var(--side, 0) * (var(--w) / 2 + var(--gap) + var(--far, 0) * var(--w) * .56)))
+    rotateY(calc(var(--side, 0) * (var(--near, 0) * var(--turn) + var(--far, 0) * 25deg)))
+    scale(calc(1 - var(--near, 0) * (1 - var(--side-scale))))
+    translateX(calc(var(--side, 0) * var(--w) / 2));
+  opacity: calc(1 - var(--far, 0));
+  transition: transform .62s var(--ease), opacity .45s ease;
 }
-.welcome-ring-track[data-still] .welcome-ring-card { transition: none; }
+/* No room either side (a phone held upright): the side pictures are hidden, not slivers. */
+.welcome-ring:not([data-sides]) .welcome-ring-card[data-slot=side] { opacity: 0; }
+.welcome-ring-card:not([data-slot=side], [data-slot=front]), .welcome-ring:not([data-sides]) .welcome-ring-card[data-slot=side] { pointer-events: none; }
+/* The dimming: a shade over the picture, fading in as a card turns aside and out as it comes to the front. */
+.welcome-ring-card::after {
+  content: ''; position: absolute; inset: 0; border-radius: 12px; pointer-events: none;
+  background: rgb(2 3 8); opacity: calc(var(--near, 0) * var(--dim)); transition: opacity .45s ease;
+}
 .welcome-ring-card .welcome-shot { width: 100%; height: 100%; margin: 0; }
-.welcome-ring-card .welcome-shot img { height: 100%; border-radius: 12px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; }
-.welcome-ring-card[data-front] .welcome-shot img { cursor: default; }
+.welcome-ring-card .welcome-shot img { height: 100%; border-radius: 12px; box-shadow: 0 18px 44px -14px rgb(0 0 0 / .75); cursor: pointer; -webkit-user-drag: none; user-select: none; }
+.welcome-ring-card[data-slot=front] .welcome-shot img { cursor: default; }
 /* The caption under the ring speaks for the front card; each figure keeps its own for screen readers. */
-.welcome-ring-card figcaption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.welcome-ring-card figcaption, .welcome-ring-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.mira-shell .welcome-body.welcome-body p.welcome-ring-status { position: absolute; margin: 0; }
 /* The arrows and, between them, the front card's title and caption. The caption keeps room for its
-   title and two lines, so a long one grows into that room and nothing above it moves. */
-.welcome-ring-foot { display: flex; align-items: flex-start; gap: 12px; width: min(100%, 520px); perspective: 600px; }
+   title and two lines, so a long one grows into that room and nothing above or below it moves. */
+.welcome-ring-foot { display: flex; align-items: center; gap: 12px; width: min(100%, 560px); }
 .mira-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption {
-  display: grid; flex: 1; align-content: start; gap: 2px; margin: 0; max-width: none; text-align: center; transform-origin: 50% 0;
+  display: grid; flex: 1; align-content: center; gap: 2px; margin: 0; max-width: none; text-align: center;
   height: calc(16px * 1.5 + 2px + 14px * 1.4 * 2);
 }
-.welcome-ring-caption strong { font: 500 16px/1.5 'Barlow', sans-serif; color: var(--w-ink); }
-.welcome-ring-caption span { font-size: 14px; line-height: 1.4; color: var(--w-soft); }
+.welcome-ring-caption strong { font: 600 16.5px/1.5 'Barlow', sans-serif; color: var(--w-ink); }
+.welcome-ring-caption span { font-size: 14px; line-height: 1.4; color: var(--w-dim); }
+/* Round outlined arrows, the card chrome's hairline. */
 .mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow {
   display: grid; place-items: center; flex: none; width: 44px; height: 44px; min-width: 44px; min-height: 44px; padding: 0; margin: 0;
-  border: 1px solid var(--w-quiet); border-radius: 50%; background: rgb(255 255 255 / .05); box-shadow: none; color: var(--w-ink); cursor: pointer;
+  border: 1px solid var(--w-line); border-radius: 50%; background: rgb(8 9 14 / .55); box-shadow: none; color: var(--w-ink); cursor: pointer;
   transition: background-color .18s, border-color .18s;
 }
 .mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow::before { content: none; }
-.mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-line); }
+.mira-shell .welcome-body .welcome-ring-arrow.welcome-ring-arrow:is(:hover, :focus-visible) { background: rgb(255 255 255 / .12); border-color: var(--w-ink); }
 .welcome-ring-arrow svg { width: 18px; height: 18px; }
 .welcome-ring-arrow path { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-/* A narrow column: the cards take more of it, and the caption has room for four lines. */
+/* A dot for each picture: the front one's brighter and larger. Each is a 44 px target round a small dot. */
+.welcome-ring-dots { display: flex; justify-content: center; margin-top: 2px; }
+.mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot {
+  display: grid; place-items: center; flex: none; width: 40px; height: 44px; min-width: 0; min-height: 0; margin: 0; padding: 0;
+  border: 0; border-radius: 999px; background: none; box-shadow: none; cursor: pointer;
+}
+.mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot::before {
+  content: ''; display: block; position: static; inset: auto; width: 6px; height: 6px; border-radius: 50%; background: var(--w-soft); opacity: .55;
+  transition: transform .3s var(--ease), opacity .3s, background-color .3s;
+}
+.mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot[aria-current]::before { background: var(--w-ink); opacity: 1; transform: scale(1.45); }
+.mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :focus-visible)::before { opacity: 1; }
+/* No shade round the dot: the generic button hover and press are for pill buttons. */
+html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :active, :focus) { background: none; box-shadow: none; }
+.mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:focus-visible { outline: 2px solid var(--w-ink); outline-offset: -8px; }
+/* With a mouse the dots' row is shorter; a finger keeps 44 px. */
+@media (pointer: fine) { .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot { height: 32px; width: 32px; } }
+/* A narrow column: the caption has room for three lines. */
 @container welcome (max-width: 520px) {
-  .mira-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 4); }
+  .mira-shell .welcome-body.welcome-body p.welcome-ring-caption, .welcome-body p.welcome-ring-caption { height: calc(16px * 1.5 + 2px + 13.5px * 1.4 * 3); }
   .welcome-ring-caption span { font-size: 13.5px; }
 }
-@media (prefers-reduced-motion: reduce) { .welcome-ring-track, .welcome-ring-card { transition: none; } }
+/* Reduced motion: every change is instant. */
+.welcome-ring[data-still] .welcome-ring-card, .welcome-ring[data-still] .welcome-ring-card::after, .mira-shell .welcome-body .welcome-ring[data-still] .welcome-ring-dot.welcome-ring-dot::before { transition: none; }
+@media (prefers-reduced-motion: reduce) { .welcome-ring .welcome-ring-card, .welcome-ring .welcome-ring-card::after, .mira-shell .welcome-body .welcome-ring .welcome-ring-dot.welcome-ring-dot::before { transition: none; } }
 
 /* Lists */
 .welcome-body ol, .welcome-body ul { padding: 0; list-style: none; }

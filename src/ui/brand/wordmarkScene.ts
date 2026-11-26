@@ -160,6 +160,18 @@ export function liftPlacement(p: Placement, lift: number): Placement {
   return { centre, right: scale(p.right, k), up: scale(p.up, k), sunDistance: Math.hypot(...centre), shape: p.shape }
 }
 
+/** The placement moved `d` world units straight up (along the placement's own up), size unchanged. */
+export function raisePlacement(p: Placement, d: number): Placement {
+  if (!d) return p
+  if (p.shape.kind === 1) {
+    const shape: Shape = { ...p.shape, offset: p.shape.offset + d }
+    const centre: Vec3 = [p.centre[0], shape.offset, p.centre[2]]
+    return { ...p, centre, sunDistance: Math.hypot(...centre), shape }
+  }
+  const centre = add(p.centre, scale(p.up, 1 / Math.hypot(...p.up)), d)
+  return { ...p, centre, sunDistance: Math.hypot(...centre) }
+}
+
 /** The band of the camera's elevation, in radians either side of edge-on, the name glides through the plane over. */
 export const PLANE_BAND = 0.12
 /** +1 with the camera above the plane, -1 below, eased through edge-on. */

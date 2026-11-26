@@ -104,6 +104,13 @@ export class LobbySheet {
     }, { capture: true, signal })
     this.element.addEventListener('keydown', event => { if (this.shown) event.stopPropagation() }, { signal })
     window.addEventListener('resize', () => { if (this.shown) this.layout() }, { signal })
+    // How far the contents have scrolled, up to the X's foot, as --sheet-lift: a sheet may deepen
+    // its top fade by it so nothing scrolls under the X (Welcome, lobby-sheet.css).
+    let lift = -1
+    this.body.addEventListener('scroll', () => {
+      const next = Math.round(Math.min(this.body.scrollTop, this.close_.offsetTop + this.close_.offsetHeight))
+      if (next !== lift) { lift = next; this.body.style.setProperty('--sheet-lift', `${next}px`) }
+    }, { passive: true, signal })
   }
 
   get isOpen(): boolean { return this.shown }
@@ -132,7 +139,12 @@ export class LobbySheet {
       // A row (an upright phone lays the buttons side by side) by its layout, not its shape: two
       // stacked buttons are wider than they are tall.
       if (getComputedStyle(dockEl).gridAutoFlow.startsWith('column')) frame.height = Math.max(120, dock.top - 8 - frame.top)
-      else frame.width = Math.max(240, dock.left - 12 - frame.left)
+      // A column of them at the right (a phone on its side): narrower from both sides, so the sheet
+      // stays centred under the name, which is centred on the screen.
+      else {
+        const right = dock.left - 12, half = Math.max(120, right - w / 2)
+        frame.left = Math.max(phone ? 8 : 24, w / 2 - half); frame.width = Math.max(240, right - frame.left)
+      }
     }
     return frame
   }
