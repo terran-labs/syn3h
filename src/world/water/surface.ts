@@ -114,8 +114,8 @@ export const RIPPLE_LENGTH = 1.5
 const RIPPLE_SEEN: readonly [number, number] = [15, 55]
 /** Radians of the fine noise's bend on each ripple's phase (alternate signs per ripple). */
 const RIPPLE_BREAK = 3.2
-/** Sine of the view's angle to the surface over which fine ripples go from sheen only to seen. */
-const RIPPLE_GRAZING: readonly [number, number] = [0.12, 0.35]
+/** Pixel footprints per wavelength over which a fine ripple goes from sheen only to drawn. */
+const RIPPLE_FOOTPRINTS: readonly [number, number] = [6, 16]
 /** Chop longer than this also moves the vertices near the camera (visual only). */
 const DETAIL_GEOMETRY_LENGTH = 2
 /**
@@ -495,10 +495,13 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
         const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.5).add(patch.mul(0.5)))
         // Ripples are seen one by one only near the camera (RIPPLE_SEEN): further out their slope
         // still counts, as roughness, so the water keeps its sheen without printing their pattern.
-        // And only from above: at a grazing view a ripple's crests sit at the pixel limit along the
-        // view and beat into rows through the sun's path (the low-sun frames), while real short
-        // waves at grazing angles hide behind one another. There, too, their slope is roughness.
-        const rippleSeen = smoothstep(RIPPLE_SEEN[1], RIPPLE_SEEN[0], dist).mul(smoothstep(RIPPLE_GRAZING[0], RIPPLE_GRAZING[1], abs(bentGrazing(p, cameraPosition))))
+        // And only with pixels to spare: a ripple close to the pixel limit along the view beats with
+        // its neighbours into rows through a low sun's path (the low-sun frames). So ripples need
+        // more footprints per wavelength than the rest (RIPPLE_FOOTPRINTS). By footprint, not by
+        // view angle: a low camera at the shore is grazing everywhere, yet the ripples a few
+        // metres away are many pixels long and stay drawn; the same angle at 40 m fades them.
+        const rippleSeen = smoothstep(RIPPLE_SEEN[1], RIPPLE_SEEN[0], dist)
+        const rippleResolved = (length: number) => smoothstep(footprint.mul(RIPPLE_FOOTPRINTS[0]), footprint.mul(RIPPLE_FOOTPRINTS[1]), float(length))
         // Glitter: with distance, the share of each wave's slope kept as a sharp facet; the rest
         // roughens (filteredRoughness), so the middle distance is a sheen with sparse glints. Near
         // the camera every facet is sharp: there the ripples are seen one by one.
@@ -517,7 +520,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
           let arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(n1.mul(WARP[i][0] * bend)).add(n2.mul(WARP[i][1] * bend))
           if (ripple) arg = arg.add(n3.mul(RIPPLE_BREAK * (i % 2 ? -1 : 1)))
           const c = cos(arg)
-          add(c.mul(dx), c.mul(dz), length, (ripple ? rippleShare : chopShare).mul(steepness), resolved(length).mul(facet).mul(ripple ? rippleSeen : float(1)))
+          add(c.mul(dx), c.mul(dz), length, (ripple ? rippleShare : chopShare).mul(steepness), resolved(length).mul(facet).mul(ripple ? rippleSeen.mul(rippleResolved(length)) : float(1)))
         })
         // A little noise in the slope near the camera; its features are about 3 m across (1 / 0.3).
         add(n1, n2, 3, near.mul(SLOPE_NOISE), resolved(3))

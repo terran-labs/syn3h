@@ -172,7 +172,9 @@ async function pose(page, view) {
       // afternoon hour at which it first stands under 10 degrees.
       const sunDir = () => { let d = null; s.game.scene.traverse((o) => { if (!d && o.isDirectionalLight) { o.updateMatrixWorld(); o.target.updateMatrixWorld(); d = o.getWorldPosition(o.position.clone()).sub(o.target.getWorldPosition(o.position.clone())).normalize() } }); return d }
       let dir = null
-      const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      // Several frames per step: the light follows the hour a frame or two late, and a search that
+      // reads it too early overshoots into dusk.
+      const frame = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r)) }
       for (let h = 14; h <= 19; h += 0.1) { s.params.set('sun.timeOfDay', h); await frame(); dir = sunDir(); if (dir && dir.y < Math.sin((10 * Math.PI) / 180)) { window.wlSunHour = h; break } }
       const az = dir ? Math.atan2(dir.z, dir.x) : 0
       from = new V(at.x, sea + 4, at.z); look = new V(at.x + Math.cos(az) * 100, sea - 2, at.z + Math.sin(az) * 100)
