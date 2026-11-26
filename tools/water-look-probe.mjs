@@ -31,7 +31,7 @@ const page = await (await browser.newContext({ viewport: { width: w, height: h }
 const errs = []; page.on('pageerror', (e) => errs.push(e.message))
 await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=hovercraft&planet=alpine&seed=4&room=pr${Date.now().toString(36)}&daydream=0`)
 await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 240000 })
-await page.evaluate(({ level, pose }) => {
+await page.evaluate(async ({ level, pose }) => {
   const s = window.mira; s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 11); s.params.set('sun.dayLength', 0)
   const q = s.game.quality; q.setAuto?.(false); q.setLevel(level)
   for (const el of document.body.querySelectorAll('*')) if (el !== s.game.canvas && !el.contains(s.game.canvas)) el.style.visibility = 'hidden'
@@ -53,9 +53,19 @@ await page.evaluate(({ level, pose }) => {
   s.player.teleport({ x: spot.x + 600, y: t.heightAt(spot.x + 600, spot.z) + 3, z: spot.z }, 0)
   if (pose === 'shore') { const hd = spot.land + Math.PI / 2 - 0.35; s.camera.setCinematicPose(new V(spot.x, y + 3, spot.z), new V(spot.x + Math.cos(hd) * 100, y - 6, spot.z + Math.sin(hd) * 100), 60) }
   else if (pose === 'open') s.camera.setCinematicPose(new V(spot.x, y + 60, spot.z), new V(spot.x + 400, y + 5, spot.z + 120), 60)
+  else if (pose === 'glitter') {
+    // Low sun ahead: the afternoon hour at which it first stands under 10 degrees.
+    const sunDir = () => { let d = null; s.game.scene.traverse((o) => { if (!d && o.isDirectionalLight) { o.updateMatrixWorld(); o.target.updateMatrixWorld(); d = o.getWorldPosition(o.position.clone()).sub(o.target.getWorldPosition(o.position.clone())).normalize() } }); return d }
+    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    let dir = null
+    for (let hr = 14; hr <= 19; hr += 0.1) { s.params.set('sun.timeOfDay', hr); await frame(); dir = sunDir(); if (dir && dir.y < Math.sin((10 * Math.PI) / 180)) break }
+    const az = Math.atan2(dir.z, dir.x)
+    s.camera.setCinematicPose(new V(spot.x, y + 4, spot.z), new V(spot.x + Math.cos(az) * 100, y - 2, spot.z + Math.sin(az) * 100), 60)
+  }
   else s.camera.setCinematicPose(new V(spot.x, y + 3, spot.z), new V(spot.x + 100, y - 8, spot.z + 20), 60)
 }, { level, pose })
 await page.waitForTimeout(8000)
+
 for (const [name, set] of sets) {
   const saved = await page.evaluate((set) => { const p = window.mira.params, old = {}; for (const [k, v] of Object.entries(set)) { old[k] = p.get(k).value; p.set(k, v) } return old }, set)
   await page.waitForTimeout(2500)

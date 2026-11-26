@@ -112,6 +112,10 @@ const WARP: readonly [number, number][] = [[1.1, 0.6], [0.7, 1.6], [2.1, -0.9], 
 export const RIPPLE_LENGTH = 1.5
 /** Metres from the camera over which fine ripples go from seen one by one to sheen only. */
 const RIPPLE_SEEN: readonly [number, number] = [15, 55]
+/** Radians of the fine noise's bend on each ripple's phase (alternate signs per ripple). */
+const RIPPLE_BREAK = 3.2
+/** Sine of the view's angle to the surface over which fine ripples go from sheen only to seen. */
+const RIPPLE_GRAZING: readonly [number, number] = [0.12, 0.35]
 /** Chop longer than this also moves the vertices near the camera (visual only). */
 const DETAIL_GEOMETRY_LENGTH = 2
 /**
@@ -161,6 +165,9 @@ export function filteredRoughness(base: THREE.Node<'float'>, lost: THREE.Node<'f
   return a0.mul(a0).add(lost).sqrt().sqrt().min(1)
 }
 
+/** Specular anti-aliasing: the screen-space filter's variance (a pixel-wide Gaussian) and the most it may add to alpha squared. */
+const SPECULAR_AA_VARIANCE = 0.1
+const SPECULAR_AA_MAX = 0.08
 /** Share of the way from the shallow to the deep colour the lagoon's middle band sits. */
 const LAGOON_BAND = 0.45
 /** Peak slope of the noise ripple near the camera on the sea and still water. */
@@ -477,6 +484,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       If(detailOn.greaterThan(0.5), () => {
         const q = vec3(p.x.mul(0.3), p.z.mul(0.3), drift)
         const n1 = mx_noise_float(q), n2 = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
+        // A finer noise (features about 0.6 m) for the ripples alone: it breaks their crests into
+        // short crestlets, so four ripple waves can never read as rows, even with the sun behind them.
+        const n3 = mx_noise_float(vec3(p.x.mul(1.7), p.z.mul(1.7), drift.mul(1.6).add(31.7)))
         nx.assign(n1)
         const patch = patchAt(p.xz)
         const still = mode === 'still' ? 0.45 : 1
@@ -485,7 +495,10 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
         const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.5).add(patch.mul(0.5)))
         // Ripples are seen one by one only near the camera (RIPPLE_SEEN): further out their slope
         // still counts, as roughness, so the water keeps its sheen without printing their pattern.
-        const rippleSeen = smoothstep(RIPPLE_SEEN[1], RIPPLE_SEEN[0], dist)
+        // And only from above: at a grazing view a ripple's crests sit at the pixel limit along the
+        // view and beat into rows through the sun's path (the low-sun frames), while real short
+        // waves at grazing angles hide behind one another. There, too, their slope is roughness.
+        const rippleSeen = smoothstep(RIPPLE_SEEN[1], RIPPLE_SEEN[0], dist).mul(smoothstep(RIPPLE_GRAZING[0], RIPPLE_GRAZING[1], abs(bentGrazing(p, cameraPosition))))
         // Glitter: with distance, the share of each wave's slope kept as a sharp facet; the rest
         // roughens (filteredRoughness), so the middle distance is a sheen with sparse glints. Near
         // the camera every facet is sharp: there the ripples are seen one by one.
@@ -500,9 +513,10 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
           const dx = Math.cos(heading), dz = Math.sin(heading)
           // The shorter the wave, the harder its phase is bent, so short crossings never settle into a grid.
           const bend = Math.sqrt(CHOP[0][0] / length)
-          const arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(n1.mul(WARP[i][0] * bend)).add(n2.mul(WARP[i][1] * bend))
-          const c = cos(arg)
           const ripple = length < RIPPLE_LENGTH
+          let arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(n1.mul(WARP[i][0] * bend)).add(n2.mul(WARP[i][1] * bend))
+          if (ripple) arg = arg.add(n3.mul(RIPPLE_BREAK * (i % 2 ? -1 : 1)))
+          const c = cos(arg)
           add(c.mul(dx), c.mul(dz), length, (ripple ? rippleShare : chopShare).mul(steepness), resolved(length).mul(facet).mul(ripple ? rippleSeen : float(1)))
         })
         // A little noise in the slope near the camera; its features are about 3 m across (1 / 0.3).
@@ -638,7 +652,14 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // a mirror would sparkle and alias.
   // Seen from below the surface is not a sky mirror (Snell's window above is the sky): fully
   // rough there, so the full-strength reflection capture cannot light the underside.
-  const glassy = filteredRoughness(float(0.05).add(foam.mul(0.6)).add(abs(rx).mul(0.03)), lost)
+  // Specular anti-aliasing (Kaplanyan and Tokuyoshi's normal-variance kernel): where the normal
+  // turns quickly from one pixel to the next, a sharp highlight would alias into rows even though
+  // each wave is resolved (the Foreman, on the low-sun frames: "a scanline pattern"). The normal's
+  // screen-space variance widens the highlight by exactly what one pixel spans, capped.
+  const upNormal = normalize(vec3(sx.negate(), 1, sz.negate()))
+  const nx = dFdx(upNormal), ny = dFdy(upNormal)
+  const kernel = nx.dot(nx).add(ny.dot(ny)).mul(SPECULAR_AA_VARIANCE * 2).min(SPECULAR_AA_MAX)
+  const glassy = filteredRoughness(float(0.05).add(foam.mul(0.6)).add(abs(rx).mul(0.03)), lost.add(kernel))
   material.roughnessNode = mix(float(1), glassy, faceDirection.mul(0.5).add(0.5))
   // Roughness alone still lets the capture light the underside as a blurred blue sky. Under
   // water the surface outside Snell's window reflects the dark water below, so occlude nearly
