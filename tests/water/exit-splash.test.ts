@@ -128,4 +128,31 @@ describe('exit splash, as the game sends it', () => {
     expect(sim.entries).toBe(1)
     expect(sim.exits).toBe(0)
   })
+
+  it('a hull wading and climbing a beach throws no entry splash', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    // Already in: its bottom never clears the water while it wades at speed and its top bobs.
+    sent(sim, [...line(-.2, -.2, .5), ...Array.from({ length: 180 }, (_, i) => -.2 + .25 * Math.sin(i / 6)), ...line(-.2, .4, 1)], { forward: 12 })
+    expect(sim.entries).toBe(0)
+  })
+
+  it('a hull that sinks and half surfaces again throws no entry splash', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    sent(sim, [...line(-.2, -.2, .3), ...line(-.2, -.9, 1), ...line(-.9, -.1, 1), ...line(-.1, -.1, 1)], { forward: 12 })
+    expect(sim.entries).toBe(0)
+  })
+
+  it('a craft hovering clear of the water throws no entry splash however its envelope dips', () => {
+    const sim = new SpraySim(sprayCapacity(2), flat)
+    // Its real bottom 0.3 to 0.9 m clear; the fraction sent says wet (WaterEffects' envelope round
+    // the body reaches 0.5 m below its centre).
+    let presence = 1
+    for (let i = 0; i < 300; i++) {
+      const y = 1.2 + .3 * Math.sin(i / 8), h = 1, top = y + h / 2
+      presence = easeWake(presence, wakePresence(top, h, 0), DT)
+      sim.step(DT)
+      sim.vehicle('a', i * .2, 0, 0, 12, .3 * Math.cos(i / 8) * 60 / 8, 0, submergedFraction(y - 1.6, y + .5, 0) * presence, DT, 1, { ball: 0, under: -top, height: h })
+    }
+    expect(sim.entries).toBe(0)
+  })
 })

@@ -8,8 +8,8 @@
  * Archipelago 4, High, no bots, interface hidden, offline; open water over 12 m deep. Scenes:
  *   zorb-deep     the ball let go 8 m under, rising fast: the breach, the largest splash.
  *   zorb-shallow  the same from 2.5 m.
- *   zorb-bob      the ball let go at rest with its centre at the surface (its top never under):
- *                 it bobs and must throw no exit splash.
+ *   zorb-bob      the ball let down onto the water at rest and left 3 s to settle before the
+ *                 count starts: it bobs, and must throw no splash at all.
  *   <kind>-enter  dropped in at speed, 10 degrees down from 4 m up.
  *   <kind>-exit   let go 3 m under, moving forward and up at speed.
  *   buggy-shore   driven (towed at 6 m/s) out of 1 m of water up a beach: its top never goes
@@ -108,7 +108,7 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
     }
     // Depth is the ball's top, or the body's centre, under the still surface.
     const r = b.zorbed ? b.zorb.radius : 0
-    b.teleport({ x: spot.x - 12, y: depth === 'bob' ? spot.surface : spot.surface - depth - r, z: spot.z }, Math.PI / 2)
+    b.teleport({ x: spot.x - 12, y: depth === 'bob' ? spot.surface + r : spot.surface - depth - r, z: spot.z }, Math.PI / 2)
     b.body.setLinvel({ x: forward, y: up, z: 0 }, true); b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
     const V = s.game.camera.position.constructor
     s.camera.setCinematicPose(new V(spot.x - 4, spot.surface + 5, spot.z + 22), new V(spot.x - 4, spot.surface + 1.5, spot.z))
@@ -116,6 +116,10 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
     return { entries: fx.spray.sim?.entries ?? 0, exits: fx.spray.sim?.exits ?? 0 }
   }, { spot, depth, forward, up })
   if (before.error) { errors.push(`${tag}: ${before.error}`); await page.close(); continue }
+  if (depth === 'bob') {
+    await page.waitForTimeout(3000)
+    Object.assign(before, await page.evaluate(() => { const sim = window.__fx.spray.sim; return { entries: sim?.entries ?? 0, exits: sim?.exits ?? 0 } }))
+  }
   if (depth === 'shore') {
     // Let the world at the beach arrive, then start the tow.
     await page.waitForTimeout(2500)

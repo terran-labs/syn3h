@@ -75,6 +75,12 @@ const EXIT_OUT = .5
  * surfacing craft's wake back in) is not taken for an entry, unless the craft is falling back in.
  */
 const EXIT_QUIET = .6
+/**
+ * With the craft's depth known: an entry needs its bottom to have been clear of the surface this
+ * recently (s). The fraction the caller sends also climbs while a craft is in the water (its wake
+ * easing back in as it surfaces, the envelope round a hovering jet dipping), which is no entry.
+ */
+const ENTRY_CLEAR = .5
 /** Buggy mass and half beam, the reference an entry or exit is scaled against. */
 const REF_MASS = 30, REF_BEAM = 1.2
 
@@ -169,7 +175,7 @@ export function splashShape(impact: number): SplashShape {
  * on the water than the tier has slots): kept by id, so it neither splashes again on getting a
  * slot back nor misses coming out.
  */
-type Crossing = Pick<VehicleState, 'seen' | 'submerged' | 'x' | 'z' | 'depth' | 'deepest' | 'under' | 'exitAt'>
+type Crossing = Pick<VehicleState, 'seen' | 'submerged' | 'x' | 'z' | 'depth' | 'deepest' | 'under' | 'exitAt' | 'clearAt'>
 interface VehicleState {
   slot: number; seen: number; submerged: number
   x: number; z: number; dirX: number; dirZ: number
@@ -185,6 +191,8 @@ interface VehicleState {
   under: boolean
   /** Simulation time of its last exit splash. */
   exitAt: number
+  /** Simulation time its bottom was last clear of the surface (with the depth known). */
+  clearAt: number
 }
 
 export class SpraySim {
@@ -351,13 +359,13 @@ export class SpraySim {
       for (const [k, v] of this.vehicles) if (v.seen < seen) { seen = v.seen; oldest = k }
       const evicted = this.vehicles.get(oldest!)!
       slot = evicted.slot; this.vehicles.delete(oldest!)
-      const { seen: was, submerged, x: ex, z: ez, depth, deepest, under, exitAt } = evicted
-      this.crossings.set(oldest!, { seen: was, submerged, x: ex, z: ez, depth, deepest, under, exitAt })
+      const { seen: was, submerged, x: ex, z: ez, depth, deepest, under, exitAt, clearAt } = evicted
+      this.crossings.set(oldest!, { seen: was, submerged, x: ex, z: ez, depth, deepest, under, exitAt, clearAt })
       for (let a = 0; a < ARMS; a++) { this.armCount[slot * ARMS + a] = 0; this.armHeadActive[slot * ARMS + a] = 0 }
     }
     this.slotUsed[slot] = 1
     this.armKind.fill(0, slot * ARMS, slot * ARMS + ARMS)
-    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0, depth: 0, deepest: 0, under: false, exitAt: -Infinity }
+    s = { slot, seen: this.time, submerged: 0, x, z, dirX: 0, dirZ: 1, bow: 0, tail: 0, mist: 0, touching: false, speed: 0, ball: 0, dry: 0, depth: 0, deepest: 0, under: false, exitAt: -Infinity, clearAt: -Infinity }
     const kept = this.crossings.get(id)
     if (kept) { Object.assign(s, kept, { seen: this.time }); this.crossings.delete(id) }
     this.vehicles.set(id, s)
@@ -385,7 +393,11 @@ export class SpraySim {
     // whole envelope in a low hop but is an entry all the same.
     // Not while coming up from under (one exit splash, not an entry too), unless falling back in.
     const surfacing = s.under || (this.time - s.exitAt < EXIT_QUIET && vy > -1.5)
-    const entering = !surfacing && (touchdown || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15))))
+    const depthKnown = Number.isFinite(shape.under) && Number.isFinite(shape.height) && shape.height! > 0
+    if (depthKnown && shape.under! + shape.height! < 0) s.clearAt = this.time
+    // In: its bottom clear of the water a moment ago and in it now.
+    const wasClear = !depthKnown || (this.time - s.clearAt < ENTRY_CLEAR && shape.under! + shape.height! >= 0)
+    const entering = !surfacing && (touchdown || wasClear) && (touchdown || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15))))
     s.seen = this.time; s.speed = speed
     // A trail joins points laid while the ball stayed on the water; a skimming ball that lifts
     // for a moment (under SKIM_GAP) is still on it, a skip is not.
