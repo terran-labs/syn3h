@@ -554,8 +554,7 @@ map remains visible until its replacement arrives. Leaving and reopening the gal
 the latest snapshot.
 
 `customMap.test.ts` checks unchanged recipe behavior, zero overrides, recipe immutability,
-sanitized terrain settings, cache refresh and stale responses. `custom-planet.mjs` checks
-Custom entry and updated map uploads in Chrome and WebKit.
+sanitized terrain settings, cache refresh and stale responses.
 
 The map is an approximation of the island on a globe, not an exact view of the whole
 wrapping world. Existing painter limits include shoreline shading based on absolute
