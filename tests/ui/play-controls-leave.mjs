@@ -24,7 +24,7 @@ const shown = (page, selector) => page.evaluate(sel => [...document.querySelecto
   const r = el.getBoundingClientRect()
   if (!r.width || !r.height || !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) return []
   const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
-  return [{ name: (el.getAttribute('class') ?? el.tagName).split(' ')[0], tappable: !!hit && (hit === el || el.contains(hit)), glass: el.dataset.glassSurface ?? '' }]
+  return [{ name: (el.getAttribute('class') ?? el.tagName).split(' ')[0], action: el.dataset.action, tappable: !!hit && (hit === el || el.contains(hit)), glass: el.dataset.glassSurface ?? '' }]
 }), selector)
 /** In-play controls that still carry a shader-drawn face, shown or not. */
 const faces = page => page.evaluate(sel => [...document.querySelectorAll(sel)].filter(el => el.dataset.glassSurface === 'shader').map(el => (el.getAttribute('class') ?? el.tagName).split(' ')[0]), IN_PLAY)
@@ -45,7 +45,8 @@ for (const [engine, launch] of [['webkit', () => webkit.launch()], ['chromium', 
 
         const play = await shown(page, IN_PLAY)
         assert.ok(play.some(c => c.name === 'hud-navigation' && c.tappable), `${label}: the Panels control is tappable in play: ${JSON.stringify(play)}`)
-        assert.ok(play.filter(c => c.name !== 'hud-navigation' && c.name !== 'shell-menu-button').length >= 4, `${label}: the thumb buttons show in play: ${JSON.stringify(play)}`)
+        assert.ok(play.some(c => c.action === 'fire' && c.tappable), `${label}: the gear action is tappable in play: ${JSON.stringify(play)}`)
+        assert.ok(play.some(c => (c.action === 'brakes' || c.action === 'flip') && c.tappable), `${label}: braking or righting the vehicle is tappable in play: ${JSON.stringify(play)}`)
         assert.deepEqual(await shown(page, LOBBY), [], `${label}: no lobby control in play`)
 
         if (exit === 'panels') {

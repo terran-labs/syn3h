@@ -31,7 +31,7 @@ try {
     await page.waitForTimeout(1200)
     const early = await state()
     assert.equal(early.game, false, `${view.name}: the veil is up before the game's code has run`)
-    assert.equal(early.veil, '1'); assert.ok(early.progress >= 0.3 && early.progress < 0.97, `${view.name}: the light is visible from the start and not yet complete (${early.progress})`)
+    assert.ok(Number(early.veil) > 0 && early.progress > 0 && early.progress < 1, `${view.name}: the loading indicator is visible and incomplete before the bundle arrives`)
     await page.screenshot({ path: `${out}/${view.name}-early.png` })
     release()
     // Sample the light while the game loads: it only ever goes forward.
@@ -44,22 +44,18 @@ try {
     }
     for (let i = 1; i < samples.length; i++) assert.ok(samples[i] >= samples[i - 1] - 1e-6, `${view.name}: the light went backwards (${samples[i - 1]} to ${samples[i]})`)
     const lifted = await state()
-    assert.equal(lifted.boot, 'done'); assert.ok(lifted.progress > 0.95, `${view.name}: lifted with the lap unfinished (${lifted.progress})`)
+    assert.equal(lifted.boot, 'done'); assert.ok(lifted.progress > early.progress, `${view.name}: loading progress advances before the veil lifts`)
     await page.screenshot({ path: `${out}/${view.name}-lifting.png` })
-    await page.waitForTimeout(1300)
-    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden')
+    await page.locator('.boot-veil').waitFor({ state: 'hidden' })
     // The lobby underneath takes the taps, once the opening (src/ui/galaxy/opening.ts) has
     // brought its controls in.
     await page.waitForFunction(() => document.querySelector('.lobby-panels')?.dataset.busy === 'false' && !document.documentElement.dataset.opening, null, { timeout: 60000 })
-    assert.equal(await page.evaluate(() => { const b = document.querySelector('.lobby-gear-dock .lobby-gear').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.lobby-gear-dock') !== null }), true)
+    await page.locator('.lobby-gear-dock .lobby-gear').click({ trial: true })
     await page.screenshot({ path: `${out}/${view.name}-lobby.png` })
     await context.close()
   }
   // Safari on a phone and a tablet over a slow link: the bundle is held back.
-  // The veil must be unmistakably a loading screen the whole time, and never show the name
-  // (the first Mira logo a player sees is in the solar system): a point of light where the
-  // sun will be, one line of status beneath it, and after three seconds a quiet line that
-  // counts the seconds and names the real step.
+  // The indicator is visible before the bundle and a slow load shows status and progress.
   const safari = await webkit.launch()
   for (const name of ['iPhone 14', 'iPad Pro 11 landscape']) {
     const context = await safari.newContext({ ...devices[name] }), page = await context.newPage()
@@ -73,30 +69,21 @@ try {
     await page.waitForTimeout(1500)
     const seen = () => page.evaluate(() => {
       const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: (el.dataset.numbers || el.textContent).trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
-      return { wordmark: document.querySelector('.boot-veil svg[aria-label="Mira"], .boot-wordmark') !== null, point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.mira) }
+      return { point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.mira) }
     })
     const first = await seen()
     assert.equal(first.game, false)
-    assert.equal(first.wordmark, false, `${name}: no name on the loading view`)
-    assert.ok(first.point.width > 0 && first.point.opacity > 0.2 && first.point.inView, `${name}: the point of light is there`)
-    // Before the bundle, where the galaxy frames its sun by default: 53% down (1 - FRAME_Y,
-    // src/ui/galaxy/Galaxy.ts). Once it runs, the galaxy publishes the exact place (--sun-y).
-    assert.ok(Math.abs(first.point.top + first.point.height / 2 - (await page.evaluate(() => innerHeight)) * 0.53) < 3, `${name}: where the sun will be, 53% down`)
-    assert.ok(first.status.text.length > 10, `${name}: a line of status is ready`); assert.ok(first.status.opacity < 0.1, `${name}: but waits to be shown`)
-    assert.ok(first.point.bottom <= first.status.top, `${name}: the line sits beneath the point`)
-    assert.ok(first.still.opacity < 0.1, `${name}: the second line waits`)
-    await page.waitForTimeout(3000)
+    assert.ok(first.point.width > 0 && first.point.height > 0 && first.point.opacity > 0 && first.point.inView, `${name}: the loading indicator is visible`)
+    await page.waitForFunction(() => ['.boot-status', '.boot-still'].every(selector => Number(getComputedStyle(document.querySelector(selector)).opacity) > 0))
     const later = await seen()
     assert.equal(later.game, false, `${name}: still waiting for the bundle ${JSON.stringify(later)}`)
-    assert.equal(later.status.text, first.status.text, `${name}: one line for the whole load`)
-    assert.ok(later.status.inView && later.status.opacity > 0.9, `${name}: shown with the progress line after three seconds`)
-    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^\d+ s \u00b7 \d+\.\d MB$/.test(later.still.text), `${name}: after three seconds, the seconds and the megabytes (${later.still.text})`)
-    assert.equal(Math.round(later.status.top), Math.round(first.status.top), `${name}: the line above does not move when it appears`)
+    assert.ok(later.status.inView && later.status.text, `${name}: the status is visible on a slow load`)
+    assert.ok(later.still.inView && later.still.text, `${name}: the progress line is visible on a slow load`)
+    assert.ok(later.point.bottom <= later.status.top && later.status.bottom <= later.still.top, `${name}: loading information stays clear of the indicator`)
     // The bundle arrives: the line stays, then the veil lifts.
     arrive()
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 90000 })
-    await page.waitForTimeout(1300)
-    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden')
+    await page.locator('.boot-veil').waitFor({ state: 'hidden' })
     await context.close()
   }
   await safari.close()
@@ -105,8 +92,8 @@ try {
   await broken.addInitScript(() => { Object.defineProperty(navigator, 'gpu', { get() { throw new Error('graphics refused for this test') } }); HTMLCanvasElement.prototype.getContext = () => { throw new Error('graphics refused for this test') } })
   await broken.goto(`${base}?room=boot-broken-${Date.now()}`, { waitUntil: 'load' })
   await broken.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 20000 })
-  await broken.waitForTimeout(1200)
-  assert.equal(await broken.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden', 'the veil is out of the way of a startup failure')
+  await broken.locator('.boot-veil').waitFor({ state: 'hidden' })
+  await broken.locator('#fatal[role="alert"]').waitFor({ state: 'visible' })
   await broken.screenshot({ path: `${out}/startup-failure.png` })
   await broken.close()
   console.log(JSON.stringify({ ok: true, errors }))

@@ -11,6 +11,8 @@ import { serverUrl } from './lib/server.mjs'
 import { settledLobby, waitForState } from './stateWait.mjs'
 const origin = serverUrl('saved-worlds').replace(/\/$/, '')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
+const savedEntries = page => page.evaluate(() => JSON.parse(localStorage.getItem('mira.savedWorlds.v1')).entries)
+const visibleToast = page => page.locator('.shell-toast:not([hidden])').allTextContents()
 try {
   // The room server answers behind the dev server (its /presence), or there is nothing to test.
   let ready = false
@@ -32,7 +34,7 @@ try {
       shell.inspector.open = true
     })
     await page.locator('[data-wi=save-world]').dispatchEvent('click')
-    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('mira.savedWorlds.v1')).entries[0])
+    const [stored] = await savedEntries(page)
     assert.equal(stored.seed, 777); assert.equal(stored.world.values['terrain.treeCover'], 0)
     assert.ok(!Object.keys(stored.world.values).some(key => key.startsWith('audio.')))
     await page.reload(); await readyPage(page)
@@ -69,34 +71,43 @@ try {
     await page.locator('.wi-card[data-section="world"] .wi-head').click()
     const save = page.locator('[data-wi=save-world]')
     await save.scrollIntoViewIfNeeded(); await save.click()
-    const visibleStatus = async pattern => {
-      assert.match(await page.locator('.wi-status').textContent(), pattern)
-      assert.equal(await page.locator('.wi-status').evaluate(element => {
+    const visibleStatus = async () => {
+      const text = await page.locator('.wi-status').evaluate(element => {
         for (let node = element; node; node = node.parentElement) {
           const style = getComputedStyle(node)
-          if (node.hidden || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false
+          if (node.hidden || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return ''
         }
         const box = element.getBoundingClientRect()
-        return box.width > 0 && box.height > 0 && box.top < innerHeight && box.bottom > 0
-      }), true, 'save feedback is visibly rendered')
+        return box.width > 0 && box.height > 0 && box.top < innerHeight && box.bottom > 0 ? element.textContent.trim() : ''
+      })
+      assert.ok(text, 'save feedback is visibly rendered')
+      return text
     }
-    await visibleStatus(/already saved/)
+    const duplicateStatus = await visibleStatus()
+    assert.deepEqual(await savedEntries(page), [stored], 'saving the same world does not add or replace a bookmark')
     assert.equal(await page.evaluate(() => window.mira.game.input.suspended), false)
     await page.evaluate(() => window.mira.params.set('terrain.treeCover', 0.1))
     await save.focus(); await page.keyboard.down('Enter')
     assert.equal(await page.evaluate(() => { window.mira.game.input.poll(); return window.mira.game.input.state.fire }), false)
-    await page.keyboard.up('Enter'); await visibleStatus(/World saved/)
+    await page.keyboard.up('Enter')
+    assert.notEqual(await visibleStatus(), duplicateStatus, 'saving a new snapshot gives different feedback from a duplicate')
+    assert.ok((await savedEntries(page)).some(entry => entry.world.values['terrain.treeCover'] === 0.1), 'Enter saves the changed snapshot')
     await page.evaluate(() => window.mira.params.set('terrain.treeCover', 0.2))
     const special = await page.evaluate(() => window.mira.game.input.state.special)
     await page.keyboard.down('Space')
     assert.equal(await page.evaluate(() => window.mira.game.input.state.special), special)
-    await page.keyboard.up('Space'); await visibleStatus(/World saved/)
+    await page.keyboard.up('Space')
+    const savedStatus = await visibleStatus()
+    const beforeFailure = await savedEntries(page)
+    assert.ok(beforeFailure.some(entry => entry.world.values['terrain.treeCover'] === 0.2), 'Space saves the changed snapshot')
     await page.evaluate(() => {
       window.mira.params.set('terrain.treeCover', 0.3)
       window.__setItem = Storage.prototype.setItem
       Storage.prototype.setItem = function(key, value) { if (key === 'mira.savedWorlds.v1') throw new Error('Storage test failure'); return window.__setItem.call(this, key, value) }
     })
-    await save.click(); await visibleStatus(/not saved.*Storage test failure/)
+    await save.click()
+    assert.notEqual(await visibleStatus(), savedStatus, 'failed storage gives different feedback from success')
+    assert.deepEqual(await savedEntries(page), beforeFailure, 'failed storage preserves the saved snapshots')
     await page.evaluate(() => { Storage.prototype.setItem = window.__setItem; document.activeElement.blur() })
     await page.keyboard.down('Enter')
     assert.equal(await page.evaluate(() => { window.mira.game.input.poll(); return window.mira.game.input.state.fire }), true)
@@ -122,10 +133,13 @@ try {
       await guest.waitForFunction(() => [...document.querySelectorAll('.saved-world-moon')].some(button => !button.hidden))
       await guest.screenshot({ path: 'tests/ui/artifacts/saved-worlds/phone-webkit.png' })
       await guest.emulateMedia({ reducedMotion: 'reduce' })
+      const [beforeJoin] = await visibleToast(guest)
       await guest.locator('.saved-world-moon').dispatchEvent('click')
       await guest.waitForFunction(() => window.miraNet?.connected)
-      await guest.waitForFunction(() => document.querySelector('.shell-toast').textContent.includes('current room'))
-      assert.equal(await guest.evaluate(() => window.mira.params.get('world.seed').value), 777)
+      await waitForState(guest, 'the authoritative room settings and visible feedback', previous => {
+        const text = document.querySelector('.shell-toast:not([hidden])')?.textContent.trim()
+        return window.mira.params.get('world.seed').value === 777 && text && text !== previous
+      }, beforeJoin?.trim(), 30)
       await page.evaluate(() => window.miraNet.setLocked(true))
       await guest.waitForFunction(() => !window.miraNet.canEditWorld)
       await guest.evaluate(() => { window.mira.shell.openMenu(); window.mira.shell.inspector.open = true })
@@ -149,15 +163,20 @@ try {
       // Away from the saved world first: a tap on the world a player is already in only returns
       // to it (Shell.tapWorld), and this needs a drop.
       shell.openMenu(); shell.stopAttract(); params.set('world.seed', 888); window.__apply = params.applySnapshot
-      params.applySnapshot = () => { throw new Error('Saved restore test failure') }
+      window.__restoreAttempted = false
+      params.applySnapshot = () => { window.__restoreAttempted = true; throw new Error('Saved restore test failure') }
     })
     // Back in the lobby: a tap during its return flight is ignored, so wait for it to settle.
     await settledLobby(page)
     const moon = await page.locator('.saved-world-moon').boundingBox()
+    const [beforeRestore] = await visibleToast(page)
     await page.mouse.click(moon.x + moon.width / 2, moon.y + moon.height / 2)
     // The failed restore ends the drop at once (too quickly to catch it under way): the player is
     // told, and nothing is left held.
-    await waitForState(page, 'the failed drop to recover and say so', () => !window.mira.shell.dropping && !window.mira.shell.savedEntering && /interrupted/.test(document.querySelector('.shell-toast')?.textContent ?? ''), undefined, 30)
+    await waitForState(page, 'the failed drop to recover and say so', previous => {
+      const text = document.querySelector('.shell-toast:not([hidden])')?.textContent.trim()
+      return window.__restoreAttempted && !window.mira.shell.dropping && !window.mira.shell.savedEntering && text && text !== previous
+    }, beforeRestore?.trim(), 30)
     assert.equal(await page.evaluate(() => window.mira.shell.galaxy.savedTarget), false)
     assert.equal(await page.evaluate(() => window.mira.game.input.suspended), false)
     assert.equal(await page.evaluate(() => JSON.stringify(window.mira.shell.galaxy.options.worlds.find(world => world.id === 'custom'))), custom)
