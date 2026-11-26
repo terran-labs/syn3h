@@ -108,6 +108,7 @@ try {
     await page.waitForTimeout(600)
     const shownLines = await page.locator('.chat-strip .chat-line').evaluateAll(ls => ls.filter(l => getComputedStyle(l).display !== 'none').length)
     assert.equal(shownLines, 1, `${size}: one chat line at a time on a phone`)
+    await page.waitForFunction(() => { const el = document.querySelector('.spawn-help'), s = getComputedStyle(el); return el.checkVisibility({ visibilityProperty: true }) && Number(s.opacity) === 1 && !el.getAnimations().some(a => a.playState === 'running') }, null, { timeout: 20000 })
     const first = await page.locator('.spawn-help [data-tip]').first().innerText()
     assert.match(first, /THR \+/, `${size}: the tips name the on-screen buttons (${first})`)
     const pill = await page.locator('.hud-navigation').boundingBox(), help = await page.locator('.spawn-help').boundingBox()
