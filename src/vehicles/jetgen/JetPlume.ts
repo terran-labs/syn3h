@@ -16,10 +16,10 @@ export const jetPlumeBrightness = defineParam<number>({ id: 'jet.plumeBrightness
 /** How far down the cone the white-hot root reaches, 0 none to 1 a third of its length. */
 export const jetPlumeHeat = defineParam<number>({ id: 'jet.plumeHeat', label: 'Thrust plume white-hot root', group: 'Jet', scope: 'world', default: .35, min: 0, max: 1, step: .05 })
 /**
- * Hue of the shockwave cones, degrees on the colour wheel: 268 is the original Syn3h's purple
+ * Hue of the shockwave cones, degrees on the colour wheel: 252 renders as the original Syn3h's violet after tone mapping
  * (the owner: "more purple shockwave cones than just a white triangle").
  */
-export const jetPlumeHue = defineParam<number>({ id: 'jet.plumeHue', label: 'Thrust plume colour (hue)', group: 'Jet', scope: 'world', default: 268, min: 0, max: 360, step: 1 })
+export const jetPlumeHue = defineParam<number>({ id: 'jet.plumeHue', label: 'Thrust plume colour (hue)', group: 'Jet', scope: 'world', default: 252, min: 0, max: 360, step: 1 })
 
 /** Where a jet's thrust leaves it: rear nozzles (exhaust runs toward +Z) and belly ports (downward). */
 export interface PlumeFittings {
@@ -38,6 +38,8 @@ const SHEATH_WIDTH = 1.8, SHEATH_LENGTH = .8
 let shared: THREE.Material | undefined
 /** How far a cone bends with its nozzle, as a share of the nozzle's angle. */
 const BEND = .5
+/** Scale of the added light, before jet.plumeBrightness. */
+const ADDED = 1.6
 
 /**
  * What makes one vehicle's exhaust its own, all of it per object: one material and one
@@ -93,7 +95,9 @@ function plumeMaterial(): THREE.Material {
     const rgb: N = clamp(abs(fract(look.x.add(dh / 360).add(vec3(0, 2 / 3, 1 / 3))).mul(6).sub(3)).sub(1), 0, 1)
     return rgb.sub(.5).mul(sat * (1 - Math.abs(2 * light - 1))).add(light)
   }
-  const core: N = hsl(0, 1, .55), shock: N = hsl(-14, .9, .72), deep: N = hsl(4, 1, .26), glow: N = hsl(10, 1, .48)
+  // Saturated and not too light: added light this bright clips blue first under tone mapping and
+  // turns pink, so the colours stay deep and the brightness comes from how much is added.
+  const core: N = hsl(0, 1, .5), shock: N = hsl(-10, 1, .6), deep: N = hsl(4, 1, .26), glow: N = hsl(8, 1, .45)
   const rear: N = float(1).sub(where.y), inner: N = float(1).sub(sheath)
   const length: N = mix(state.x, state.z, where.y).mul(lengthParam), strength: N = mix(state.y, state.w, where.y)
   const along: N = where.x
@@ -125,7 +129,7 @@ function plumeMaterial(): THREE.Material {
   material.blending = THREE.CustomBlending
   material.blendSrc = THREE.OneFactor; material.blendDst = THREE.OneMinusSrcAlphaFactor
   material.blendSrcAlpha = THREE.OneFactor; material.blendDstAlpha = THREE.OneMinusSrcAlphaFactor
-  const added: N = hot.mul(coreLight).mul(inner).add(vec3(glow).mul(sheathLight)).mul(3).mul(hotExposureNode())
+  const added: N = hot.mul(coreLight).mul(inner).add(vec3(glow).mul(sheathLight)).mul(ADDED).mul(hotExposureNode())
   material.colorNode = vec3(deep).mul(coreAlpha).add(added)
   material.opacityNode = coreAlpha
   return shared = material
