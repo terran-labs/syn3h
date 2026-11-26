@@ -100,6 +100,7 @@ import { ReportSheet, chatOnPage } from './report/ReportSheet'
 import { REPORT_ICON } from './report/sheetHtml'
 import { Lessons, type TipInput, type TipLine } from './help/lessons'
 import { keyFor } from './help/bindings'
+import { keycap } from './keycap'
 import { controlTips } from './help/params'
 import './help/help.css'
 
@@ -2429,13 +2430,14 @@ export class Shell implements System {
       const row = document.createElement('div'); row.dataset.tip = line.id; row.classList.toggle('is-learned', line.learned)
       if (touch) { row.textContent = line.text; return row }
       for (const part of line.parts) {
-        if ('key' in part) { const key = document.createElement('kbd'); key.className = 'tip-key'; key.textContent = keyFor(part.key); row.append(key) }
+        // Keys as the shared keycap (keycap.ts), with a plain space after each, as the cap has no margin.
+        if ('key' in part) { row.append(keycap(keyFor(part.key)), ' ') }
         else row.append(`${part.text} `)
       }
       return row
     }))
     const foot = card.querySelector('small')!; foot.replaceChildren()
-    if (!touch) { const h = document.createElement('kbd'); h.className = 'tip-key'; h.textContent = keyFor('help'); foot.append(h, 'all controls') }
+    if (!touch) foot.append(keycap(keyFor('help')), ' all controls')
     card.classList.remove('is-full', 'is-hint', 'is-quiet', 'is-fading'); card.classList.add('is-tips'); card.hidden = false
   }
   /**

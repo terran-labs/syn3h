@@ -15,13 +15,6 @@
 /* A lesson just learned dims, then goes (lessons.ts LEARNED_SECONDS). */
 .mira-shell .spawn-help.is-tips .is-learned { opacity: .38; }
 .mira-shell .spawn-help.is-fading { opacity: 0; }
-/* Keys as keycaps. A local stand-in for the shared keycap (ui/keycaps, the HUD builder's), which
-   replaces this one rule when it lands. */
-:root .mira-shell .spawn-help kbd.tip-key {
-  display: inline-block; min-width: 1.7em; box-sizing: border-box; margin-right: .3em; padding: 0 .4em;
-  border: 1px solid rgb(255 255 255 / .5); border-bottom-width: 2px; border-radius: 5px; background: none;
-  font: 600 11.5px/1.55 'Barlow', sans-serif; letter-spacing: .04em; text-transform: none; text-align: center; color: var(--s3-ink, #fff);
-}
 
 /* Phones. The tips keep the touch slot's place on a phone on its side (beside the minimap,
    exploration.css). Upright they take the empty sky band between the gear list and the speed
