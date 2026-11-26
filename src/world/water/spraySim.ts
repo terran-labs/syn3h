@@ -422,7 +422,11 @@ export class SpraySim {
     // Every strip draws as a soft trail now: no crest lines.
     for (let a = 0; a < ARMS; a++) this.armKind[s.slot * ARMS + a] = 3
     s.ball = ball
-    if (sub > 0 && dt > 0) {
+    // Wholly under (its top below the surface, with the depth known) it touches no surface: no bow
+    // spray, no wake and no trail. A ball deep under still reports a sliver wetted, and laid a full
+    // trail strip on the water over it, a pale patch hiding what was under.
+    const wholeUnder = depthKnown && shape.under! > 0
+    if (sub > 0 && dt > 0 && !wholeUnder) {
       // Bow spray: rate grows with speed; a slow wade sheds only the odd drop.
       // Demand is measured before throttling; measuring after it would chase its own tail.
       const want = this.throttle

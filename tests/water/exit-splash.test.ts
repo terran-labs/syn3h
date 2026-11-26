@@ -177,3 +177,14 @@ describe('the Zorb breach', () => {
   })
 })
 
+describe('a craft wholly under', () => {
+  it('lays no wake or trail on the surface over it', () => {
+    for (const ball of [0, 2.5]) {
+      const sim = new SpraySim(sprayCapacity(2), flat)
+      // Moving along 4 m under at 6 m/s for 2 s, as the game sends it.
+      sent(sim, line(-4 - (ball || .6), -4 - (ball || .6), 2), { ball, forward: 6 })
+      expect(sim.wakePoints).toBe(0)
+    }
+  })
+})
+
