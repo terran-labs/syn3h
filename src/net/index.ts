@@ -7,6 +7,7 @@
  * works. Lasers, identity and the tag game ride on rare JSON messages.
  */
 import { clientFacts, reportCrash, reportEvent } from './analytics'
+import { deviceFacts } from './deviceFacts'
 import { longFrames } from '../core/longFrames'
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
@@ -549,6 +550,8 @@ export class NetClient implements System {
         // Launch analytics (src/net/analytics.ts): anonymous id, version, device, backend,
         // quality and the entry campaign tag. An older room ignores them.
         ...clientFacts(this.ctx.game.backend),
+        // Device and graphics capability (src/net/deviceFacts.ts): one device row per session.
+        dev: deviceFacts(this.ctx.game),
         ...(this.dropReport ? { drop: this.dropReport } : {}),
         // "Bots may play with me": only a no is sent; an older room ignores the field.
         ...(playWithMe.value ? {} : { play: false }),

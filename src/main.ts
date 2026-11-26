@@ -6,7 +6,9 @@
 import './core/creatorKey'
 import './core/legacyWindowNames'
 import { recipeIdForLook } from '../shared/recipes'
-import { installCrashReporting, reportCrash, reportEvent, setReportContext } from './net/analytics'
+import { installCrashReporting, installPerfReporting, reportCrash, reportEvent, setReportContext } from './net/analytics'
+import { perfFacts } from './net/deviceFacts'
+import { levelNumber, qualityLevel } from './core/quality'
 import { physicsLoadEvents } from './core/physicsWasm'
 import { initializeFrozenResources } from './core/frozenResources'
 import { ResumeSession, RESUME_KEY } from './core/resume'
@@ -367,7 +369,10 @@ async function main(): Promise<void> {
       return slot.current === previous ? null : slot.current
     }
   }
+  let perfFrom: { at: number; level: number } | null = null
   const join = () => {
+    // Launch analytics: how this page ran, measured from the first entry into a world.
+    if (!perfFrom) { perfFrom = { at: performance.now(), level: levelNumber(qualityLevel.value) }; installPerfReporting(() => perfFacts(game, perfFrom!.level, (performance.now() - perfFrom!.at) / 1000), () => (performance.now() - perfFrom!.at) / 1000) }
     // Also restore after returning from an already joined galaxy menu.
     let asked = shell.room || roomFromQuery(query)
     // A saved world is the player's own: it opens in a parallel universe of itself (net/parallel.ts),

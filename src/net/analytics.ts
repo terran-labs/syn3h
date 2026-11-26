@@ -13,6 +13,7 @@
  *   as a fallback), never awaited, never retried. A crash loop costs a handful of requests.
  */
 import { levelNumber, qualityLevel } from '../core/quality'
+import { deviceClassSync as deviceClass } from '../core/device'
 import { localStore, sessionStore } from '../core/safeStorage'
 import { cleanFrames, errorName, reduceMessage } from '../../shared/crashText'
 
@@ -67,12 +68,8 @@ export function entryRef(search: string = typeof location === 'undefined' ? '' :
 // Read at module load, before the lobby cleans the bar.
 const REF = entryRef()
 
-/** Phone, tablet or desktop, from the user agent and the pointer. */
-export function deviceClass(ua: string = typeof navigator === 'undefined' ? '' : navigator.userAgent, coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches, maxTouch = typeof navigator === 'undefined' ? 0 : navigator.maxTouchPoints): 'phone' | 'tablet' | 'desktop' {
-  if (/iPhone|iPod|Windows Phone|Android.+Mobile|Mobile.+Firefox/.test(ua)) return 'phone'
-  if (/iPad|Android|Tablet|Silk/.test(ua) || (/Macintosh/.test(ua) && maxTouch > 1)) return 'tablet'
-  return coarse && maxTouch > 1 ? 'tablet' : 'desktop'
-}
+/** Phone, tablet or desktop: the one rule, in src/core/device.ts (shared with the players card's labels). */
+export { deviceClass }
 
 export const buildVersion = (): string => {
   const b = typeof __MIRA_BUILD__ === 'string' ? __MIRA_BUILD__ : ''
@@ -176,6 +173,29 @@ export function reportCrash(kind: CrashKind, error: unknown): void {
     }), key)
   } catch { /* never affects play */ }
 }
+
+/**
+ * How the game ran this page (src/net/deviceFacts.ts perfFacts), posted at most once per page:
+ * the first time the page is hidden after at least PERF_AFTER_S seconds of play, or at
+ * pagehide. One row; nothing per frame.
+ */
+export const PERF_AFTER_S = 60
+let perfSent = false
+export function reportPerf(perf: object | null): void {
+  try {
+    if (perfSent || !perf) return
+    perfSent = true
+    const { key, body } = base(readContext())
+    send(JSON.stringify({ ...body, type: 'perf', perf }), key)
+  } catch { /* never affects play */ }
+}
+export function installPerfReporting(read: () => object | null, playedSeconds: () => number, target: Pick<Document, 'addEventListener' | 'visibilityState'> = document, win: Pick<Window, 'addEventListener'> = window): void {
+  const send = (force: boolean) => { if (!perfSent && (force || playedSeconds() >= PERF_AFTER_S)) reportPerf(read()) }
+  target.addEventListener('visibilitychange', () => { if (target.visibilityState === 'hidden') send(false) })
+  win.addEventListener('pagehide', () => send(playedSeconds() >= 10))
+}
+/** Tests. */
+export function resetPerfReport(): void { perfSent = false }
 
 let installed = false
 /** Uncaught errors and unhandled rejections, reported as crashes. Once per page. */
