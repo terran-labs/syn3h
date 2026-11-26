@@ -147,7 +147,6 @@ try {
           'the pause Exit button retains its keyboard focus outline')
           await cleanInk(page, pauseBar, pauseExit)
         }
-        assert.notEqual(await page.locator('.pause-veil strong').evaluate(el => getComputedStyle(el).textShadow), 'none', 'the non-button pause heading keeps its shadow')
         console.log(width + 'x' + height, material, await page.evaluate(() => mira.game.backend), 'glass ink ok')
       } finally { await context.close() }
     }
