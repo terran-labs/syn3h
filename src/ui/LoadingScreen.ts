@@ -37,6 +37,13 @@ const LIMIT_MS = 45000
  * plain step once per phase (phaseSteps) from this module's polite live region,
  * .mira-loading, never the ticking numbers.
  */
+/**
+ * Whether the veil's status line may show a general loading line now. Not during a move between
+ * rooms (html[data-room-move], src/ui/parallelUniverse.ts): then it says only the move's own lines,
+ * the move line, "This is taking a while." and the outcome, never a joke about gravity.
+ */
+export const mayShowLoadingLine = (root: Pick<Element, 'hasAttribute'>): boolean => !root.hasAttribute('data-room-move')
+
 export class LoadingScreen {
   /** The visually hidden live region: the plain phase, once per phase. */
   readonly element = document.createElement('section')
@@ -83,7 +90,7 @@ export class LoadingScreen {
     this.custom = usable.length > 0
     this.messages = this.custom ? usable : loadingMessages
     const status = this.status()
-    if (!this.done && status) status.textContent = pickLoadingLine({ general: this.messages, previous: status.textContent ?? undefined })
+    if (!this.done && status && mayShowLoadingLine(document.documentElement)) status.textContent = pickLoadingLine({ general: this.messages, previous: status.textContent ?? undefined })
   }
   update(detail?: LoadingDetail): void {
     if (!detail || typeof detail !== 'object') return
