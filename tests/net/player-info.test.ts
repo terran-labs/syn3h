@@ -10,7 +10,8 @@
  * - a banish list that silently drops a permanent banish when full;
  * - a host change announced twice, or without who had it;
  * - a bot trait outside 0..1 or unknown kept, or overrides lost when the host changes;
- * - a room-muted player's chat still relayed.
+ * - a room-muted player's chat still relayed, or the mute lifted by a reload or a fresh tab;
+ * - an eject of a dropped player (its seat held) leaving the seat for them to walk back into.
  */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { type Peer, Room } from '../../server/room'
@@ -137,6 +138,26 @@ describe('eject and banish', () => {
     expect(b.peer.last('ejected')).toMatchObject({ banish: 'none', seconds: 0 })
     expect(join('B', { aid: 'b'.repeat(32) }).peer.last('welcome')).toBeDefined()
   })
+  it('removes a held seat (dropped, waiting to rejoin): its secret then finds a fresh seat, or the banish', () => {
+    for (const banish of ['none', '5m'] as const) {
+      make('friends')
+      const host = join('Host'), token = 'h'.repeat(24), aid = 'e'.repeat(32)
+      const guest = join('Guest', { resume: token, aid })
+      room.disconnect(guest.peer)
+      // Held, not gone: nobody has been told it left.
+      expect(host.peer.all('leave').filter(m => m.id === guest.id)).toHaveLength(0); expect(room.heldCount).toBe(1)
+      send(host.peer, { type: 'eject', id: guest.id, banish })
+      expect(host.peer.all('leave').filter(m => m.id === guest.id)).toHaveLength(1)
+      expect(room.heldCount).toBe(0)
+      const back = join('Guest', { resume: token, aid })
+      if (banish === 'none') {
+        const id = back.peer.last('welcome')?.id
+        expect(id).toBeDefined(); expect(id).not.toBe(guest.id)
+      } else {
+        expect(back.peer.last('welcome')).toBeUndefined(); expect(back.peer.closed).toBe(CLOSE_EJECTED)
+      }
+    }
+  })
   it('keeps a permanent banish across the room emptying and being made again from storage', () => {
     make('friends')
     const host = join('Host'), guest = join('Guest', { aid: 'c'.repeat(32) })
@@ -184,6 +205,24 @@ describe('host changes and room mute', () => {
     send(guest.peer, { type: 'chat', text: 'hello' })
     expect(host.peer.all('chat').filter(m => m.from === guest.id)).toHaveLength(0)
     expect(guest.peer.last('chat-refused')?.reason).toBe('muted')
+  })
+  it('keeps a room mute through a reload and a fresh tab, and lifts it on unmute', () => {
+    make('friends')
+    const host = join('Host'), aid = 'f'.repeat(32), token = 'm'.repeat(24)
+    const guest = join('Guest', { aid, resume: token })
+    send(host.peer, { type: 'mute', id: guest.id, muted: true })
+    // A fresh tab: no rejoin secret, the same browser's anonymous id.
+    room.disconnect(guest.peer); clock += 60_000; (room as unknown as { tick?: (n: number) => void }).tick?.(clock)
+    const fresh = join('Guest', { aid })
+    expect(roster(host.peer, fresh.id)?.muted).toBe(true)
+    send(fresh.peer, { type: 'chat', text: 'hello' }); expect(fresh.peer.last('chat-refused')?.reason).toBe('muted')
+    // A reload of a tab with no anonymous id: its rejoin secret.
+    const other = join('Other', { resume: 'o'.repeat(24) })
+    send(host.peer, { type: 'mute', id: other.id, muted: true })
+    room.disconnect(other.peer); clock += 60_000; (room as unknown as { tick?: (n: number) => void }).tick?.(clock)
+    expect(roster(host.peer, join('Other', { resume: 'o'.repeat(24) }).id)?.muted).toBe(true)
+    send(host.peer, { type: 'mute', id: fresh.id, muted: false })
+    expect(roster(host.peer, join('Guest', { aid }).id)?.muted).toBeUndefined()
   })
 })
 

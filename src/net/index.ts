@@ -598,7 +598,13 @@ export class NetClient implements System {
     // 4003: the room gave this player's place to a newer connection with the same secret (a
     // duplicate tab, or this tab's own reconnect after it went quiet). Resuming would take the
     // place back, and two tabs that each go quiet at times would trade it forever: stop instead.
-    this.conn.onClose = (code) => { if (code === CLOSE_REPLACED) this.onReplaced(); else this.onDisconnect() }
+    // Ejected or banished: the 'ejected' message normally stops the connection first (onEjected).
+    // Should that message never be handled, the close code alone still stops it, never a retry loop.
+    this.conn.onClose = (code) => {
+      if (code === CLOSE_REPLACED) this.onReplaced()
+      else if (code === CLOSE_EJECTED) { this.conn.close(); try { this.onDisconnect(false) } finally { this.stoppedHere('You were ejected from this world.') } }
+      else this.onDisconnect()
+    }
 
     params.onChange((id, value, source) => this.onParamChange(id, value, source))
     // Registered after main.ts's listener, so this runs last and wins: our own slot, not 0.

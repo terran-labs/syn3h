@@ -1097,6 +1097,8 @@ export class Room {
     // an ordinary new player with none.
     player.token = token && ![...this.players.values()].some((p) => p.token === token) ? token : null
     player.page = player.token ? page : null
+    // Muted for everyone earlier in this room's life: a reload or a fresh tab does not lift it.
+    if (this.mutedKeys(player).some(k => this.roomMuted.has(k))) player.info.muted = true
     this.players.set(peer, player)
     this.scores[info.id] = 0
     this.beginSession(peer, player, msg)
@@ -1949,11 +1951,23 @@ export class Room {
     this.persist()
   }
 
+  /**
+   * Who is muted for everyone, by anonymous id and rejoin secret, so a reload (with or without a
+   * held place) or a fresh tab comes back muted. In memory for the room's life only, never
+   * stored: an emptied, hibernated or released room starts with nobody muted.
+   */
+  private readonly roomMuted = new Set<string>()
+  private mutedKeys(p: Player): string[] {
+    if (p.info.bot) return []
+    return [...(p.aid ? [`a:${p.aid}`] : []), ...(p.token ? [`t:${p.token}`] : [])]
+  }
+
   private onMute(actor: Player, id: unknown, muted: unknown): void {
     const target = typeof id === 'number' ? this.byId(id) ?? this.bots.get(id) : undefined
     if (!target || typeof muted !== 'boolean' || !canModerate(this.moderator(actor), this.moderator(target), this.kind()).ok) return
     if (Boolean(target.info.muted) === muted) return
     if (muted) target.info.muted = true; else delete target.info.muted
+    for (const key of this.mutedKeys(target)) if (muted) this.roomMuted.add(key); else this.roomMuted.delete(key)
     this.noteCreator('mute', actor)
     this.broadcast({ type: 'profile', player: target.info })
     this.broadcastGame('mute', actor.info.id, target.info.id, { muted })
