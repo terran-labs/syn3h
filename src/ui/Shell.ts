@@ -2055,6 +2055,12 @@ export class Shell implements System {
       },
       // A hovered or pressed world gets first claim on caption space.
       onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      // The lobby at rest: a planet breathing its glow lifts its caption the same way a hover does,
+      // by the same amount at its peak share (shell.css --caption-pulse), as in v26.11.2504.
+      onRest: pulses => worlds.forEach((world, i) => {
+        const chip = chips.get(world.id), value = (Math.round((pulses[i] ?? 0) * 50) / 50).toFixed(2)
+        if (chip && chip.style.getPropertyValue('--caption-pulse') !== value) chip.style.setProperty('--caption-pulse', value)
+      }),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -2082,6 +2088,8 @@ export class Shell implements System {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         if (!space) return
         const current = currentPlanet().id, short = Math.min(innerWidth, innerHeight)
+        // Quieter with distance, a step brighter for the world in play (v26.11.2504's strength).
+        const depths = places.filter(p => p.visible).map(p => p.depth), near = Math.min(...depths), far = Math.max(...depths)
         const sun = this.galaxy?.sunScreen
         const candidates = []
         const visible = new Set<string>()
@@ -2090,6 +2098,9 @@ export class Shell implements System {
           if (place.visible) visible.add(place.id)
           chip.classList.toggle('is-chosen', place.id === chosen)
           if (!place.visible || (chosen && place.id !== chosen) || place.labelled === false) continue
+          const depth = far > near ? (place.depth - near) / (far - near) : 0
+          const strength = (1 - 0.25 * depth + (place.id === current ? 0.2 : 0)).toFixed(2)
+          if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
           const scale = captionScale(place.radius, short)
           const cssScale = scale.toFixed(2)
           if (chip.style.getPropertyValue('--caption-scale') !== cssScale) chip.style.setProperty('--caption-scale', cssScale)
