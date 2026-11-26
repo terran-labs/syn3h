@@ -26,14 +26,15 @@ export const waterChop = defineParam({
  * gusts, the camera's distance and the pixel footprint. Lighting only.
  */
 export const waterRipple = defineParam({
-  ...P, id: 'water.ripple', label: 'Fine ripples', default: 1, min: 0, max: 2, step: 0.05,
+  ...P, id: 'water.ripple', label: 'Fine ripples', default: 2, min: 0, max: 3, step: 0.05,
 })
 /**
  * Sun glitter: how much of the fine detail stays a sharp facet that can flash the sun. The rest is
- * folded into the surface's roughness (a soft sheen). 0 a satin sea, 1 the default sparkle.
+ * folded into the surface's roughness (a soft sheen). 0 a satin sea, 1 (the default) every facet
+ * sharp: a low sun draws a column of glints from the horizon to the camera.
  */
 export const waterGlitter = defineParam({
-  ...P, id: 'water.glitter', label: 'Sun glitter', default: 0.85, min: 0, max: 1, step: 0.05,
+  ...P, id: 'water.glitter', label: 'Sun glitter', default: 1, min: 0, max: 1, step: 0.05,
 })
 /**
  * Calm and rough patches: large slow areas (about 150 m) where the wind's chop and ripples

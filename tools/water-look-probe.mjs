@@ -56,7 +56,7 @@ await page.evaluate(async ({ level, pose }) => {
   else if (pose === 'glitter') {
     // Low sun ahead: the afternoon hour at which it first stands under 10 degrees.
     const sunDir = () => { let d = null; s.game.scene.traverse((o) => { if (!d && o.isDirectionalLight) { o.updateMatrixWorld(); o.target.updateMatrixWorld(); d = o.getWorldPosition(o.position.clone()).sub(o.target.getWorldPosition(o.position.clone())).normalize() } }); return d }
-    const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const frame = async () => { for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r)) }
     let dir = null
     for (let hr = 14; hr <= 19; hr += 0.1) { s.params.set('sun.timeOfDay', hr); await frame(); dir = sunDir(); if (dir && dir.y < Math.sin((10 * Math.PI) / 180)) break }
     const az = Math.atan2(dir.z, dir.x)
