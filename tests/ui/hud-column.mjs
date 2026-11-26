@@ -6,11 +6,17 @@ import { waitForPanelMotion } from './panel-motion.mjs'
 //    minimap's ring and the right panel from the right (1 px). Gear selector, accessories and
 //    chat share one left edge, stacked over the minimap in that order without overlapping, at
 //    1440x900 and 1280x800, both cursor modes. The drum is three rows and the same height in
-//    both modes, and the Wings, Zorb and Chat keys show in both.
+//    both modes. With the cursor free the Wings, Zorb and Chat rows show with their keys;
+//    captured, only the drum shows (the rows and the gear's detail fade out, in place).
 // 2. Nothing in the column covers the speed or height readouts (at a three-digit speed) or the reticle.
 // 3. Each vehicle lists the accessories it exposes: wings where it has wings, a mode where it hovers.
 // 4. A key and a click switch the same state.
 // 5. On a phone the accessories stay with the thumb buttons: the column's rows are not shown.
+// 6. Every node sits on its line: each circle's centre x is its line's centre x (half a pixel),
+//    and each line runs from its first circle's centre to its last's (the owner, 25 November
+//    2026: the line ran past Wings and the circles sat left of it). Chat's unread count never
+//    moves the key column, and with chat off (chat.on or chat.show) the line ends at the last row
+//    left. At 1280x800 and on a phone, where only the drum's lit node shows.
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 
@@ -50,6 +56,32 @@ const measure = (page) => page.evaluate(() => {
     w: innerWidth, h: innerHeight,
   }
 })
+/** Each line (the drum's spine, the rows' hairline) with the centres of the circles on it. */
+const lines = (page) => page.evaluate(() => {
+  const r = (e) => e.getBoundingClientRect()
+  const node = (e) => { const c = getComputedStyle(e, '::before'); if (c.content === 'none' || c.display === 'none') return null; const b = r(e); return { x: b.left + parseFloat(c.left) + parseFloat(c.width) / 2, y: b.top + parseFloat(c.top) + parseFloat(c.marginTop) + parseFloat(c.height) / 2 } }
+  const centre = (e) => { const b = r(e); return { x: b.left + b.width / 2, y: b.top + b.height / 2 } }
+  const drum = document.querySelector('.gear-selector .gs-drum'), d = r(drum), spine = r(document.querySelector('.gear-selector .gs-spine'))
+  // The drum's circles in its three visible rows: the selected one's (on the window) and its neighbours'.
+  // (A circle left of the drum's clip, as on touch, is not drawn.)
+  const gear = [node(document.querySelector('.gear-selector .gs-window')), ...[...drum.querySelectorAll('button.gs-item:not(.is-active)')].map(node)
+    .filter((n) => n && n.y > d.top && n.y < d.bottom && n.x >= d.left)].sort((a, b) => a.y - b.y)
+  const acc = document.querySelector('.hud-accessories'), rows = acc && acc.checkVisibility() && (() => { const c = getComputedStyle(acc, '::before'), b = r(acc); return { x: b.left + parseFloat(c.left) + parseFloat(c.width) / 2, top: b.top + parseFloat(c.top), bottom: b.bottom - parseFloat(c.bottom) } })()
+  return {
+    gear: { line: { x: spine.left + spine.width / 2, top: spine.top, bottom: spine.bottom }, nodes: gear },
+    rows: rows && { line: rows, nodes: [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) .acc-pip')].filter((p) => p.checkVisibility()).map((p) => centre(p)) },
+  }
+})
+const onLines = (m, at, ends = true) => {
+  for (const [name, group] of Object.entries(m)) {
+    if (!group) continue
+    assert.ok(group.nodes.length, `${at}: ${name} has circles`)
+    for (const n of group.nodes) assert.ok(Math.abs(n.x - group.line.x) <= .5, `${at}: a ${name} circle is centred on its line ${JSON.stringify(group)}`)
+    if (!ends) continue
+    assert.ok(Math.abs(group.line.top - group.nodes[0].y) <= .5, `${at}: the ${name} line starts at its first circle ${JSON.stringify(group)}`)
+    assert.ok(Math.abs(group.line.bottom - group.nodes.at(-1).y) <= .5, `${at}: the ${name} line ends at its last circle ${JSON.stringify(group)}`)
+  }
+}
 const hit = (a, b) => a.left < b.right - 1 && a.right > b.left + 1 && a.top < b.bottom - 1 && a.bottom > b.top + 1
 
 try {
@@ -73,7 +105,11 @@ try {
       assert.ok(Math.abs(m.drum.top - m.edgeTop) <= 1, `${at}: the gear sits at the top left ${JSON.stringify([m.drum, m.edgeTop])}`)
       if (mode === 'free') drumFree = m.drum
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
-      assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys show ${JSON.stringify(m.keys)}`)
+      assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys are laid out ${JSON.stringify(m.keys)}`)
+      await page.waitForTimeout(400)
+      const shown = await page.evaluate(() => ['.hud-accessories', '.hud-chat', '.gear-selector .gs-detail', '.gear-selector .gs-drum'].map((s) => document.querySelector(s).checkVisibility({ opacityProperty: true, visibilityProperty: true })))
+      assert.deepEqual(shown, mode === 'free' ? [true, true, true, true] : [false, false, false, true], `${at}: rows, detail and drum shown ${JSON.stringify(shown)}`)
+      onLines(await lines(page), at)
       assert.ok(m.gear.bottom <= m.accessories.top + 1 && m.accessories.bottom <= m.chat.top + 1 && m.chat.bottom <= m.minimap.top + 1, `${at}: gear, accessories, chat, minimap from the top, apart ${JSON.stringify(m)}`)
       // 2. Clear of the readouts and the reticle.
       const reticle = { left: w / 2 - 40, right: w / 2 + 40, top: h / 2 - 40, bottom: h / 2 + 40 }
@@ -84,6 +120,37 @@ try {
     }
     // 3 and 4, in the free cursor mode.
     await page.keyboard.press('Escape'); await page.waitForTimeout(300)
+    if (w === 1280) {
+      // 6. Circles on their lines, with each gear selected (first, last and between), and Chat's
+      // key column still with an unread count of 1 and 9+.
+      const gears = await page.locator('.gear-selector .gs-drum button.gs-item').count()
+      for (let g = 0; g < gears; g++) {
+        await page.keyboard.press(String(g + 1))
+        // Measured once the drum has stopped turning (its transitions run slower on a loaded machine).
+        await page.waitForTimeout(50)
+        await page.waitForFunction(() => document.querySelector('.gear-selector').getAnimations({ subtree: true }).every((a) => a.playState !== 'running'), null, { timeout: 10000 })
+        onLines(await lines(page), `${w}x${h} gear ${g + 1}`)
+      }
+      const keyX = () => page.evaluate(() => [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) kbd')].map((k) => k.getBoundingClientRect().left))
+      const still = await keyX()
+      assert.ok(still.every((x) => Math.abs(x - still[0]) <= .5), `the keys share one column ${JSON.stringify(still)}`)
+      for (const n of [1, 12, 0]) {
+        await page.evaluate(async (n) => { const { chatLink } = await import('/src/ui/chat/chatLink.ts'); chatLink.setUnread(n, false) }, n)
+        await page.waitForTimeout(250)
+        assert.deepEqual(await keyX(), still, `an unread count of ${n} moves no key`)
+        onLines(await lines(page), `${w}x${h} unread ${n}`)
+      }
+      // Room chat off (the host's chat.on): no Chat row, and the line ends at the last row left.
+      for (const [id, value] of [['chat.on', false], ['chat.show', false]]) {
+        await page.evaluate(([id, value]) => window.mira.params.set(id, value), [id, value])
+        await page.waitForTimeout(250)
+        assert.equal(await page.locator('.hud-chat').isVisible(), false, `${id} off hides the Chat row`)
+        onLines(await lines(page), `${w}x${h} ${id} off`)
+        await page.evaluate((id) => window.mira.params.set(id, true), id)
+        await page.waitForTimeout(250)
+        assert.equal(await page.locator('.hud-chat').isVisible(), true, `${id} back on shows the Chat row`)
+      }
+    }
     if (w === 1440) {
       for (const kind of ['buggy', 'jet', 'hovercraft']) {
         await page.evaluate((k) => window.mira.swapVehicle(k), kind)
@@ -117,6 +184,9 @@ try {
   for (const viewport of [{ width: 390, height: 844 }, { width: 844, height: 390 }]) {
     const { context, page } = await open({ viewport, isMobile: true, hasTouch: true })
     assert.equal(await page.locator('.hud-accessories').isVisible(), false, `${viewport.width}x${viewport.height}: no accessory rows on a phone`)
+    // 6. The drum's lit node on its line (touch hides the other circles, and its line fades out
+    // past the rows as the drum scrolls, so only the centre is checked).
+    onLines(await lines(page), `${viewport.width}x${viewport.height}`, false)
     await context.close()
   }
   assert.deepEqual(errors, [], 'no page errors')

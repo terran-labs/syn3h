@@ -3,9 +3,11 @@
  * its node on the spine, its key cap (Y, shown only with the cursor free) and its name. It
  * opens chat and shows the unread count through chatLink alone, so it never touches the chat
  * surface's markup (the right panel's Chat card, chat/ChatCard.ts). The node
- * is lit while something is unread and hollow otherwise; the count is bright type at the end.
+ * is lit while something is unread and hollow otherwise; the count is bright type just after the name.
  */
 import { chatLink } from './chat/chatLink'
+import { chatOn, chatShow } from '../../shared/chat'
+import { params } from '../../shared/params'
 
 const TITLE = 'Talk with everyone in this world. Opens Chat; Y does the same.'
 
@@ -16,13 +18,15 @@ export class ChatRow {
   private readonly tip = document.createElement('div')
   private tipTimer: ReturnType<typeof setTimeout> | undefined
   private readonly unsubscribe: () => void
+  private readonly unsubscribeParams: () => void
 
   constructor(parent: HTMLElement, signal?: AbortSignal) {
     this.element.className = 'hud-chat'
     this.button.type = 'button'; this.button.className = 'acc-row'; this.button.dataset.id = 'chat'
     this.button.innerHTML = '<span class="acc-name" aria-hidden="true">Chat</span><kbd aria-hidden="true">Y</kbd><i class="acc-pip" aria-hidden="true"></i>'
     this.count.className = 'chat-count'; this.count.setAttribute('aria-hidden', 'true'); this.count.hidden = true
-    this.button.append(this.count)
+    // Just after the word, inside the name's fixed column: the key column never moves.
+    this.button.querySelector('.acc-name')!.append(this.count)
     this.element.append(this.button)
     this.tip.className = 'wi-glass wi-tooltip hud-column-tip'; this.tip.setAttribute('role', 'tooltip'); this.tip.hidden = true
     this.tip.innerHTML = '<strong></strong><p></p>'
@@ -31,8 +35,18 @@ export class ChatRow {
     this.button.addEventListener('focus', () => this.showTip(0), { signal })
     for (const type of ['pointerleave', 'blur', 'pointerdown'] as const) this.button.addEventListener(type, () => this.hideTip(), { signal })
     this.unsubscribe = chatLink.subscribe(() => this.sync())
+    // Shown only while the room has chat (chat.on, the host's) and this player shows it
+    // (chat.show): the row, its count, its node and its share of the line go together.
+    this.unsubscribeParams = params.onChange((id) => { if (id === chatOn.def.id || id === chatShow.def.id) this.syncShown() })
+    this.syncShown()
     this.sync()
     parent.append(this.element, this.tip)
+  }
+
+  private syncShown(): void {
+    const shown = chatOn.value && chatShow.value
+    this.element.hidden = !shown
+    if (!shown) this.hideTip()
   }
 
   private label(): string {
@@ -69,5 +83,5 @@ export class ChatRow {
 
   private hideTip(): void { clearTimeout(this.tipTimer); this.tip.hidden = true }
 
-  dispose(): void { this.hideTip(); this.unsubscribe(); this.element.remove(); this.tip.remove() }
+  dispose(): void { this.hideTip(); this.unsubscribe(); this.unsubscribeParams(); this.element.remove(); this.tip.remove() }
 }

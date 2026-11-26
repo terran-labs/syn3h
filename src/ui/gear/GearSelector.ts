@@ -69,6 +69,14 @@ export function ringOffset(index: number, current: number, count: number): numbe
 const NEIGHBOUR_INK = 0.8
 /** How long the meter takes to fade in and out on a change of gear (gear.css, .gs-meter). */
 const METER_FADE_MS = 220
+/**
+ * How long the names take to slide when the number keys before them come and go (the cursor
+ * captured or freed), decelerating. A deliberate exception to the interface's rule that
+ * nothing slides (the owner, 25 November 2026: "slide the weapon names left and right"),
+ * limited to these names. Reduced motion: no slide.
+ */
+const NAME_SLIDE_MS = 180
+const NAME_SLIDE_EASE = 'cubic-bezier(.16,1,.3,1)'
 
 /** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
 export function slotPose(offset: number): { scale: number; opacity: number } {
@@ -422,14 +430,36 @@ export class GearSelector {
   }
 
   private setFocused(focused: boolean): void {
+    const first = this.focused === null
     this.focused = focused
-    this.element.dataset.mode = focused ? 'locked' : 'free'
+    this.slideNames(first, () => { this.element.dataset.mode = focused ? 'locked' : 'free' })
     // Captured: the drum is a display. Drop focus so driving keys are not eaten here.
     this.element.toggleAttribute('inert', focused)
     if (focused && this.element.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
     if (focused) this.endDrag()
     // The number keys show only with the cursor free, so a name's width changes with the mode.
     this.fit()
+  }
+
+  /**
+   * Change the list's form in `change`, sliding each name from where it was drawn to its new
+   * laid-out place: a transform only, ending on nothing, so the layout is never touched and
+   * nothing is left a pixel off. Each name's own offset inside its row is measured, so the
+   * selected gear's larger scale moves with it. Interrupted midway, a slide restarts from where
+   * the name is drawn.
+   */
+  private slideNames(first: boolean, change: () => void): void {
+    const still = first || matchMedia('(prefers-reduced-motion: reduce)').matches
+    const texts = this.items.map(item => item.label.querySelector<HTMLElement>('.gs-text')).filter((t): t is HTMLElement => !!t)
+    const drawn = still ? [] : texts.map(t => t.offsetLeft + new DOMMatrixReadOnly(getComputedStyle(t).transform).m41)
+    for (const t of texts) for (const a of t.getAnimations()) a.cancel()
+    change()
+    if (still) return
+    texts.forEach((t, i) => {
+      const dx = drawn[i] - t.offsetLeft
+      if (Math.abs(dx) < 0.25) return
+      t.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: NAME_SLIDE_MS, easing: NAME_SLIDE_EASE })
+    })
   }
 
   private setControls(controls: GearControls | undefined): void {

@@ -35,6 +35,7 @@
   /* One row height for the gear drum and the rows below it: compact (it was 36 px for the gear
      and 30 px for the rows). */
   --col-row: 28px;
+  /* Between the drum and the rows below it; Chat follows the accessories at the row's own pitch. */
   --col-gap: 8px;
   /* The content line and the spine, from the column's left edge. */
   --col-inset: 24px;
@@ -42,7 +43,7 @@
      accessories, then Chat. */
   --col-gear-top: var(--edge-top);
   --col-acc-top: calc(var(--col-gear-top) + 3 * var(--col-row) + var(--col-gap));
-  --col-chat-top: calc(var(--col-acc-top) + var(--acc-rows, 1) * var(--col-row) + var(--col-gap));
+  --col-chat-top: calc(var(--col-acc-top) + var(--acc-rows, 1) * var(--col-row));
   /* One type scale. */
   --col-type: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif;
   --col-track: .16em;
@@ -78,17 +79,22 @@
    selected gear, which is marked by a lit node on the spine beside its larger, brighter name;
    key caps in the column's one stroke. */
 :root .mira-shell.exploration-ui .gear-selector::before { display: none; }
+/* The spine runs from the first node's centre to the last's (the drum is a ring, so a gear sits
+   above and below the selected one whichever it is), one even line like the rows' below. */
 :root .mira-shell.exploration-ui .gear-selector .gs-spine { left: var(--col-spine); }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-spine {
+  top: calc(var(--gs-pitch) / 2); height: calc(100% - var(--gs-pitch)); background: var(--s3-line-quiet);
+}
 :root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item,
 :root .mira-shell.exploration-ui .gear-selector .gs-detail { text-shadow: var(--col-text-under); }
 :root .mira-shell.exploration-ui .gear-selector .gs-window { left: 0; width: var(--gs-width); border: 0; box-shadow: none; background: none; }
 :root .mira-shell.exploration-ui .gear-selector .gs-window::before {
-  content: ''; position: absolute; left: calc(var(--col-spine) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+  content: ''; position: absolute; left: calc(var(--col-spine) - 3px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: 1px solid var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit);
 }
 /* Every other gear has the hollow node an accessory has when off: one way of showing on and off. */
 :root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item:not(.is-active)::before {
-  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3.5px - var(--gs-drum-left, 0px)); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3px - var(--gs-drum-left, 0px)); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off);
 }
 /* The gear's name in the column's type; its number is its key cap. */
@@ -137,10 +143,15 @@
   pointer-events: auto;
 }
 .mira-shell.has-touch :is(.hud-accessories, .hud-chat) { display: none; }
+/* Room chat off (chat.on) or hidden by the player (chat.show): no Chat row (ChatRow.ts), and the
+   rows' line ends at the last accessory's node instead. Nothing above moves. */
+.hud-chat[hidden] { display: none; }
+.mira-shell:has(.hud-chat[hidden]) .hud-accessories::before { bottom: calc(var(--col-row, 30px) / 2); }
 .mira-shell.is-focus :is(.hud-accessories, .hud-chat) { pointer-events: none; }
-/* The spine continues from the drum: a hairline down the rows' left side to Chat's node. */
+/* The rows' own line: a hairline from the first row's node to Chat's. Every node is 7 px wide
+   at spine - 3 px, so its centre is the line's centre (spine + .5 px) at any pixel ratio. */
 .hud-accessories::before {
-  content: ''; position: absolute; left: var(--col-spine, 4px); top: 0; bottom: calc(-1 * var(--col-gap, 10px) - var(--col-row, 30px) / 2); width: 1px;
+  content: ''; position: absolute; left: var(--col-spine, 4px); top: calc(var(--col-row, 30px) / 2); bottom: calc(var(--col-row, 30px) / -2); width: 1px;
   background: var(--s3-line-quiet); pointer-events: none;
 }
 :root .mira-shell :is(.hud-accessories, .hud-chat) button.acc-row {
@@ -168,20 +179,41 @@
    column, shown always, the cursor free or captured (the owner, 18 November 2026). The gear's
    number glyphs still show only with the cursor free. Touch has no keys. */
 :root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) .acc-name { flex: none; width: 66px; }
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { min-width: 46px; }
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { min-width: 46px; color: inherit; }
+/* The rows' keys take their names' ink: dim at rest, full white with the name when awake,
+   pointed at or on (the owner, 25 November 2026: the keys no brighter than the names). */
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) .is-on kbd { color: var(--s3-ink); }
 /* The same key form everywhere else the HUD names a key: the controls card (first run and H)
    and the lobby's controls list. A bright, bolder glyph in the line's own size; no outline. */
 :root .mira-shell :is(.spawn-help, .shell-controls) kbd {
   display: inline; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none;
   font: inherit; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--s3-accent-2);
 }
-/* Captured for driving, the gear's number caps and hints step out; touch never shows them. */
-:root .mira-shell.exploration-ui .gear-selector:is([data-mode=locked], [data-touch]) .gs-index { display: none; }
+/* Captured for driving, the gear's number caps step out; touch never shows them. On the
+   desktop they leave the flow and fade where they stand while the names slide over to their
+   new place (GearSelector.slideNames), so the list changes form as one motion. */
+:root .mira-shell.exploration-ui .gear-selector[data-touch] .gs-index { display: none; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label { position: relative; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-index { transition: opacity .18s cubic-bezier(.16,1,.3,1); }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] .gs-index { position: absolute; left: 0; opacity: 0; transition-duration: .1s; }
+/* Cursor captured (the owner, 25 November 2026: "Hide all of this text when the cursor is
+   locked. Continue showing the weapon switcher."): the column keeps only the drum. The rows
+   below it (Wings, Zorb, Chat: names, keys, count, nodes and line) and the detail beside the
+   selected gear (what it does, what to press) fade out, and back in when the cursor is free.
+   They keep their layout while faded, so nothing moves. A sunk buggy's Zorb cue (Shell.cueZorb)
+   keeps its rows: the cue is how that player learns the way out. Touch never captures. */
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat, .gear-selector .gs-detail) { transition: opacity .2s ease, visibility 0s; }
+:root .mira-shell.exploration-ui.is-focus:not(.has-touch) :is(.hud-accessories:not(:has(.is-cued)), .hud-chat, .gear-selector .gs-detail) {
+  opacity: 0; visibility: hidden; transition: opacity .2s ease, visibility 0s .2s;
+}
+/* The detail keeps its lines laid out under the fade (gear.css drops them while captured). */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] :is(.gs-desc, .gs-keyhint) { display: block; }
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] .gs-hints { display: grid; }
 :is(.hud-accessories, .hud-chat) .acc-name { flex: 1 1 auto; white-space: nowrap; }
 /* The node on the spine: a hollow ring when off, lit when on (Chat: something unread),
    filling while it moves. */
 :is(.hud-accessories, .hud-chat) .acc-pip {
-  position: absolute; left: calc(var(--col-spine, 4px) - 3.5px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
+  position: absolute; left: calc(var(--col-spine, 4px) - 3px); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
   border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off); pointer-events: none;
   transition: background-color .2s ease, box-shadow .2s ease, border-color .2s ease;
 }
@@ -212,9 +244,9 @@
 @keyframes acc-breathe { 50% { box-shadow: var(--col-node-lit); } }
 /* Not usable now: dimmed, with the reason in its tooltip. */
 :root .mira-shell .hud-accessories button.acc-row[aria-disabled=true] { cursor: default; opacity: .48; }
-/* Chat's unread count: bright type at the row's end (brighter still when a person wrote), no
-   tag or pill around it. */
-.hud-chat .chat-count { flex: none; color: var(--s3-accent-2); font: var(--col-type); letter-spacing: var(--col-track); text-shadow: var(--col-text-under); }
+/* Chat's unread count: bright type just after the word Chat, inside the name's fixed column
+   (ChatRow.ts), so the key column stays put as it appears, grows to 9+ and goes. No pill. */
+.hud-chat .chat-count { margin-left: .5em; color: var(--s3-accent-2); font: var(--col-type); letter-spacing: var(--col-track); text-shadow: var(--col-text-under); }
 .hud-chat .chat-count[hidden] { display: none; }
 .hud-chat .chat-count.from-person { color: var(--s3-ink); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
