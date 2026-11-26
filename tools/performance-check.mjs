@@ -134,7 +134,7 @@ async function main() {
         }
         // Enter only on the settled lobby: an Enter during the lobby's opening is dropped (a
         // product fault routed to the lobby's owner, 26 Nov 2026), and this check pressed it there.
-        const play=async page=>{await page.waitForFunction(()=>document.documentElement.dataset.boot==='done'&&!window.mira?.shell?.galaxy?.opening&&!document.documentElement.dataset.opening,null,{timeout:120000});await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.mira.shell.playing&&window.miraNet?.connected,null,{timeout:90000})}
+        const play=async page=>{await page.waitForFunction(()=>document.documentElement.dataset.boot==='done'&&!window.mira?.shell?.galaxy?.opening&&!document.documentElement.dataset.opening,null,{timeout:120000});await page.waitForFunction(()=>{const l=document.querySelector('.galaxy-label.is-current');if(!l)return false;const s=getComputedStyle(l);return l.tabIndex>=0&&s.visibility==='visible'&&+s.opacity>0},null,{timeout:30000});await page.waitForTimeout(1000);await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.mira.shell.playing&&window.miraNet?.connected,null,{timeout:90000})}
         await open(host,'PerfHost')
         // Every cell starts with fresh storage and automatic detection before explicit tier choice.
         await host.evaluate(tier=>{const s=window.mira,p=window.performanceMatrix;p.phase='transition';p.events.push({at:performance.now(),type:'manual-tier',tier});s.game.quality.setAuto(false);s.game.quality.setLevel(tier)},tier)
