@@ -1,10 +1,11 @@
 import { longFrames } from '../core/longFrames'
 import { params } from '../../shared/params'
-import { QUALITY, type QualitySource, type QualityState } from '../core/quality'
+import { presetFor, QUALITY, type QualitySource, type QualityState } from '../core/quality'
 import type { PerformanceSnapshot, PerformanceSource } from '../core/performance'
 import type { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
 import { createSwitch, type Switch } from './inspector/switch'
+import { resetButton, type ResetButton } from './resetControl'
 import { recordBlankFrames } from '../core/blankFrames'
 import { FIELD_SWITCHES, isOn, linkOf, linkWithSwitches, onFieldSwitches, pendingReload, reloadWithSwitches, setFieldSwitch } from '../core/fieldSwitches'
 import { deviceGates } from '../core/deviceGates'
@@ -62,7 +63,6 @@ export class PerformancePanel {
   private readonly recommendationSize?: ResizeObserver
   private wasVisible = false
   /** The "changed" mark beside each fine-tune row, by property id. */
-  private readonly marks = new Map<string, HTMLButtonElement>()
   /** The fine-tune ids last laid out, to notice when one registers. */
   private shown?: string
   /** Which fine-tune folds were open, kept across rebuilds. */
@@ -72,6 +72,8 @@ export class PerformancePanel {
   private get resolutionRange(): HTMLInputElement { return this.element.querySelector<HTMLInputElement>('.wi-resolution input')! }
   /** Auto quality: the standard switch, apart from the level stepper. */
   private readonly auto: Switch
+  private readonly autoReset: ResetButton
+  private readonly resolutionReset: ResetButton
   private readonly blankSwitch: Switch
   private blankCount: HTMLElement | null = null
 
@@ -82,7 +84,7 @@ export class PerformancePanel {
         <button type="button" class="wi-step" data-quality="down" aria-label="Lower quality level" data-tip="Lower quality">${CHEVRONS(false)}</button>
         <div class="wi-level-pick"><select class="wi-level-select" aria-label="Quality level" disabled></select><small class="wi-level-of"></small></div>
         <button type="button" class="wi-step" data-quality="up" aria-label="Raise quality level" data-tip="Raise quality">${CHEVRONS(true)}</button></div>
-      <div class="wi-level-tools"><button type="button" data-quality="reset-all" disabled>Reset all to this level</button></div>
+      <div class="wi-level-tools"><button type="button" data-quality="reset-all" data-resets-card disabled>Reset all to this level</button></div>
       <div class="wi-resolution" role="group" aria-label="Render resolution">
         <span class="wi-label">Render resolution</span>
         <input type="range" min="50" max="100" step="5" aria-label="Render resolution, percent of native" disabled>
@@ -125,6 +127,13 @@ export class PerformancePanel {
     this.renderBlankFrames()
     this.buildFieldSwitches(signal)
     this.element.querySelector('.wi-level-tools')!.prepend(this.auto.element)
+    // Auto quality and render resolution are built here, not by the row builder, so they take
+    // the shared reset themselves (resetControl.ts): both default to Auto.
+    this.autoReset = resetButton(() => this.quality?.setAuto(true))
+    this.auto.element.classList.add('has-reset'); this.auto.element.append(this.autoReset.element)
+    this.resolutionReset = resetButton(() => this.quality?.setResolution?.(null))
+    const resolutionRow = this.element.querySelector<HTMLElement>('.wi-resolution')!
+    resolutionRow.classList.add('has-reset'); resolutionRow.append(this.resolutionReset.element)
     // Render resolution: dragging previews the number; the renderer resizes once, on release.
     const range = this.resolutionRange
     range.addEventListener('input', () => this.renderResolution(Number(range.value) / 100), { signal })
@@ -228,7 +237,7 @@ export class PerformancePanel {
   private fill(): void {
     const host = this.element.querySelector('.wi-fine')!, inspector = this.inspector
     for (const fold of host.querySelectorAll<HTMLDetailsElement>('details')) this.foldOpen.set(fold.dataset.group!, fold.open)
-    host.replaceChildren(); this.marks.clear()
+    host.replaceChildren()
     if (!inspector || !this.mounted) return
     const groups = new Map<string, PropertyDef[]>()
     for (const id of this.fineIds()) { const def = params.get(id)!.def as PropertyDef; groups.set(def.group, [...groups.get(def.group) ?? [], def]) }
@@ -239,15 +248,17 @@ export class PerformancePanel {
       summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(defs.length)
       fold.append(summary)
       for (const def of defs) {
-        const row = inspector.row(def); row.classList.add('is-fine')
-        // Hidden until the player sets this by hand; pressing it puts the level's value back.
-        const mark = document.createElement('button'); mark.type = 'button'; mark.className = 'wi-changed'; mark.textContent = 'changed'; mark.hidden = true
-        mark.addEventListener('click', () => this.quality?.clearOverride(def.id))
-        row.querySelector('.wi-label')!.after(mark); this.marks.set(def.id, mark); fold.append(row)
+        // The row's shared reset (resetControl.ts) shows once the player sets this by hand, and
+        // puts the level's own value back, not the registry's.
+        const row = inspector.row(def, { reset: {
+          value: () => this.state && def.id in this.state.overrides ? presetFor(this.state.level)[def.id] ?? def.default : undefined,
+          apply: () => this.quality?.clearOverride(def.id),
+        } })
+        row.classList.add('is-fine'); fold.append(row)
       }
       host.append(fold)
     }
-    if (this.state) this.renderMarks(this.state)
+    inspector.refreshResets()
   }
 
   private renderQuality(state: QualityState): void {
@@ -258,6 +269,7 @@ export class PerformancePanel {
     this.element.querySelector<HTMLButtonElement>('[data-quality=down]')!.disabled = state.level <= first
     this.element.querySelector<HTMLButtonElement>('[data-quality=up]')!.disabled = state.level >= last
     this.auto.set(state.auto)
+    this.autoReset.set({ changed: !state.auto, defaultText: 'on', name: 'Auto quality' })
     this.renderResolution()
     const resetAll = this.element.querySelector<HTMLButtonElement>('[data-quality=reset-all]')!
     resetAll.textContent = `Reset all to ${state.name}`; resetAll.disabled = Object.keys(state.overrides).length === 0
@@ -265,7 +277,7 @@ export class PerformancePanel {
     // content, since every state change is a new object.
     const shown = this.fineIds().join(' ')
     if (this.shown !== undefined && shown !== this.shown) { this.shown = shown; this.regroup() }
-    else { this.shown = shown; this.renderMarks(state) }
+    else { this.shown = shown; this.inspector?.refreshResets() }
     this.renderStatus()
   }
 
@@ -289,16 +301,9 @@ export class PerformancePanel {
     this.element.querySelector('.wi-res-value')!.textContent = `${Math.round(share * 100)}%`
     const button = this.element.querySelector<HTMLButtonElement>('.wi-res-auto')!
     button.setAttribute('aria-pressed', String(chosen === null)); button.classList.toggle('is-on', chosen === null)
+    this.resolutionReset.set({ changed: state.resolution !== null, defaultText: 'Auto', name: 'Render resolution' })
     const [width, height] = renderSize(innerWidth, innerHeight, ratio)
     this.element.querySelector('.wi-res-size')!.textContent = `${width} × ${height} px${chosen === null ? ' · set by Auto' : ''}`
-  }
-
-  private renderMarks(state: QualityState): void {
-    for (const [id, mark] of this.marks) {
-      const changed = id in state.overrides
-      mark.hidden = !changed; mark.closest('.wi-row')?.classList.toggle('is-changed', changed)
-      if (changed) mark.setAttribute('aria-label', `Changed. Reset ${(params.get(id)?.def.label ?? id)} to the ${state.name} value`)
-    }
   }
 
   private levelName(index: number): string {

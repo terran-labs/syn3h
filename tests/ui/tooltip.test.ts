@@ -28,3 +28,14 @@ describe('the tooltip tail', () => {
     expect(d.endsWith('Z')).toBe(true)
   })
 })
+
+// Bug: a setting's "Reset to 0.42" plate covering "Reset 2 changes", the next thing the pointer goes to.
+it('puts a plate that prefers the left beside the element, on its own row', () => {
+  const view = { width: 1280, height: 800 }, b = { left: 1218, top: 479, right: 1242, bottom: 523 }
+  const at = placeTip(b, 100, 28, view, 'left')
+  expect(at.side).toBe('right')
+  expect(at.x + 100).toBeLessThanOrEqual(b.left)
+  expect(at.y).toBeGreaterThanOrEqual(b.top - 14); expect(at.y + 28).toBeLessThanOrEqual(b.bottom + 14)
+  // With no room on the left it falls back to the usual order.
+  expect(placeTip({ left: 20, top: 479, right: 44, bottom: 523 }, 100, 28, view, 'left').side).toBe('top')
+})

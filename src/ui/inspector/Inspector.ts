@@ -1,4 +1,4 @@
-import { defaultTint, glassLabels, LIQUID_TUNING_GROUPS, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { glassLabels, LIQUID_TUNING_GROUPS, liquidEligible, liquidQualityHint } from '../glassMaterial'
 import { CARD_CLOSE } from '../cardClose'
 import { modeChoices } from '../modeAvailability'
 /**
@@ -15,7 +15,10 @@ import { applyPreset, matchPreset, presetsFor } from '../../../shared/presets'
 import { canEditWorld, resetWorld } from '../worldPermissions'
 import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
-import { fillDayLengthRow } from './dayLength'
+import { dayToPosition, fillDayLengthRow, showDay } from './dayLength'
+import { effectiveDayLength } from '../../world/sky/dayCycle'
+import { defaultOf, differs, NOT_RESET, type ResetTarget } from './defaults'
+import { resetAllButton, resetButton, type ResetAllButton, type ResetButton } from '../resetControl'
 import { sunDayLength, sunTimeOfDay } from '../../world/sky/skyParams'
 import { currentHour } from '../../world/sky/dayCycle'
 import './inspector.css'
@@ -95,6 +98,20 @@ export interface InspectorOptions {
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
 }
+/** One row's reset, as the inspector keeps it. */
+interface RowReset {
+  def: PropertyDef
+  target: ResetTarget
+  control: ResetButton
+  /** The setting's name, for the reset's accessible name. */
+  name: string
+  format(value: ParamValue): string
+  notch: ((value: ParamValue) => number | null) | null
+  track: HTMLInputElement | null
+  run(): void
+  /** Has been in the page; a row that leaves after that is dropped. */
+  seen: boolean
+}
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
   if (def.id === 'game.mode') return { name: 'Mode', options: modeChoices }
@@ -169,6 +186,13 @@ export class Inspector {
   private tooltipTimer?: ReturnType<typeof setTimeout>
   private readonly abort = new AbortController()
   private readonly rows = new Map<string, { row: HTMLElement; sync(value: ParamValue): void; def: PropertyDef }>()
+  /**
+   * Every row's reset (resetControl.ts), keyed by its element so a setting shown twice keeps
+   * both. Group and card resets are found from the rows they hold, never from card names, so
+   * regrouping the cards changes nothing here.
+   */
+  private readonly resets = new Map<HTMLElement, RowReset>()
+  private readonly groupResets = new WeakMap<HTMLElement, ResetAllButton>()
   private readonly extras = new Map<string, ExtraCard>()
   private readonly unsubscribe: () => void
   /** Remembered open cards whose card has not been built yet (extras arrive after the first build). */
@@ -234,6 +258,7 @@ export class Inspector {
       // The orbit default is the planet's: a new planet changes what the day length shows.
       if (id === 'terrain.look') this.rows.get(sunDayLength.def.id)?.sync(params.get(sunDayLength.def.id)!.value)
       for (const sync of this.presetSyncs) sync()
+      this.queueResets()
     })
     // Space changes (a resize, a phone turning, a fold opening inside a card): refit once,
     // on the next frame, not every frame.
@@ -316,7 +341,7 @@ export class Inspector {
   update(): void {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
-    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.markLocks(); this.element.classList.toggle('is-locked', !editable) }
+    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.markLocks(); this.element.classList.toggle('is-locked', !editable); this.refreshResets() }
     // Live collections, held once: the browser keeps them current as cards are built, so the
     // per-frame refresh below queries nothing.
     for (const card of this.live.cards) {
@@ -400,6 +425,7 @@ export class Inspector {
     for (let i = this.openOrder.length - 1; i >= 0; i--) if (!present.has(this.openOrder[i])) this.openOrder.splice(i, 1)
     this.restoreView(view)
     this.editable = !canEditWorld(); this.update()
+    this.refreshResets()
   }
   /** Which groups are open, where the stack and each card are scrolled, and what has focus. */
   private captureView() {
@@ -669,7 +695,7 @@ export class Inspector {
     }
   }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
-  row(def: PropertyDef): HTMLElement {
+  row(def: PropertyDef, options: { reset?: ResetTarget } = {}): HTMLElement {
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
     if (def.id === 'post.giRadius') def = { ...def, label: 'GI light reach (m)' }
     const row = document.createElement('div'); row.className = 'wi-row'; row.dataset.id = def.id
@@ -677,6 +703,11 @@ export class Inspector {
     const output = document.createElement('output')
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
+    /** The default written as this row writes values, for the reset's label. */
+    let format: (value: ParamValue) => string = value => show(value, def)
+    /** Where a slider's default sits, 0 to 1, for the notch on its track; null without one. */
+    let notch: ((value: ParamValue) => number | null) | null = null
+    let track: HTMLInputElement | null = null
     if (def.id === 'hud.glass') {
       // Style: the label at the left and the three named options beside it on the same line
       // (the owner, 22 November 2026). The pressed option's outline is its only mark, and its own
@@ -694,6 +725,7 @@ export class Inspector {
         ticks.append(button)
         return button
       })
+      format = value => glassLabels[Number(value)] ?? String(value)
       row.classList.add('glass-material-row', 'glass-style-row')
       row.append(label, ticks, hint)
       sync = value => {
@@ -709,11 +741,9 @@ export class Inspector {
       input.setAttribute('aria-label', def.label)
       label.textContent = def.label
       input.oninput = () => params.set(def.id, input.valueAsNumber)
-      const reset = document.createElement('button')
-      reset.type = 'button'; reset.className = 'tint-default'; reset.textContent = 'Default'
-      reset.setAttribute('aria-label', 'Restore default tint')
-      reset.onclick = () => params.set(def.id, defaultTint())
-      row.append(label, input, output, reset)
+      // Its default is the style's own tint (defaults.ts), restored by the row's reset.
+      format = value => value + '%'; track = input; notch = value => Number(value) / 100
+      row.append(label, input, output)
       sync = value => {
         input.value = String(value); output.textContent = value + '%'
         input.setAttribute('aria-valuetext', output.textContent)
@@ -722,10 +752,13 @@ export class Inspector {
       // Seconds stored, minutes shown, a log slider and the orbit default: its own control.
       def = { ...def, label: 'Day length', limitsText: '20 s to 60 min on the slider, or stopped · default: the orbit' }
       const day = fillDayLengthRow(row, def.id); sync = () => day()
+      format = value => Number(value) < 0 ? 'the orbit' : showDay(Number(value))
+      track = row.querySelector<HTMLInputElement>('input[type=range]'); notch = value => dayToPosition(effectiveDayLength(Number(value)))
     } else if (choices) {
       label.textContent = choices.name
       const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', choices.name)
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }
+      format = value => choices.options.find(option => option.value === Math.round(Number(value)))?.label ?? show(value, def)
       row.classList.add('is-choice'); row.append(label, seg)
       sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) { const on = Number(button.dataset.value) === Math.round(Number(value)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } }
     } else if (typeof def.default === 'boolean') {
@@ -763,23 +796,29 @@ export class Inspector {
       input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, storedValue(def, Number(input.value)), 'local'))
       if (def.deferred) input.addEventListener('input', () => display(shown(storedValue(def, Number(input.value)))))
       row.append(label, input, number)
+      format = shown
+      if (ranged) { track = input; notch = value => fraction(def, value) }
       sync = value => { if (document.activeElement !== input) input.value = String(toShown(value)); display(shown(value)) }
       if (percent) number.dataset.percent = ''
     }
-    if (def.group === 'Glass') {
-      const reset = document.createElement('button')
-      reset.type = 'button'
-      reset.className = 'glass-setting-reset'
-      reset.textContent = 'Reset'
-      reset.setAttribute('aria-label', 'Reset ' + label.textContent + ' to Apple’s measured value')
-      reset.addEventListener('click', () => params.set(def.id, def.default))
-      row.append(reset)
-      const syncControl = sync
-      sync = value => {
-        syncControl(value)
-        reset.hidden = value === def.default
-      }
+    // Back to default: one control for every row (resetControl.ts), in a slot the row always
+    // keeps, so a value changing never moves anything. Its target is the true default
+    // (defaults.ts) unless the builder knows better (a quality level's own value).
+    // A value that is not a preference (the world's name) keeps the slot but never resets.
+    const target: ResetTarget = NOT_RESET[def.id] ? { value: () => undefined } : options.reset ?? { value: () => defaultOf(def) }
+    const name = choicesOf(def)?.name || label.textContent || def.label
+    const run = () => {
+      // Resetting is editing: a shared setting needs the same permission as its slider.
+      if (def.scope === 'world' && !canEditWorld()) return
+      if (target.apply) target.apply()
+      else { const value = target.value(); if (value !== undefined) params.set(def.id, value, 'local') }
+      this.queueResets()
     }
+    const control = resetButton(run, 'wi-reset-row')
+    if (NOT_RESET[def.id]) control.element.dataset.noReset = NOT_RESET[def.id]
+    row.classList.add('has-reset'); row.append(control.element)
+    this.resets.set(row, { def, target, control, name, format, notch, track, run, seen: false })
+    this.queueResets()
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
     row.addEventListener('focusin', () => this.detail(def))
@@ -821,6 +860,94 @@ export class Inspector {
     this.editing = { field, finish }
     number.hidden = true; number.after(field)
     field.focus({ preventScroll: true }); field.select()
+  }
+  private resetQueued = false
+  /** Refresh every reset once, after the current change settles and before the next paint. */
+  private queueResets(): void {
+    if (this.resetQueued) return
+    this.resetQueued = true
+    queueMicrotask(() => { this.resetQueued = false; this.refreshResets() })
+  }
+  /**
+   * Bring every reset up to date: each row's control and default notch, then each group's
+   * and card's count. Builders that change a row's default target (the quality level) call it.
+   */
+  refreshResets(): void {
+    for (const [row, entry] of this.resets) {
+      if (!row.isConnected) { if (entry.seen) this.resets.delete(row); continue }
+      entry.seen = true
+      const value = params.get(entry.def.id)?.value ?? entry.def.default, target = entry.target.value()
+      const changed = differs(value, target)
+      entry.control.set({ changed, defaultText: target === undefined ? '' : entry.format(target), name: entry.name })
+      row.classList.toggle('is-changed', changed)
+      if (entry.track && entry.notch) {
+        const at = target === undefined ? null : entry.notch(target)
+        if (at === null) entry.track.style.removeProperty('--wi-default'); else entry.track.style.setProperty('--wi-default', String(at))
+        entry.track.classList.toggle('has-default', at !== null)
+      }
+    }
+    this.refreshGroupResets()
+  }
+  /** A row whose reset would act now: changed, editable by this player, and not set aside. */
+  private resettable(row: HTMLElement, entry: RowReset): boolean {
+    if (!entry.control.changed || (entry.def.scope === 'world' && !canEditWorld())) return false
+    // Set aside: inside a fold that is not there now (Liquid glass at another style). A card's
+    // own body counts as present even while the card is closed.
+    for (let el = row.parentElement; el && !el.classList.contains('wi-card'); el = el.parentElement)
+      if (el.classList.contains('is-absent') || (el.hidden && !el.classList.contains('wi-body'))) return false
+    return true
+  }
+  /**
+   * "N · M changed" on the header and "Reset M changes" at the foot of every fold holding two
+   * or more rows (its subgroups' rows included), and "Reset all N" in every card whose rows are
+   * not all in one fold. Found from where the rows are,
+   * so cards and groups can be renamed, merged or moved without touching this.
+   */
+  private refreshGroupResets(): void {
+    const folds = new Map<HTMLElement, HTMLElement[]>(), cards = new Map<HTMLElement, HTMLElement[]>()
+    for (const row of this.resets.keys()) {
+      if (!row.isConnected || !this.element.contains(row)) continue
+      // Every fold a row sits in counts it, so a section of subgroups sums its subgroups' rows.
+      const card = row.closest<HTMLElement>('.wi-card')
+      for (let el = row.parentElement; el && el !== card && el !== this.element; el = el.parentElement)
+        if (el.tagName === 'DETAILS') folds.set(el, [...folds.get(el) ?? [], row])
+      if (card) cards.set(card, [...cards.get(card) ?? [], row])
+    }
+    const changedIn = (rows: HTMLElement[]) => rows.filter(row => this.resettable(row, this.resets.get(row)!))
+    const runAll = (rows: () => HTMLElement[]) => () => { for (const row of rows()) this.resets.get(row)!.run(); this.refreshResets() }
+    for (const [fold, rows] of folds) {
+      if (rows.length < 2) continue
+      let control = this.groupResets.get(fold)
+      if (!control) {
+        control = resetAllButton({ label: n => `Reset ${n} ${n === 1 ? 'change' : 'changes'}`, confirm: n => `Confirm: reset ${n}`, tip: 'Puts the settings in this group back to their defaults', run: runAll(() => changedIn([...this.resets.keys()].filter(row => row.isConnected && fold.contains(row)))), className: 'wi-group-reset-button' })
+        const foot = document.createElement('div'); foot.className = 'wi-group-reset'; foot.append(control.element)
+        this.groupResets.set(fold, control)
+      }
+      const foot = control.element.parentElement!
+      if (foot.parentElement !== fold || fold.lastElementChild !== foot) fold.append(foot)
+      const n = changedIn(rows).length
+      control.count(n)
+      const count = fold.querySelector<HTMLElement>(':scope > summary > small')
+      if (count) { count.dataset.rows ??= count.textContent ?? ''; const text = n ? `${count.dataset.rows} · ${n} changed` : count.dataset.rows; if (count.textContent !== text) count.textContent = text }
+    }
+    for (const [card, rows] of cards) {
+      // All in one fold (outermost in the card): that fold's own reset already covers them.
+      const outer = (row: HTMLElement) => { let found: Element | null = null; for (let el = row.parentElement; el && el !== card; el = el.parentElement) if (el.tagName === 'DETAILS') found = el; return found }
+      const first = outer(rows[0]), oneFold = !!first && rows.every(row => outer(row) === first)
+      // A card with its own whole-card reset (data-resets-card) does not get a second one.
+      if (rows.length < 2 || oneFold || card.querySelector('[data-resets-card]')) continue
+      let control = this.groupResets.get(card)
+      if (!control) {
+        control = resetAllButton({ label: n => `Reset all ${n}`, confirm: n => `Confirm: reset ${n} ${n === 1 ? 'setting' : 'settings'}`, tip: 'Puts this card’s settings back to their defaults. Names, colours, saved worlds and the quality level are not settings and stay as they are', run: runAll(() => changedIn([...this.resets.keys()].filter(row => row.isConnected && row.closest('.wi-card') === card))), className: 'wi-card-reset-button' })
+        this.groupResets.set(card, control)
+      }
+      // The card's own foot (Copy JSON, Paste) where it has one; otherwise a foot of its own.
+      const body = card.querySelector<HTMLElement>(':scope > .wi-body')!
+      let foot = body.querySelector<HTMLElement>(':scope > .wi-foot')
+      if (!foot) { foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'; body.append(foot) }
+      if (control.element.parentElement !== foot) foot.append(control.element)
+      control.count(changedIn(rows).length)
+    }
   }
   hideTooltip(): void {
     clearTimeout(this.tooltipTimer); this.tooltip.hidden = true; this.selected = ''

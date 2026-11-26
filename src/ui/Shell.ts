@@ -48,6 +48,7 @@ import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import { MAX_NAME_LENGTH, type RaceState } from '../../shared/protocol'
 import { diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
+import { resetButton } from './resetControl'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
@@ -518,7 +519,11 @@ export class Shell implements System {
     // The dialog's own Escape (cancel) and any other close route through closeAbout.
     guide.addEventListener('cancel', event => { event.preventDefault(); this.closeAbout() }, { signal })
     guide.addEventListener('close', () => this.closeAbout(), { signal })
-    this.switches.set('diagnostics', this.bindField(players.querySelector('.rail-diagnostics')!, signal))
+    // The setting's only control in play, so it carries the shared reset (resetControl.ts).
+    const diagnosticsField = players.querySelector<HTMLElement>('.rail-diagnostics')!, diagnosticsReset = resetButton(() => params.set(diagnostics.def.id, diagnostics.def.default, 'local'))
+    diagnosticsField.dataset.settingId = diagnostics.def.id; diagnosticsField.classList.add('has-reset'); diagnosticsField.append(diagnosticsReset.element)
+    const setDiagnostics = this.bindField(diagnosticsField, signal)
+    this.switches.set('diagnostics', on => { setDiagnostics(on); diagnosticsReset.set({ changed: on !== diagnostics.def.default, defaultText: switchWord(diagnostics.def.default), name: 'Connection diagnostics' }) })
     players.querySelector('.rail-diagnostics input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     // Mute audio is a personal setting: the Me card's Audio group has it (audio.muted, the first
     // row there), not this card (the owner, 22 November 2026).
