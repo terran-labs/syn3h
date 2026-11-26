@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { buildTree, type PropertyDef } from '../../src/ui/inspector/model'
+import { buildTree, SECTIONS, type PropertyDef } from '../../src/ui/inspector/model'
 
 const ID = 'net.shareLocation'
 
@@ -46,10 +46,13 @@ describe("Welcome's direction to the location switch", () => {
     const [, card, heading, label] = said!
     const tree = buildTree([{ ...def!, default: true }])
     const section = tree.find(s => s.tree.some(g => g.properties.some(p => p.id === ID)))
-    const part = section?.parts.find(p => p.groups.some(g => g.properties.some(q => q.id === ID)))
-    // A flat section, or one holding a single group, shows the switch under its own title;
-    // otherwise the group's fold (with its shown name) is the heading over it.
-    const shown = part && (part.flat || part.groups.length === 1 ? part.title : part.titles[def!.group] ?? def!.group)
+    // Decided by the section as declared (SECTIONS), not by this one-definition tree, in which
+    // every section holds a single group: a flat section, or one declaring a single group and no
+    // single rows from elsewhere, shows the switch under its own title; otherwise the group's
+    // fold, under its shown name, is the heading over it (Inspector.fillParts).
+    const spec = SECTIONS.find(s => s.id === section?.id)?.parts.find(p => p.ids?.includes(ID) || p.groups?.includes(def!.group))
+    const single = (spec?.groups?.length ?? 0) + (spec?.ids?.length ?? 0) <= 1
+    const shown = spec && (spec.flat || single ? spec.title : spec.titles?.[def!.group] ?? def!.group)
     expect(section?.title, 'the card Welcome names').toBe(card)
     expect(shown, 'the section Welcome names').toBe(heading)
     expect(def!.label, "the switch's label as Welcome quotes it").toBe(label)
