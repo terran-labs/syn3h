@@ -24,6 +24,7 @@ function build(root, name, mark, version) {
   writeFileSync(join(copy, 'dist', 'brand', 'share.png'), 'png')
   writeFileSync(join(copy, 'dist', '.assetsignore'), '*.map\n')
   writeFileSync(join(copy, 'dist', 'releases.json'), JSON.stringify({ releases: [{ version: mark }] }))
+  writeFileSync(join(copy, 'dist', 'releases-older.json'), JSON.stringify({ releases: [{ version: mark }] }))
   return copy
 }
 
@@ -52,6 +53,7 @@ test('a release lists every version but carries none, and only acceptance archiv
     assert.deepEqual(archivedVersions(store), ['26.11.1503'])
     assert.ok(!existsSync(join(store, '26.11.1503/assets/app-one.js.map')), 'source maps are not archived')
     assert.ok(!existsSync(join(store, '26.11.1503/releases.json')), 'the Updates feed is the live site\'s, never archived')
+    assert.ok(!existsSync(join(store, '26.11.1503/releases-older.json')), 'nor is its older history')
     assert.ok(!existsSync(join(store, '26.11.1503/v')), 'an archived version holds no list of the others')
 
     const second = build(root, 'second', 'two', '26.11.1600')

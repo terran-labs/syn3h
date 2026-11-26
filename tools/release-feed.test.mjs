@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { buildFeed, forPlayers } from './release-feed.mjs'
+import { buildFeed, buildFeeds, forPlayers } from './release-feed.mjs'
 import { bannedWords } from './lib/public-words.mjs'
 
 const LEAK = "Dimensional portal: the creator's sign-in, revealed by five taps on the version label"
@@ -44,7 +44,7 @@ test('banned words are found in any text, the notes words and the hidden ones', 
 })
 
 /** A repository with two production releases; the second's train has the leaking commit. */
-function fixture(secondNotes) {
+function fixture(secondNotes, firstNotes = 'The first.') {
   const repo = mkdtempSync(join(tmpdir(), 'feed-'))
   const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   git('init', '-q'); git('config', 'user.email', 't@example.com'); git('config', 'user.name', 'T')
@@ -57,7 +57,7 @@ function fixture(secondNotes) {
   mkdirSync(join(repo, 'release-notes', 'releases'), { recursive: true })
   writeFileSync(join(repo, 'release-notes', 'history.tsv'),
     `v26.11.2401\tm-a\t${first}\t2026-11-24 10:00 PST\tproduction\nv26.11.2402\tm-b\t${second}\t2026-11-24 12:00 PST\tproduction\n`)
-  writeFileSync(join(repo, 'release-notes', 'releases', 'v26.11.2401.md'), '## Mira v26.11.2401\n\nThe first.\n')
+  writeFileSync(join(repo, 'release-notes', 'releases', 'v26.11.2401.md'), `## Mira v26.11.2401\n\n${firstNotes}\n`)
   writeFileSync(join(repo, 'release-notes', 'releases', 'v26.11.2402.md'), `## Mira v26.11.2402\n\n${secondNotes}\n`)
   return repo
 }
@@ -79,5 +79,25 @@ test('a banned word anywhere in the finished feed fails the build', () => {
   const repo = fixture('Tap the version label five times to open the portal.')
   try {
     assert.throws(() => buildFeed(repo, 60, undefined), /banned words: portal/)
+  } finally { rmSync(repo, { recursive: true, force: true }) }
+})
+
+test('older releases go to their own file, named by the recent one only when it exists', () => {
+  const repo = fixture('Vehicles skip across water.')
+  try {
+    const split = buildFeeds(repo, 1, undefined)
+    assert.deepEqual(split.recent.releases.map(r => r.version), ['26.11.2402'])
+    assert.equal(split.recent.older, '/releases-older.json')
+    assert.deepEqual(split.older.releases.map(r => r.version), ['26.11.2401'])
+    const whole = buildFeeds(repo, 60, undefined)
+    assert.equal(whole.older, null)
+    assert.equal('older' in whole.recent, false)
+  } finally { rmSync(repo, { recursive: true, force: true }) }
+})
+
+test('a banned word in the older history fails the build too', () => {
+  const repo = fixture('Vehicles skip across water.', 'Back buttons are easier to hit.')
+  try {
+    assert.throws(() => buildFeeds(repo, 1, undefined), /releases-older\.json\) would show players banned words: hit/)
   } finally { rmSync(repo, { recursive: true, force: true }) }
 })

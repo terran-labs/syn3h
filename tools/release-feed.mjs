@@ -1,6 +1,8 @@
 /**
  * The release feed: /releases.json, the most recent production releases for the Updates view
  * in About (src/ui/updates/), newest first.
+ * /releases-older.json holds every older production release back to the first, fetched only
+ * when a player presses Show more; /releases.json names it in `older` when it exists.
  *
  * vite.config.ts: plugins: [..., releaseFeed()]
  *
@@ -34,6 +36,8 @@ import { fileURLToPath } from 'node:url'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 export const FEED_FILE = 'releases.json'
+/** Every older production release, back to the first: fetched only when a player presses Show more. */
+export const OLDER_FILE = 'releases-older.json'
 // About 18 days at four releases a day: the view folds each day into one entry.
 const LIMIT = 60
 const VERSION = /^v?(\d+)\.(\d+)\.(\d+)$/
@@ -212,11 +216,15 @@ export function pacificStamp(when) {
 }
 
 /**
- * The feed. `building` is the version this build is for (MIRA_RELEASE_VERSION): release.sh
- * writes its history row only after the deploy, so without this a release's own Updates would
- * leave it out. It is listed first, dated now, with its digest, unless history already has it.
+ * The feed: /releases.json, the newest `limit` releases, and /releases-older.json, every older
+ * production release back to the first (the owner, 25 Nov 2026: "Show more"), or null when
+ * there is none. The recent file names the older one in `older` only when it exists. Both get
+ * the same fields, the same Changes filter and the same banned-word failure.
+ * `building` is the version this build is for (MIRA_RELEASE_VERSION): release.sh writes its
+ * history row only after the deploy, so without this a release's own Updates would leave it
+ * out. It is listed first, dated now, with its digest, unless history already has it.
  */
-export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIRA_RELEASE_VERSION, now = new Date()) {
+export function buildFeeds(repo = REPO, limit = LIMIT, building = process.env.MIRA_RELEASE_VERSION, now = new Date()) {
   const dir = join(repo, 'release-notes', 'releases'), history = join(repo, 'release-notes', 'history.tsv')
   const historyText = existsSync(history) ? readFileSync(history, 'utf8') : ''
   const dates = productionDates(historyText)
@@ -245,7 +253,7 @@ export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIR
   const graph = readGraph(repo, [...commits.values(), ...allBetas.map(b => b.commit), ownHead])
   // Betas never promoted, each under the next release after it (or under this build).
   const unpromoted = allBetas.filter(b => !promoted.has(b.version) && b.version !== own).sort((a, b) => compare(a.version, b.version))
-  const releases = ordered.slice(0, limit).map((version, i) => {
+  const entries = ordered.map((version, i) => {
     const previous = ordered[i + 1] ?? null
     const commit = version === own ? ownHead : commits.get(version)
     const previousCommit = previous ? commits.get(previous) : null
@@ -264,11 +272,22 @@ export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIR
     if (betas.length) entry.betas = betas
     return entry
   })
-  const feed = own ? { build: own, releases } : { releases }
-  // Nothing banned reaches players in any field: the build fails instead (public-words.mjs).
-  const banned = bannedWords(JSON.stringify(feed))
-  if (banned.length) throw new Error(`The release feed would show players banned words: ${banned.join(', ')}. Reword the notes or digest, or the filter in release-feed.mjs.`)
-  return feed
+  const releases = entries.slice(0, limit), rest = entries.slice(limit)
+  const recent = own ? { build: own, releases } : { releases }
+  if (rest.length) recent.older = `/${OLDER_FILE}`
+  const older = rest.length ? { releases: rest } : null
+  // Nothing banned reaches players in any field of either file: the build fails instead
+  // (public-words.mjs).
+  for (const [name, feed] of [[FEED_FILE, recent], [OLDER_FILE, older]]) {
+    const banned = feed ? bannedWords(JSON.stringify(feed)) : []
+    if (banned.length) throw new Error(`The release feed (${name}) would show players banned words: ${banned.join(', ')}. Reword the notes or digest, or the filter in release-feed.mjs.`)
+  }
+  return { recent, older }
+}
+
+/** /releases.json alone (buildFeeds). */
+export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIRA_RELEASE_VERSION, now = new Date()) {
+  return buildFeeds(repo, limit, building, now).recent
 }
 
 function gitHead(repo) {
@@ -304,16 +323,30 @@ export function releaseFeed() {
       // Built once per server start and again only when its inputs change: building it on every
       // request held Vite's event loop for seconds under load and stalled every other request.
       let cached = null, cachedKey = ''
-      server.middlewares.use(`/${FEED_FILE}`, (_req, res) => {
+      const feeds = () => {
         const key = feedInputs()
-        if (cached === null || key !== cachedKey) { cached = JSON.stringify(buildFeed()); cachedKey = key }
-        res.setHeader('content-type', 'application/json; charset=utf-8')
-        res.setHeader('cache-control', 'no-cache')
-        res.end(cached)
-      })
+        if (cached === null || key !== cachedKey) {
+          const { recent, older } = buildFeeds()
+          cached = { [FEED_FILE]: JSON.stringify(recent), [OLDER_FILE]: older ? JSON.stringify(older) : null }
+          cachedKey = key
+        }
+        return cached
+      }
+      for (const file of [FEED_FILE, OLDER_FILE]) {
+        server.middlewares.use(`/${file}`, (req, res, next) => {
+          if ((req.url ?? '/').split('?')[0] !== '/') return next() // only the file itself
+          const body = feeds()[file]
+          if (body === null) return next()
+          res.setHeader('content-type', 'application/json; charset=utf-8')
+          res.setHeader('cache-control', 'no-cache')
+          res.end(body)
+        })
+      }
     },
     generateBundle() {
-      this.emitFile({ type: 'asset', fileName: FEED_FILE, source: JSON.stringify(buildFeed()) + '\n' })
+      const { recent, older } = buildFeeds()
+      this.emitFile({ type: 'asset', fileName: FEED_FILE, source: JSON.stringify(recent) + '\n' })
+      if (older) this.emitFile({ type: 'asset', fileName: OLDER_FILE, source: JSON.stringify(older) + '\n' })
     },
   }
 }

@@ -57,7 +57,7 @@ export function archivedVersions(dir = archiveDir()) {
 
 /**
  * A release's own files: no source maps, no upload ignore list, no nested frozen versions, and
- * no Updates feed (/releases.json describes the live site for every page, pinned or not; see
+ * no Updates feed ($1 so does /releases-older.json; see
  * src/ui/updates/feed.ts), so a pinned page and the frozen check never ask for an old one.
  */
 function copyBuild(from, to) {
@@ -67,7 +67,7 @@ function copyBuild(from, to) {
     recursive: true,
     filter: (source) => {
       const path = relative(from, source)
-      return path !== 'v' && !path.startsWith('v/') && !path.endsWith('.map') && path !== '.assetsignore' && path !== 'releases.json'
+      return path !== 'v' && !path.startsWith('v/') && !path.endsWith('.map') && path !== '.assetsignore' && path !== 'releases.json' && path !== 'releases-older.json'
     },
   })
 }
@@ -292,7 +292,7 @@ export const WORKER_ROUTED = /^(index\.html|build\.json|models\/|v\/)/
 export function changedInPlace(dist, versions, archive = archiveDir()) {
   const changed = []
   for (const file of walk(dist)) {
-    if (WORKER_ROUTED.test(file) || file.endsWith('.map') || file === '.assetsignore' || file === 'releases.json') continue
+    if (WORKER_ROUTED.test(file) || file.endsWith('.map') || file === '.assetsignore' || file === 'releases.json' || file === 'releases-older.json') continue
     const mine = sha(readFileSync(join(dist, file)))
     const owners = versions.filter((v) => existsSync(join(archive, v, file)) && sha(readFileSync(join(archive, v, file))) !== mine)
     if (owners.length) changed.push(`${file} (differs from ${owners.length === 1 ? owners[0] : `${owners.length} archived versions, newest ${owners.at(-1)}`})`)
@@ -410,7 +410,7 @@ export async function check(base, copy, { concurrency = CONCURRENCY, archive = a
   })
 
   // The new release's files, asked for the way its page asks: by root path, from that page.
-  const files = walk(root).filter((file) => file !== 'index.html' && !file.endsWith('.map') && file !== '.assetsignore' && file !== 'releases.json' && !file.startsWith('v/'))
+  const files = walk(root).filter((file) => file !== 'index.html' && !file.endsWith('.map') && file !== '.assetsignore' && file !== 'releases.json' && file !== 'releases-older.json' && !file.startsWith('v/'))
   await mapPool(files, concurrency, async (file) => {
     const got = await request(`${origin}/${file}`, { headers: { Referer: `${origin}/?v=${current}` } })
     const want = expectedServed(readFileSync(join(root, file)), base, got.headers.get('content-type'))

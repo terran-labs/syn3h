@@ -86,9 +86,15 @@ export function allowed(record) {
   return ALLOWLIST.find((a) => a.kind === record.kind && (!a.type || a.type === record.type) && a.pattern.test(record.path ?? '')) ?? null
 }
 
+/**
+ * Requests ordinary play never makes, whatever their kind: the older Updates history is fetched
+ * only when a player presses Show more (tools/release-feed.mjs OLDER_FILE).
+ */
+export const NEVER_IN_PLAY = [/(^|\/)releases-older\.json(\?|$)/]
+
 /** Records that fail the gate. */
 export function violations(records) {
-  return records.filter((r) => (BINARY_KINDS.has(r.kind) && !r.generated && !allowed(r)) || wasmViolation(r))
+  return records.filter((r) => (BINARY_KINDS.has(r.kind) && !r.generated && !allowed(r)) || wasmViolation(r) || NEVER_IN_PLAY.some((re) => re.test(r.path ?? '')))
 }
 
 /**
