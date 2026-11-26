@@ -132,7 +132,9 @@ async function main() {
           await page.goto(`${origin}/?room=${roomName}&name=${name}`)
           await page.waitForFunction(()=>window.mira?.shell,null,{timeout:90000})
         }
-        const play=async page=>{await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.mira.shell.playing&&window.miraNet?.connected,null,{timeout:90000})}
+        // Enter only on the settled lobby: an Enter during the lobby's opening is dropped (a
+        // product fault routed to the lobby's owner, 26 Nov 2026), and this check pressed it there.
+        const play=async page=>{await page.waitForFunction(()=>document.documentElement.dataset.boot==='done'&&!window.mira?.shell?.galaxy?.opening&&!document.documentElement.dataset.opening,null,{timeout:120000});await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.mira.shell.playing&&window.miraNet?.connected,null,{timeout:90000})}
         await open(host,'PerfHost')
         // Every cell starts with fresh storage and automatic detection before explicit tier choice.
         await host.evaluate(tier=>{const s=window.mira,p=window.performanceMatrix;p.phase='transition';p.events.push({at:performance.now(),type:'manual-tier',tier});s.game.quality.setAuto(false);s.game.quality.setLevel(tier)},tier)
