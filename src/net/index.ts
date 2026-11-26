@@ -425,6 +425,7 @@ export class NetClient implements System {
       },
       colorsOf: (id) => { const v = this.vehicleOf(id); return v ? [new THREE.Color(v.colors.body), new THREE.Color(v.colors.accent)] : undefined },
       onBurst: (shooter, at, cause, delay) => this.thunderBurst(shooter, at, cause, delay),
+      onQuench: (_shooter, at) => this.gearCue('bigRedFizzle', at),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
         if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return

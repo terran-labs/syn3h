@@ -29,7 +29,7 @@ import { ImpactPulses } from './pulse'
 import { ImpactFx, viewHeight, type ImpactTerrain } from './impact/ImpactFx'
 import { CLIMB_SECONDS, Fireworks } from './fireworks/Fireworks'
 import { thunderFlareHeight, thunderFuseAir, thunderFuseAirHeight, thunderFuseArm, thunderFuseGround, thunderSkipAngle, thunderSkipBounce, thunderSkipGravity, thunderSkipKeep, thunderSkipPush, thunderSkips } from './thunderParams'
-import { fireworkSeed, fuseArmed, fuseRadius, nearestOnSegment, skipOff, type ThunderCause, type V3 } from './thunderRules'
+import { QUENCH_LENGTH, burstKept, fireworkSeed, fuseArmed, fuseRadius, fuseSenses, nearestOnSegment, skipOff, submergedAt, type ThunderCause, type V3 } from './thunderRules'
 import { thunderBlastRadius } from './blastParams'
 
 export interface LaserHooks {
@@ -57,6 +57,8 @@ export interface LaserHooks {
   onDetonate?(shooter: number, shot: number, cause: ThunderCause, at: THREE.Vector3, victim?: number): void
   /** The shooter's two vehicle colours, for its fireworks. */
   colorsOf?(id: number): readonly [THREE.Color, THREE.Color] | undefined
+  /** A Plasma Thunder bolt quenched by water or lava at `at`: where it went under, or at the nose when fired submerged (thunderRules.ts). */
+  onQuench?(shooter: number, at: THREE.Vector3, atNose: boolean): void
   /** A Plasma Thunder burst, seen at `at` after `delay` s (a flare climbs first): for the map and the sound. */
   onBurst?(shooter: number, at: THREE.Vector3, cause: ThunderCause, delay: number): void
   /**
@@ -88,6 +90,8 @@ interface Projectile {
   reach: number
   /** Plasma Thunder: skips off the ground so far. */
   skips: number
+  /** Plasma Thunder under water or lava: metres run since it went under, fading; -1 above the surface. */
+  quench: number
 }
 
 interface Glow {
@@ -275,6 +279,7 @@ export class Lasers implements System {
       shown: -1,
       reach: 0,
       skips: 0,
+      quench: -1,
     }
     const tint = new THREE.Mesh(this.haloGeo, red ? this.redTintMat : this.tintMat)
     tint.renderOrder = -1
@@ -419,6 +424,8 @@ export class Lasers implements System {
         p.tied = false
       }
     }
+    // Quenched under water or lava, the bolt thins away over its last few metres.
+    if (p.red && p.quench >= 0) { const f = Math.max(0.05, 1 - p.quench / QUENCH_LENGTH); mesh.scale.x = RED_SCALE[0] * f; mesh.scale.y = RED_SCALE[1] * f }
     // Scale the beam along its length; the front stays put.
     const k = len / SPAN
     mesh.scale.z = k
@@ -470,7 +477,7 @@ export class Lasers implements System {
     p.age += dt
     if (p.age > p.life) {
       // Plasma Thunder goes off where it is when its life runs out: a burst in the air.
-      if (p.red) this.detonate(p, p.pos.clone(), UP_NORMAL, 'end')
+      if (p.red && p.quench < 0) this.detonate(p, p.pos.clone(), UP_NORMAL, 'end')
       else this.kill(this.shots.indexOf(p))
       return
     }
@@ -499,10 +506,20 @@ export class Lasers implements System {
         return !this.hooks.isVehicleBody(parent.handle)
       },
     )
+    // Plasma Thunder never detonates under water or lava (thunderRules.ts): once under, it runs on
+    // quenched; above, it is judged as always, up to where this step's flight goes under.
+    if (p.red && p.quench >= 0) { this.underway(p, dir, dist, hit, shooterBody); return }
+    let crossAt = Infinity
+    const level = p.red ? this.liquidLevel() : null
+    if (level) {
+      const reachAll = hit ? hit.timeOfImpact : dist
+      const t = submergedAt([p.pos.x, p.pos.y, p.pos.z], [p.pos.x + dir.x * reachAll, p.pos.y + dir.y * reachAll, p.pos.z + dir.z * reachAll], level)
+      if (t !== null) crossAt = t * reachAll
+    }
     const parent0 = hit?.collider.parent()
     // Big Red is fat: if its centre line meets no vehicle we judge, look around the centre.
-    if (p.red && !(parent0 && this.hooks.judgedId(parent0.handle) !== null)) {
-      const wide = this.wideCatch(p, dir, hit ? hit.timeOfImpact : dist, shooterBody)
+    if (p.red && crossAt > 0 && !(parent0 && this.hooks.judgedId(parent0.handle) !== null)) {
+      const wide = this.wideCatch(p, dir, Math.min(hit ? hit.timeOfImpact : dist, crossAt), shooterBody)
       if (wide) {
         // Contact with a vehicle: it goes off at once, armed or not.
         this.hooks.onHit(p.shooter, p.id, wide.victim, wide.point, dir.clone(), true)
@@ -510,7 +527,7 @@ export class Lasers implements System {
         return
       }
     }
-    if (hit) {
+    if (hit && hit.timeOfImpact <= crossAt) {
       const point = new THREE.Vector3(p.pos.x + dir.x * hit.timeOfImpact, p.pos.y + dir.y * hit.timeOfImpact, p.pos.z + dir.z * hit.timeOfImpact)
       const parent = hit.collider.parent()
       const victim = parent ? this.hooks.judgedId(parent.handle) : null
@@ -523,12 +540,14 @@ export class Lasers implements System {
     }
     // Plasma Thunder's proximity fuse, once armed: a vehicle this client judges within reach of
     // this step's flight (up to whatever it hits) sets it off. The shooter's own never does.
-    if (p.red && this.hooks.judged && fuseArmed(p.age, thunderFuseArm.value)) {
-      const reach = hit ? hit.timeOfImpact : dist
+    if (p.red && crossAt > 0 && this.hooks.judged && fuseArmed(p.age, thunderFuseArm.value)) {
+      const reach = Math.min(hit ? hit.timeOfImpact : dist, crossAt)
       const from: V3 = [p.pos.x, p.pos.y, p.pos.z], to: V3 = [p.pos.x + dir.x * reach, p.pos.y + dir.y * reach, p.pos.z + dir.z * reach]
       const rule = { ground: thunderFuseGround.value, air: thunderFuseAir.value, airHeight: thunderFuseAirHeight.value }
       for (const v of this.hooks.judged()) {
         if (v.id === p.shooter) continue
+        // A vehicle under water or lava is out of the fuse's reach (thunderRules.ts fuseSenses).
+        if (level && !fuseSenses([v.x, v.y, v.z], level(v.x, v.z))) continue
         const near = nearestOnSegment(from, to, [v.x, v.y, v.z])
         if (near.distance <= fuseRadius(v.clearance, rule)) {
           this.detonate(p, new THREE.Vector3(...near.point), dir.clone().negate(), 'fuse', v.id)
@@ -536,6 +555,7 @@ export class Lasers implements System {
         }
       }
     }
+    if (crossAt < Infinity) { this.quench(p, dir, crossAt); return }
     if (!hit) {
       p.pos.addScaledVector(dir, dist)
       return
@@ -571,6 +591,55 @@ export class Lasers implements System {
     p.pos.copy(point).addScaledVector(n, 0.05)
   }
 
+  /** The shared liquid surface (terrain.liquidHeightAt, with its waves), or null on a world without one. */
+  private liquidLevel(): ((x: number, z: number) => number) | null {
+    const t = this.hooks.terrain?.()
+    return t?.liquidHeightAt ? (x, z) => t.liquidHeightAt!(x, z) ?? -Infinity : null
+  }
+
+  /**
+   * Plasma Thunder goes under water or lava `reach` metres along `dir`: no burst. Fired while
+   * submerged, it fizzles at the nose and is gone. Otherwise it makes the splash a Thunder hit
+   * on water makes there (ImpactFx draws it on the surface, with steam or embers), and runs on
+   * quenched (underway).
+   */
+  private quench(p: Projectile, dir: THREE.Vector3, reach: number): void {
+    const at = new THREE.Vector3(p.pos.x + dir.x * reach, p.pos.y + dir.y * reach, p.pos.z + dir.z * reach)
+    if (reach === 0 && p.age <= FIXED_DT * 1.5) {
+      this.hooks.onQuench?.(p.shooter, at, true)
+      this.kill(this.shots.indexOf(p))
+      return
+    }
+    this.fx.impact(at, UP_NORMAL, dir, false, RED_IMPACT, true)
+    this.hooks.onQuench?.(p.shooter, at, false)
+    p.pos.copy(at)
+    p.quench = 0
+  }
+
+  /**
+   * A quenched bolt's run under the surface, fading (place): a vehicle it meets is tagged as a tag
+   * beam's hit would tag it (no Thunder shove, no burst); anything else it meets, or QUENCH_LENGTH
+   * metres, ends it quietly.
+   */
+  private underway(p: Projectile, dir: THREE.Vector3, dist: number, hit: { timeOfImpact: number; collider: RAPIER.Collider } | null, shooterBody?: RAPIER.RigidBody): void {
+    const reach = hit ? hit.timeOfImpact : dist
+    const parent = hit?.collider.parent()
+    let victim = parent ? this.hooks.judgedId(parent.handle) : null
+    let point = hit ? new THREE.Vector3(p.pos.x + dir.x * reach, p.pos.y + dir.y * reach, p.pos.z + dir.z * reach) : null
+    if (victim === null) {
+      const wide = this.wideCatch(p, dir, reach, shooterBody)
+      if (wide) { victim = wide.victim; point = wide.point }
+    }
+    if (victim !== null && point) {
+      this.hooks.onHit(p.shooter, p.id, victim, point, dir.clone(), false)
+      this.kill(this.shots.indexOf(p))
+      return
+    }
+    p.pos.addScaledVector(dir, reach)
+    p.quench += reach
+    if (hit || p.quench >= QUENCH_LENGTH) this.kill(this.shots.indexOf(p))
+  }
+
   /**
    * Plasma Thunder goes off at `at` (thunderRules.ts). Contact and fuse are only ever found by
    * the client that judges the vehicle caught, and an end belongs to the shooter's client (the
@@ -596,6 +665,11 @@ export class Lasers implements System {
     const waited = this.waiting.get(key)
     this.waiting.delete(key)
     if (this.burstKeys.has(key)) return
+    // Never a burst clearly under water or lava (a report from a client older than the rule):
+    // tested against the liquid at rest, with room for any wave, so every client agrees.
+    const terrain = this.hooks.terrain?.() as (ImpactTerrain & { liquidLevelAt?(x: number, z: number): number }) | undefined
+    const rest = terrain?.liquidLevelAt?.(at.x, at.z) ?? terrain?.liquidHeightAt?.(at.x, at.z) ?? -Infinity
+    if (!burstKept([at.x, at.y, at.z], rest)) return
     this.burst(shooter, shot, at, waited?.normal ?? UP_NORMAL, cause, true)
   }
 

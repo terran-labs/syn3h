@@ -4,6 +4,8 @@
  * and what each kind of detonation does in each mode. No Three.js and no physics, so the room
  * server and every client apply exactly the same rule, and tests can pin it.
  */
+import { WAVE_MAX_AMPLITUDE } from '../../shared/water/waves'
+
 export type V3 = [number, number, number]
 
 /** Why a bolt ended. contact: it touched a vehicle. fuse: it passed close to one. end: ground, steep contact or old age. */
@@ -117,4 +119,76 @@ export const BURST_MARGIN = 200
 export function burstPointPlausible(at: V3, size: number, flareHeight: number): boolean {
   const half = size / 2 + BURST_MARGIN, ceiling = size / (2 * Math.sqrt(Math.PI)) + flareHeight + BURST_MARGIN
   return at.every(Number.isFinite) && Math.abs(at[0]) <= half && Math.abs(at[2]) <= half && at[1] >= -BURST_MARGIN && at[1] <= ceiling
+}
+
+/**
+ * Plasma Thunder never detonates under water or lava (the owner, 26 November 2026: "The red laser
+ * should not detonate underwater"). Its rays pass through liquids, so on its own it would fly on
+ * and go off on the bed, on a fuse beside a submerged vehicle, or at old age below the surface.
+ * Instead a bolt that goes under is quenched: it makes its splash where it crossed and runs on
+ * QUENCH_LENGTH metres, fading, then dies with no burst, firework, flare or shove. A direct catch
+ * on a vehicle in that run still tags, as a tag beam's hit would. Everything is decided from the
+ * bolt's position and the shared wave height (terrain.liquidHeightAt, the function the impact
+ * splash and the floating code read), so every client and the host's bots agree.
+ */
+/** Metres a quenched bolt runs on under the surface while it fades out. */
+export const QUENCH_LENGTH = 3
+
+/** Below a liquid surface `level` (the shared wave height there; -Infinity where dry) by more than `margin` metres. */
+export function underLiquid(at: Readonly<V3>, level: number, margin = 0): boolean {
+  return Number.isFinite(level) && at[1] < level - margin
+}
+
+/**
+ * Where a bolt's flight from `a` to `b` first goes below a liquid surface, as the fraction (0 to 1)
+ * of the segment, or null if it stays above it. `level(x, z)` is the surface there. Sampled at
+ * `samples` points so a crest between the ends is caught, then narrowed by bisection.
+ */
+export function submergedAt(a: Readonly<V3>, b: Readonly<V3>, level: (x: number, z: number) => number, samples = 4): number | null {
+  const at = (t: number): V3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+  const below = (t: number) => { const p = at(t); return underLiquid(p, level(p[0], p[2])) }
+  if (below(0)) return 0
+  let prev = 0
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples
+    if (below(t)) {
+      let lo = prev, hi = t
+      for (let k = 0; k < 10; k++) { const mid = (lo + hi) / 2; if (below(mid)) hi = mid; else lo = mid }
+      return hi
+    }
+    prev = t
+  }
+  return null
+}
+
+/**
+ * Whether the proximity fuse senses a vehicle at `at` (its centre) over a liquid surface `level`:
+ * not when the vehicle is under the surface. Without this a bolt going under right beside a
+ * submerged vehicle would go off at the waterline and shove it. A floating vehicle, centre at or
+ * above the surface, is sensed as before.
+ */
+export function fuseSenses(at: Readonly<V3>, level: number): boolean {
+  return !underLiquid(at, level)
+}
+
+/**
+ * What ends a bolt at `at`, with the liquid surface `level` there: today's cause above the
+ * surface; under it, a quench, which is no detonation at all (no blast, no firework, no push).
+ */
+export type ThunderEnding = ThunderCause | 'quench'
+export function thunderEnding(cause: ThunderCause, at: Readonly<V3>, level: number): ThunderEnding {
+  return underLiquid(at, level) ? 'quench' : cause
+}
+
+/**
+ * Metres of slack below the deepest wave trough before a burst the room reports is dropped. Each
+ * client tests a reported point against the liquid's level at REST (no waves), less the largest
+ * possible wave (WAVE_MAX_AMPLITUDE) and this: so a burst at the waterline, on a floating vehicle
+ * or a beach, is kept by everyone whatever the waves were doing on the reporter's screen, and only
+ * a point clearly under the surface (from a client that predates this rule) is dropped.
+ */
+export const BURST_UNDER_MARGIN = 0.5
+/** Whether every client should draw a burst the room reports at `at`, over a liquid resting at `rest` (-Infinity where dry). */
+export function burstKept(at: Readonly<V3>, rest: number): boolean {
+  return !underLiquid(at, rest, WAVE_MAX_AMPLITUDE + BURST_UNDER_MARGIN)
 }
