@@ -2431,7 +2431,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain, ent
     shell.setDrivenVehicle(activePlayer)
     // Height above ground (contact surfaces, 0 when resting) for the arrival camera; the ALT
     // readout shows the contact surfaces' height above sea level instead.
-    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined, altitudeAboveSea(activePlayer.contactHeight()))
+    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? ((activePlayer as { thrustReadout?: number }).thrustReadout ?? activePlayer.input.z) : undefined, altitudeAboveSea(activePlayer.contactHeight()))
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut, zorbed: activePlayer.zorbed, zorbAvailable: zorbSpeed.value > 0 })
