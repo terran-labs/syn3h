@@ -226,7 +226,39 @@
 .join-view .invite-qr { width: min(60vh,600px,85vw); margin: 12px 0; }
 .join-view .invite-link { font-size: 18px; }
 .join-view .join-count { font-size: 20px; }
-.join-view > div:last-child { display: flex; gap: 12px; margin-top: 12px; }
+/* The two actions (the owner, 25 November 2026: "much larger and fix their positioning"): one
+   centred row under the player count, both the height and type of the game's main pills (the
+   lobby's and the pause bar's: 48 px, 12 px spaced capitals), an even gap. Back used to sit
+   26 px lower: it carries .panel-back, whose margin is for a panel's own Back at its foot, and
+   the row aligned the two by their tops. Both now share one box model and a minimum width, so
+   "Copied" replacing "Copy invite" does not move anything. Copy invite is the primary action:
+   a brighter rim and fill. The key hint (J) is for keyboards and hides on touch. The doubled
+   class outranks glass.css's 30 px .panel-action rule, which loads later. */
+.join-view > .join-actions { flex: none; display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 14px; margin: 20px 0 4px; }
+html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:not([hidden]) {
+  appearance: none; position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 12px; box-sizing: border-box;
+  flex: 0 0 auto; width: auto; min-width: 196px; height: 48px; min-height: 48px; max-width: 100%; margin: 0; padding: 0 30px;
+  border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill, rgb(12 12 13 / .4)); color: var(--s3-ink);
+  box-shadow: var(--halo-glow, none), inset 0 0 12px rgb(205 205 205 / .05); text-shadow: var(--halo-under, none);
+  font: 500 12px/1 'Barlow', sans-serif; letter-spacing: .2em; text-indent: .2em; text-transform: uppercase; white-space: nowrap;
+  -webkit-backdrop-filter: none; backdrop-filter: none; transition: border-color .2s ease, box-shadow .2s ease, background-color .2s ease, color .2s ease;
+}
+html .mira-shell .join-view > .join-actions.join-actions > button.panel-action.join-copy:not([hidden]) { border-color: rgb(255 255 255 / .7); background: rgb(255 255 255 / .1); color: #fff; }
+html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:not([hidden])::before { content: none; }
+html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:not([hidden])::after { content: none; }
+html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:is(:hover, :focus-visible) { color: #fff; border-color: var(--s3-accent-2); background: rgb(205 205 205 / .1); box-shadow: 0 0 10px rgb(205 205 205 / .22), inset 0 0 14px rgb(205 205 205 / .1); }
+html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
+.mira-shell.has-touch .join-view .join-key { display: none; }
+@media (pointer: coarse) { .mira-shell .join-view .join-key { display: none; } }
+/* A phone too narrow for the two side by side: two full-width buttons, Copy invite first. */
+@media (max-width: 460px) {
+  .join-view > .join-actions { flex-direction: column; align-self: center; width: min(100%, 360px); }
+  html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:not([hidden]) { width: 100%; min-width: 0; }
+}
+/* The QR code gives way first on a short screen: it is the one item that may shrink (to 120 px),
+   so the link, count and buttons stay on screen. It keeps its size wherever there is room. */
+.join-view > .invite-qr { flex: 0 1 auto; min-height: 120px; aspect-ratio: 1; height: auto; }
+.join-view > .invite-qr svg { width: 100%; height: 100%; }
 @media(max-width:700px) { .join-view > .wordmark { width: 190px; } .mira-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }
 
 
@@ -361,6 +393,8 @@
   .join-view .join-room { font-size: 18px; }
   .join-view .invite-link { font-size: 12px; }
   .join-view .join-count { font-size: 15px; }
+  .join-view > .join-actions { justify-content: flex-start; margin-top: 12px; gap: 12px; }
+  html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:not([hidden]) { min-width: 150px; padding: 0 22px; }
 }
 /* Lobby index on a short screen: the planets and the links fit without scrolling. */
 @media (max-height: 550px) {
