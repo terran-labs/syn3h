@@ -179,7 +179,8 @@ try {
           const full0 = bots.vehicles.filter(v => v.object.visible).length
           return { transitionError, name: game.quality.getQualityState().name, script, tail, full, gpu, bots: bots.vehicles.length, visible: full0 }
         })
-        for (const metric of Object.keys(samples[which])) samples[which][metric].push(...block[metric])
+        // The timing series only: `pipelines` beside them is a running count, not a series.
+        for (const metric of ['script', 'tail', 'full', 'gpu']) (samples[which][metric] ??= []).push(...block[metric])
         samples[which].pipelines = (samples[which].pipelines ?? 0) + (await page.evaluate(() => window.__pipelines)) - before
         console.error(backend, block.name, which, block.script.length, 'frames,', block.gpu.length, 'GPU samples,', block.bots, 'bots')
         loads.push(loadavg()[0])
