@@ -2698,6 +2698,13 @@ export class Shell implements System {
     const touch = this.touch.available
     this.bandsIn -= dt; if (this.bandsIn <= 0) { this.bandsIn = 0.25; this.measureBands() }
     const card = this.element.querySelector<HTMLElement>('.spawn-help')!
+    // An upright phone in a match: the match HUD (game state) takes the band the tips use, so the
+    // tips wait, unseen and with their lessons and cap paused, and come back when it goes
+    // (phone-layout.mjs, King of the Hill: they overlapped it).
+    if (touch && this.element.classList.contains('has-match') && matchMedia('(orientation: portrait)').matches) {
+      if (card.classList.contains('is-tips') && !card.hidden) { card.hidden = true; card.classList.remove('is-fading'); this.tipsShown = '' }
+      return
+    }
     const busy = !card.hidden && !card.classList.contains('is-tips')
     const on = controlTips.value && this.started && this.playing && !this.menuVisible && !busy
     const lines: TipLine[] = on ? this.tips.update(dt, { ...input, touch, tagAllowed: Boolean(params.get('laser.allowed')?.value ?? true) }) : []
