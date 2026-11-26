@@ -98,6 +98,13 @@ describe('the tilt after letting go', () => {
       expect(t).toBeLessThan(20 * tau)
     }
   })
+  it('returns from past a tilt limit too, where a drag below the plane leaves it', () => {
+    const tau = pitchReturn.value * SWING.coast, dt = 1 / 60, low = -0.2, high = 1.25
+    let pitch = { aim: -0.34, aimSpeed: 0, view: -0.34, viewSpeed: 0 }, t = 0
+    const done = () => pitch.aim === REST.pitch && pitch.view === REST.pitch && pitch.aimSpeed === 0 && pitch.viewSpeed === 0
+    for (; !done() && t < 20 * tau; t += dt) pitch = swingStep(pitchHome(pitch, dt, REST.pitch, tau), dt, false, low, high)
+    expect(done()).toBe(true)
+  })
   it('fades the name out below the plane and back in above, over its band', () => {
     expect(planeShown(-20, 14)).toBe(1)
     expect(planeShown(20, 14)).toBe(0)
