@@ -26,7 +26,7 @@
  * never ships without words for its own players.
  */
 import './lib/legacy-env.mjs' // legacy environment names, see docs/NAMES.md
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -104,25 +104,65 @@ export function readBetas(tsv) {
 }
 
 /**
+ * The commit graph the feed needs, read with one `git log` from every commit it names: each
+ * commit's parents, short hash and subject. Commits missing from the repository are left out
+ * (--ignore-missing). Empty when git is not available.
+ */
+function readGraph(repo, commits) {
+  const graph = new Map()
+  const starts = [...new Set(commits.filter(Boolean))]
+  if (!starts.length) return graph
+  try {
+    const out = execFileSync('git', ['log', '--ignore-missing', '--abbrev=8', '--format=%H%x09%P%x09%h%x09%s', ...starts, '--'],
+      { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 256 * 1024 * 1024 })
+    for (const line of out.split('\n')) {
+      if (!line) continue
+      const [hash, parents, short, ...subject] = line.split('\t')
+      graph.set(hash, { parents: parents ? parents.split(' ') : [], short, subject: subject.join('\t') })
+    }
+  } catch { /* no git: no changes listed */ }
+  return graph
+}
+
+/** A commit's full hash in the graph, from a full or abbreviated one; null when absent. */
+function findCommit(graph, commit) {
+  if (!commit) return null
+  if (graph.has(commit)) return commit
+  for (const hash of graph.keys()) if (hash.startsWith(commit)) return hash
+  return null
+}
+
+/**
  * The branches merged into a train, oldest first: the merged tip's subject and short commit for
  * each merge on the first-parent line between two commits, and each plain commit there (a tip
- * fast-forwarded onto the train). Empty when git or either commit is not available.
+ * fast-forwarded onto the train). Empty when either commit is not in the graph. The same answer
+ * as `git log --first-parent from..to`, worked out from the graph read once (readGraph).
  */
 const NOT_CHANGES = /^(Record v\d|v\d+\.\d+\.\d+ notes|Notes renamed to v\d|Merge )/
-function trainChanges(repo, from, to) {
-  if (!to) return []
-  try {
-    const git = (...args) => execFileSync('git', args, { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-    const range = from ? `${from}..${to}` : to
-    // Each commit on the first-parent line: a merge stands for the tip it merged; a plain commit
-    // (a tip fast-forwarded onto the train) for itself. Release records and notes are not changes.
-    const lines = git('log', '--first-parent', '--format=%H %P', range).split('\n').filter(Boolean)
-    const tips = lines.map(line => { const [self, , merged] = line.split(' '); return merged ?? self })
-    return tips
-      .map(tip => ({ title: git('log', '-1', '--format=%s', tip), commit: git('rev-parse', '--short=8', tip) }))
-      .filter(c => !NOT_CHANGES.test(c.title))
-      .reverse()
-  } catch { return [] }
+function trainChanges(graph, from, to) {
+  const head = findCommit(graph, to)
+  if (!head) return []
+  const base = from ? findCommit(graph, from) : null
+  if (from && !base) return []
+  // Everything reachable from `from`, which the range excludes.
+  const excluded = new Set()
+  for (const stack = base ? [base] : []; stack.length;) {
+    const hash = stack.pop()
+    if (excluded.has(hash)) continue
+    excluded.add(hash)
+    for (const parent of graph.get(hash)?.parents ?? []) if (graph.has(parent)) stack.push(parent)
+  }
+  // Each commit on the first-parent line: a merge stands for the tip it merged; a plain commit
+  // (a tip fast-forwarded onto the train) for itself. Release records and notes are not changes.
+  const tips = []
+  for (let hash = head; hash && graph.has(hash) && !excluded.has(hash); hash = graph.get(hash).parents[0]) {
+    tips.push(graph.get(hash).parents[1] ?? hash)
+  }
+  return tips
+    .filter(tip => graph.has(tip))
+    .map(tip => ({ title: graph.get(tip).subject, commit: graph.get(tip).short }))
+    .filter(c => !NOT_CHANGES.test(c.title))
+    .reverse()
 }
 
 const digestPath = (repo, version) => join(repo, 'release-notes', 'player', `v${bare(version)}.md`)
@@ -183,23 +223,25 @@ export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIR
     return { summary: digest?.summary ?? (existsSync(notes) ? notesSummary(readFileSync(notes, 'utf8')) : ''), digest: digest?.digest ?? '' }
   }
   const ordered = [...versions].filter(version => dates.has(version)).sort((a, b) => compare(b, a))
+  const ownHead = own ? gitHead(repo) : ''
+  const graph = readGraph(repo, [...commits.values(), ...allBetas.map(b => b.commit), ownHead])
   // Betas never promoted, each under the next release after it (or under this build).
   const unpromoted = allBetas.filter(b => !promoted.has(b.version) && b.version !== own).sort((a, b) => compare(a.version, b.version))
   const releases = ordered.slice(0, limit).map((version, i) => {
     const previous = ordered[i + 1] ?? null
-    const commit = version === own ? (built === own ? gitHead(repo) : '') : commits.get(version)
+    const commit = version === own ? ownHead : commits.get(version)
     const previousCommit = previous ? commits.get(previous) : null
     const betas = unpromoted
       .filter(b => compare(b.version, version) < 0 && (!previous || compare(b.version, previous) > 0))
       .map((b, j, list) => ({
         version: b.version, date: b.date, ...words(b.version), url: `${BETA_NOTES}v${b.version}.md`,
-        changes: trainChanges(repo, j ? list[j - 1].commit : previousCommit, b.commit),
+        changes: trainChanges(graph, j ? list[j - 1].commit : previousCommit, b.commit),
       }))
     const entry = {
       version, date: dates.get(version), ...words(version),
       url: `${GITHUB}v${version}`,
       channel: version === own ? 'beta' : 'production',
-      changes: trainChanges(repo, betas.length ? betas[betas.length - 1].commit || previousCommit : previousCommit, commit),
+      changes: trainChanges(graph, betas.length ? betas[betas.length - 1].commit || previousCommit : previousCommit, commit),
     }
     if (betas.length) entry.betas = betas
     return entry
@@ -209,6 +251,22 @@ export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.MIR
 
 function gitHead(repo) {
   try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
+}
+
+/**
+ * What the feed is built from, as one string that changes when any of it does: history.tsv,
+ * betas.tsv and every notes and player digest file, by name, size and modification time.
+ * Commits are not part of it: the ones the feed names never change.
+ */
+export function feedInputs(repo = REPO) {
+  const notes = join(repo, 'release-notes')
+  const files = ['history.tsv', 'betas.tsv']
+  for (const dir of ['releases', 'player']) {
+    if (existsSync(join(notes, dir))) for (const name of readdirSync(join(notes, dir)).sort()) files.push(`${dir}/${name}`)
+  }
+  return files.map(file => {
+    try { const s = statSync(join(notes, file)); return `${file} ${s.size} ${s.mtimeMs}` } catch { return `${file} -` }
+  }).join('\n')
 }
 
 export function releaseFeed() {
@@ -221,10 +279,15 @@ export function releaseFeed() {
       if (building && version) requireDigest(version)
     },
     configureServer(server) {
+      // Built once per server start and again only when its inputs change: building it on every
+      // request held Vite's event loop for seconds under load and stalled every other request.
+      let cached = null, cachedKey = ''
       server.middlewares.use(`/${FEED_FILE}`, (_req, res) => {
+        const key = feedInputs()
+        if (cached === null || key !== cachedKey) { cached = JSON.stringify(buildFeed()); cachedKey = key }
         res.setHeader('content-type', 'application/json; charset=utf-8')
         res.setHeader('cache-control', 'no-cache')
-        res.end(JSON.stringify(buildFeed()))
+        res.end(cached)
       })
     },
     generateBundle() {
