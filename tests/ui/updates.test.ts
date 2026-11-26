@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseInline, parseMarkdown, safeHref, type Inline } from '../../src/ui/updates/markdown'
-import { EMPTY_LINE, parseFeed, planUpdates, versionDay } from '../../src/ui/updates/days'
+import { DayPager, EMPTY_LINE, olderUrl, parseFeed, planUpdates, versionDay } from '../../src/ui/updates/days'
 import { FEED_URL, VERSIONS_URL } from '../../src/ui/updates/feed'
 import { bareVersion, compareVersions, isNewer, latestVersion } from '../../src/ui/updates/version'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -193,5 +193,51 @@ describe('Updates grouped by day', () => {
   it('reads the live feeds from the address the page came from, so beta never points at production', () => {
     // Bug: a beta.mira.cc player told to update and sent to mira.cc.
     for (const url of [FEED_URL, VERSIONS_URL]) expect(url).toMatch(/^\/[^/]/)
+  })
+})
+
+describe('Show more reaches the first release', () => {
+  // 30 days of two releases each, 1 to 30 November, newest first.
+  const day = (d: number, n: number) => ({ version: `26.11.${d * 100 + n}`, date: `2026-11-${String(d).padStart(2, '0')} 1${n}:00 PST`, summary: `Day ${d} release ${n}`, digest: '', url: '' })
+  const history = Array.from({ length: 30 }, (_, i) => 30 - i).flatMap(d => [day(d, 1), day(d, 0)])
+  const recent = parseFeed({ releases: history.slice(0, 15), older: '/releases-older.json' })
+  const past = parseFeed({ releases: history.slice(15) })
+
+  it('names the older file only as a root-relative .json path', () => {
+    // Bug: a feed that names another site or a script, fetched by Show more.
+    expect(olderUrl({ older: '/releases-older.json' })).toBe('/releases-older.json')
+    for (const bad of ['https://evil.example/x.json', '//evil.example/x.json', '/../x.json', 'javascript:alert(1)', '/x.js', 7, undefined]) expect(olderUrl({ older: bad })).toBeNull()
+  })
+
+  it('never shows a day cut in two by the end of the recent file', () => {
+    // Bug: 23 November shown with one of its two releases, because the other is in the older file.
+    const pager = new DayPager(recent, '/releases-older.json', null)
+    const shown = pager.days().slice(0, pager.shown)
+    expect(shown.every(d => d.releases.length === 2)).toBe(true)
+    expect(pager.needsOlder).toBe(true)
+  })
+
+  it('fetches the older file once, then steps down to the very first release', () => {
+    // Bug: history stopping at the end of the recent file, or a day lost or repeated at the seam.
+    const pager = new DayPager(recent, '/releases-older.json', null)
+    let fetches = 0
+    const seen = pager.days().slice(0, pager.shown).map(d => d.key)
+    while (!pager.done) {
+      if (pager.needsOlder) { fetches++; pager.addOlder(past) }
+      const step = pager.next()
+      expect(step.length).toBeGreaterThan(0)
+      expect(step.every(d => !d.expanded)).toBe(true)
+      seen.push(...step.map(d => d.key))
+    }
+    expect(fetches).toBe(1)
+    expect(new Set(seen).size).toBe(30)
+    expect(seen.at(-1)).toBe('2026-11-01')
+    expect(pager.first?.version).toBe('26.11.100')
+  })
+
+  it('shows everything at once and offers nothing more when the feed names no older file', () => {
+    const pager = new DayPager(parseFeed({ releases: history }), null, null)
+    expect(pager.shown).toBe(30)
+    expect(pager.done).toBe(true)
   })
 })

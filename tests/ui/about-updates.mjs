@@ -28,6 +28,15 @@ for (const mode of ['desktop', 'phone']) {
   try {
     const context = await browser.newContext(touch ? devices['iPhone 14'] : { viewport: { width: 1440, height: 900 } })
     await context.route('**/v/versions.json', live)
+    // The history in two files, as the release tool will write it: the newest releases in
+    // /releases.json, naming /releases-older.json for the rest, which loads only on Show more.
+    let oldest = null, olderRequests = 0
+    await context.route('**/releases.json', async route => {
+      const body = await (await route.fetch()).json(), cut = Math.min(40, body.releases.length - 5)
+      oldest = body.releases.at(-1).version
+      await context.route('**/releases-older.json', older => { olderRequests++; older.fulfill({ contentType: 'application/json', body: JSON.stringify({ releases: body.releases.slice(cut) }) }) })
+      route.fulfill({ contentType: 'application/json', body: JSON.stringify({ ...body, releases: body.releases.slice(0, cut), older: '/releases-older.json' }) })
+    })
     const page = await context.newPage()
     const errors = []; page.on('pageerror', e => errors.push(e.message))
     let loads = 0; page.on('load', () => loads++)
@@ -65,7 +74,9 @@ for (const mode of ['desktop', 'phone']) {
     await first.waitFor({ state: 'visible', timeout: 5000 })
     assert.equal(await first.getAttribute('data-version'), NEWEST)
     assert.ok(await first.locator('.update-notes li').count() >= 2, 'the player digest shows as bullets')
-    assert.equal(await first.locator('.update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${NEWEST}`)
+    // Open means seen: the newest release's notes are visible, not only present.
+    await first.locator('.update-notes li').first().waitFor({ state: 'visible', timeout: 5000 })
+    assert.equal(await first.locator(':scope > .update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${NEWEST}`)
     assert.equal(await first.locator('.update-notes script, .update-notes [onerror]').count(), 0)
     const links = await first.locator('.update-notes a').evaluateAll(as => as.map(a => [a.target, a.rel, a.protocol]))
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
@@ -82,6 +93,130 @@ for (const mode of ['desktop', 'phone']) {
     assert.equal(await github.getAttribute('href'), 'https://github.com/terran-labs/syn3h/releases')
     assert.equal(await github.getAttribute('target'), '_blank')
     assert.match(await github.getAttribute('rel') ?? '', /noopener/)
+
+    // The X stands on the header row (its centre within 2 px of the title's), inside the column,
+    // clear of All releases, and stays there while the list scrolls: only the list moves.
+    const header = () => page.locator('dialog.lobby-sheet-updates').evaluate(root => {
+      const box = el => el.getBoundingClientRect(), x = box(root.querySelector('.lobby-sheet-close')), title = box(root.querySelector('.lobby-sheet-title'))
+      const gh = box(root.querySelector('.updates-github')), body = root.querySelector('.lobby-sheet-body'), b = box(body), cs = getComputedStyle(body)
+      return { dy: Math.abs((x.top + x.bottom) / 2 - (title.top + title.bottom) / 2), inside: x.left >= b.left + parseFloat(cs.paddingLeft) - 1 && x.right <= b.right - parseFloat(cs.paddingRight) + 1,
+        // Measured from the panel's top: on a phone the whole panel follows the name while it rises.
+        clear: gh.right <= x.left, x: Math.round(x.top - box(root.querySelector('.lobby-sheet-panel')).top), title: Math.round(title.top - box(root.querySelector('.lobby-sheet-panel')).top) }
+    })
+    const atRest = await header()
+    assert.ok(atRest.dy <= 2, `${mode}: the X is ${atRest.dy.toFixed(1)} px off the header row`)
+    assert.ok(atRest.inside, `${mode}: the X is inside the sheet's column`)
+    assert.ok(atRest.clear, `${mode}: the X is clear of All releases`)
+    await page.locator('dialog.lobby-sheet-updates .about-updates').evaluate(list => { list.scrollTop = 600 })
+    await page.waitForTimeout(200)
+    const scrolled = await header()
+    assert.ok(scrolled.dy <= 2 && scrolled.x === atRest.x && scrolled.title === atRest.title, `${mode}: the header and its X stay put while the list scrolls`)
+    await page.locator('dialog.lobby-sheet-updates .about-updates').evaluate(list => { list.scrollTop = 0 })
+    // "A newer version is out" is an action in the still header, never half-scrolled under the title.
+    const note = await page.locator('dialog.lobby-sheet-updates').evaluate(root => {
+      const n = root.querySelector('.updates-pinned'), list = root.querySelector('.about-updates')
+      return n && { inList: list.contains(n), inHeader: !!n.closest('.updates-notice') }
+    })
+    if (note) assert.deepEqual(note, { inList: false, inHeader: true }, `${mode}: the update note stands in the still header`)
+    // Each release keeps its version, time and GitHub mark on one line; a pill may take a second
+    // line under the version, never a third.
+    const rows = await page.locator('dialog.lobby-sheet-updates .update-release').evaluateAll(lis => lis.filter(li => li.getClientRects().length && li.getBoundingClientRect().height).map(li => {
+      const mid = el => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2 }
+      const line = li.querySelector('.update-release-line'), v = li.querySelector('.update-version'), t = li.querySelector('.update-time'), m = li.querySelector(':scope > .update-full')
+      // Lines: the children's centres, sorted, counting a new line at each gap over 8 px.
+      const mids = [...line.children].filter(c => c.getClientRects().length).map(mid).sort((x, y) => x - y)
+      const lines = mids.reduce((n, y, i) => n + (i && y - mids[i - 1] > 8 ? 1 : 0), mids.length ? 1 : 0)
+      return { v: v.textContent, time: t ? Math.abs(mid(t) - mid(v)) : 0, mark: Math.abs(mid(m) - mid(v)), lines }
+    }))
+    // Each day's count and arrow keep the date's line.
+    const dayRows = await page.locator('dialog.lobby-sheet-updates .update-day-line').evaluateAll(lines => lines.filter(l => l.getClientRects().length).map(l => {
+      const mid = el => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2 }
+      return { date: l.querySelector('.update-day-date').textContent, off: Math.abs(mid(l.querySelector('.update-day-count')) - mid(l.querySelector('.update-day-date'))) }
+    }))
+    for (const d of dayRows) assert.ok(d.off <= 4, `${mode}: ${d.date}'s count is on its line (${d.off.toFixed(1)} px off)`)
+    for (const row of rows) assert.ok(row.time <= 3 && row.mark <= 3 && row.lines <= 2, `${mode}: ${row.v} keeps its time and mark on its line, in at most two lines (${JSON.stringify(row)})`)
+
+    // The owner's polish (26 November 2026). No borders anywhere in the sheet: spacing and the
+    // rail part the days, not boxes (focus rings are outlines, not borders).
+    const sheet = page.locator('dialog.lobby-sheet-updates')
+    const bordered = await sheet.evaluate(root => {
+      const out = []
+      for (const el of [root, ...root.querySelectorAll('*')]) for (const pseudo of [null, '::before', '::after']) {
+        const cs = getComputedStyle(el, pseudo)
+        if (pseudo && cs.content === 'none') continue
+        if (!el.getClientRects().length) continue
+        for (const side of ['Top', 'Right', 'Bottom', 'Left']) {
+          const width = parseFloat(cs[`border${side}Width`]), color = cs[`border${side}Color`], style = cs[`border${side}Style`]
+          if (width > 0 && style !== 'none' && style !== 'hidden' && !/rgba\(.*,\s*0\)$|transparent/.test(color)) { out.push(`${el.className || el.tagName}${pseudo ?? ''} ${side}`); break }
+        }
+      }
+      return out
+    })
+    assert.deepEqual(bordered, [], `${mode}: nothing in the sheet has a border`)
+    // GitHub is a mark with a name, never the word as link text.
+    assert.deepEqual(await sheet.locator('a').evaluateAll(as => as.filter(a => /github/i.test(a.textContent ?? '')).map(a => a.textContent)), [], `${mode}: no link says GitHub`)
+    // Each day's date is centred on its rail circle (its capitals' middle, within 1 px), open or closed,
+    // and the circle stands on the rail.
+    const centred = () => sheet.evaluate(root => [...root.querySelectorAll('.update-day-date')].filter(d => d.getClientRects().length).map(date => {
+      const cs = getComputedStyle(date), dot = getComputedStyle(date, '::before'), box = date.getBoundingClientRect()
+      const probe = document.createElement('span'); probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline'
+      date.append(probe); const baseline = probe.getBoundingClientRect().top; probe.remove()
+      const ctx = document.createElement('canvas').getContext('2d'); ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`
+      const cap = ctx.measureText('H').actualBoundingBoxAscent
+      const dotMid = box.top + parseFloat(dot.marginTop) + parseFloat(dot.height) / 2
+      const list = date.closest('.updates-days'), listBox = list.getBoundingClientRect(), rail = getComputedStyle(list, '::before')
+      const day = date.closest('.update-day').getBoundingClientRect()
+      return { day: date.textContent, off: Math.abs(dotMid - (baseline - cap / 2)), x: Math.abs(day.left + parseFloat(dot.left) + parseFloat(dot.width) / 2 - (listBox.left + parseFloat(rail.left) + .5)) }
+    }))
+    for (const c of await centred()) { assert.ok(c.off <= 1, `${mode}: ${c.day} is ${c.off.toFixed(2)} px off its circle`); assert.ok(c.x <= 1, `${mode}: ${c.day}'s circle is ${c.x.toFixed(2)} px off the rail`) }
+    // The rail at full strength beside every day, fading only below the last.
+    const rail = () => sheet.evaluate(root => {
+      const list = root.querySelector('.updates-days'), solid = parseFloat(getComputedStyle(list).getPropertyValue('--rail-solid')), top = list.getBoundingClientRect().top
+      const days = [...list.querySelectorAll(':scope > .update-day')].map(d => d.getBoundingClientRect().bottom - top)
+      return { solid, lastDay: Math.round(days.at(-1)), height: list.getBoundingClientRect().height }
+    })
+    // Days open and close in .2 s and the rail is re-measured as they move: compare once still.
+    const settled = async () => { let r; for (let i = 0; i < 30; i++) { r = await rail(); if (Math.abs(r.solid - r.lastDay) <= 1) break; await page.waitForTimeout(100) } return r }
+    let r = await settled()
+    assert.ok(Math.abs(r.solid - r.lastDay) <= 1, `${mode}: the rail is solid to the last day's foot (${r.solid} vs ${r.lastDay})`)
+    // Changes: plain text, each with exactly one GitHub mark linking its commit in a new tab.
+    const changes = await sheet.locator('.update-changes > li').evaluateAll(lis => lis.map(li => ({
+      wrapped: !!li.querySelector('.update-change-title')?.closest('a'), links: [...li.querySelectorAll('a')].map(a => [a.className.includes('github-link'), a.getAttribute('aria-label'), a.target, a.rel, /\/commit\/|\/pull\//.test(a.href)]),
+    })))
+    for (const c of changes) {
+      assert.equal(c.wrapped, false, `${mode}: a change's text is not a link`)
+      assert.equal(c.links.length, 1, `${mode}: one link per change`)
+      assert.deepEqual(c.links[0], [true, 'View this change on GitHub', '_blank', 'noopener noreferrer', true])
+    }
+    if (!changes.length) console.log(`${mode}: the open release lists no changes, so the change rows were not checked`)
+    // The release's own mark stands on its header row (centred on the version's line within 2 px),
+    // its right edge on the changes' column, never alone under the list.
+    const mark = await first.evaluate(li => {
+      const box = el => el?.getBoundingClientRect(), m = box(li.querySelector(':scope > .update-full')), v = box(li.querySelector('.update-version')), c = box(li.querySelector('.update-change-link'))
+      return { dy: Math.abs((m.top + m.bottom) / 2 - (v.top + v.bottom) / 2), dx: c ? Math.abs(m.right - c.right) : 0, inNotes: [...li.querySelectorAll('.update-notes .update-full')].some(a => !a.parentElement.matches('.update-release.is-beta')) }
+    })
+    assert.ok(mark.dy <= 2 && mark.dx <= 1 && !mark.inNotes, `${mode}: the release's GitHub mark is on its header row, in the changes' column (${JSON.stringify(mark)})`)
+    // Show more: the last entry; the older file is not fetched before it is pressed; pressing it
+    // reveals older days down to the very first release, and the rail stays solid to the last day.
+    assert.equal(olderRequests, 0, `${mode}: nothing older is fetched before Show more`)
+    const more = sheet.locator('.updates-more-button')
+    assert.ok(await sheet.locator('.updates-days > li').last().locator('.updates-more-button').count() === 1, `${mode}: Show more is the last entry`)
+    const before = await sheet.locator('.update-day').count()
+    // Press until the end line shows. The last press replaces the button once the older days are
+    // in, so a press may find it already gone: that is the end arriving, not a failure.
+    for (let i = 0; i < 40 && !(await sheet.locator('.updates-end').count()); i++) {
+      if (await more.count()) await more.click({ timeout: 5000 }).catch(() => {})
+      await page.waitForTimeout(200)
+    }
+    assert.equal(olderRequests, 1, `${mode}: the older file is fetched once`)
+    assert.ok(await sheet.locator('.update-day').count() > before, `${mode}: Show more reveals older days`)
+    await sheet.locator('.updates-end').waitFor({ state: 'visible', timeout: 10000 })
+    const lastDay = sheet.locator('.update-day').last(), lastToggle = lastDay.locator('.update-day-toggle')
+    await lastToggle.click()
+    assert.equal(await lastDay.locator('.update-release').last().getAttribute('data-version'), oldest, `${mode}: the list reaches the first release`)
+    r = await settled()
+    assert.ok(Math.abs(r.solid - r.lastDay) <= 1, `${mode}: after Show more the rail is solid to the new last day`)
+    for (const c of await centred()) assert.ok(c.off <= 1, `${mode}: after Show more, ${c.day} is ${c.off.toFixed(2)} px off its circle`)
     assert.equal(loads, 1, 'still the first load')
 
     // Closed, the banner is back; dismissed, it goes.
@@ -110,6 +245,8 @@ for (const mode of ['desktop', 'phone']) {
     const chip = page.locator('.rail-update')
     await chip.waitFor({ state: 'visible', timeout: 20000 })
     assert.ok(await page.locator('.update-banner').isHidden(), 'no banner over the world')
+    // The chip is a house glass button, not an outlined pill.
+    assert.deepEqual(await chip.evaluate(el => [el.classList.contains('liquid-glass'), getComputedStyle(el).borderTopWidth]), [true, '0px'], 'the in-play chip is a house button')
     await chip.click()
     const guide = page.locator('.in-play-about')
     // A fresh page fetches the feed here, which the dev server builds from git (see the lobby above).
