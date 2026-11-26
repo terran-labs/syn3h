@@ -42,6 +42,10 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.goto(`${base}?autoplay=1&room=reset-defaults-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    // The panels show while the cursor is free; on a phone they open from their toggle.
+    if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
+    else if (!touch && await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+    await page.locator('.world-inspector').waitFor({ state: 'visible', timeout: 30000 })
 
     // ---- 1. Every setting row has a reset, and every setting has a row. ----
     const coverage = await page.evaluate(notRows => {
@@ -63,6 +67,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     // ---- 3. At the default, no reset is active. A fresh device in a fresh room is all defaults. ----
     const live = await page.evaluate(() => [...document.querySelectorAll('.wi-row[data-id] > .reset-control.is-live')].map(b => b.closest('.wi-row').dataset.id))
     assert.deepEqual(live, [], 'no row at its default shows an active reset')
+    // Only the declared exceptions (src/ui/inspector/defaults.ts NOT_RESET) opt out, each with its reason.
+    const optOut = await page.evaluate(() => [...new Set([...document.querySelectorAll('.reset-control[data-no-reset]')].map(b => b.closest('[data-id]').dataset.id))])
+    assert.deepEqual(optOut.sort(), ['sky.preset', 'world.nameSeed'], 'only the declared exceptions have no reset')
     assert.equal(await page.locator('.wi-row[data-id] > .reset-control:not(.is-live)').first().evaluate(b => b.inert && b.tabIndex === -1), true, 'an inactive reset is inert')
 
     // ---- 2. Every row's reset restores its true default. Each setting is moved and reset in
@@ -72,7 +79,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       const tick = () => Promise.resolve().then(() => Promise.resolve())
       for (const row of document.querySelectorAll('.wi-row[data-id]')) {
         const id = row.dataset.id, p = mira.params.get(id), button = row.querySelector(':scope > .reset-control')
-        if (!p || button.disabled) continue
+        if (!p || button.disabled || button.dataset.noReset) continue
         const def = p.def, before = p.value
         const other = typeof def.default === 'boolean' ? !before : (before !== Math.min(def.min ?? before, def.max ?? before) ? Math.min(def.min, def.max) : Math.max(def.min, def.max))
         if (other === undefined || other === before || !mira.params.set(id, other, 'local')) continue
@@ -94,7 +101,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     const row = page.locator('.wi-row[data-id="paint.gloss"]')
     await row.evaluate(r => { r.closest('.wi-card').querySelector('.wi-head').click(); r.closest('details').open = true })
     await page.waitForTimeout(600); await row.scrollIntoViewIfNeeded()
-    const boxes = () => row.evaluate(r => [r, ...r.children].map(el => { const b = el.getBoundingClientRect(); return [el.className, Math.round(b.x * 2) / 2, Math.round(b.y * 2) / 2, Math.round(b.width * 2) / 2, Math.round(b.height * 2) / 2] }))
+    const boxes = () => row.evaluate(r => [r, ...r.children].map(el => { const b = el.getBoundingClientRect(); return [el.tagName, Math.round(b.x * 2) / 2, Math.round(b.y * 2) / 2, Math.round(b.width * 2) / 2, Math.round(b.height * 2) / 2] }))
     const atDefault = await boxes()
     await page.evaluate(() => mira.params.set('paint.gloss', 0.56, 'local')); await page.waitForTimeout(250)
     assert.deepEqual(await boxes(), atDefault, 'the row keeps every box when its reset appears')

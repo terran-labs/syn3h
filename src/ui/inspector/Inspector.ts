@@ -17,7 +17,7 @@ import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, 
 import './params'
 import { dayToPosition, fillDayLengthRow, showDay } from './dayLength'
 import { effectiveDayLength } from '../../world/sky/dayCycle'
-import { defaultOf, differs, type ResetTarget } from './defaults'
+import { defaultOf, differs, NOT_RESET, type ResetTarget } from './defaults'
 import { resetAllButton, resetButton, type ResetAllButton, type ResetButton } from '../resetControl'
 import { sunDayLength, sunTimeOfDay } from '../../world/sky/skyParams'
 import { currentHour } from '../../world/sky/dayCycle'
@@ -799,7 +799,8 @@ export class Inspector {
     // Back to default: one control for every row (resetControl.ts), in a slot the row always
     // keeps, so a value changing never moves anything. Its target is the true default
     // (defaults.ts) unless the builder knows better (a quality level's own value).
-    const target: ResetTarget = options.reset ?? { value: () => defaultOf(def) }
+    // A value that is not a preference (the world's name) keeps the slot but never resets.
+    const target: ResetTarget = NOT_RESET[def.id] ? { value: () => undefined } : options.reset ?? { value: () => defaultOf(def) }
     const name = choicesOf(def)?.name || label.textContent || def.label
     const run = () => {
       // Resetting is editing: a shared setting needs the same permission as its slider.
@@ -809,6 +810,7 @@ export class Inspector {
       this.queueResets()
     }
     const control = resetButton(run, 'wi-reset-row')
+    if (NOT_RESET[def.id]) control.element.dataset.noReset = NOT_RESET[def.id]
     row.classList.add('has-reset'); row.append(control.element)
     this.resets.set(row, { def, target, control, name, format, notch, track, run, seen: false })
     this.queueResets()

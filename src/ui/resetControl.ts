@@ -10,7 +10,7 @@
  *  - `resetButton`: one value. It always holds its place, so nothing moves when a value
  *    changes; at the default it is invisible and inert. Its tooltip and accessible name give
  *    the default ("Reset to 0.42", "Reset Sky reflection to 0.42"), and on touch, where nothing
- *    hovers, the default is written under the arrow while its row is selected.
+ *    hovers, the default is written under the arrow.
  *  - `resetAllButton`: several values. It says how many differ, is disabled at none, and asks
  *    once in place before acting, never in a browser dialog.
  *

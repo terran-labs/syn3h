@@ -23,6 +23,17 @@ const DEVICE_DEFAULTS: Record<string, () => ParamValue> = {
   'chat.overlay': () => !touchFirst(),
 }
 
+/**
+ * Registered values a row shows but a reset must not touch, with the reason; their rows keep
+ * the empty slot. The world's name is given to each new world (a generated name seed), so it
+ * is never "at its default" and is an identity, like a player's name, not a preference.
+ */
+export const NOT_RESET: Readonly<Record<string, string>> = {
+  'world.nameSeed': 'the world’s name, given to each new world',
+  // A picker that applies a sky preset and returns to 0: an action, not a value to go back to.
+  'sky.preset': 'an action that applies a sky preset',
+}
+
 /** The value a reset of this setting restores, as stored (not as shown). */
 export function defaultOf(def: Pick<PropertyDef, 'id' | 'default'>): ParamValue {
   return DEVICE_DEFAULTS[def.id]?.() ?? def.default
