@@ -51,6 +51,15 @@ const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="Wo
   + `<button type="button" class="panel-action" data-wi="paste-world" aria-label="Paste world">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button>`
   + `<button type="button" data-wi="reset" class="wi-reset" aria-label="Reset world to defaults">${GLYPH('M3 8a5 5 0 1 0 1.5-3.6M3 2.5V5h2.5')}<span>Reset</span></button></div>`
 
+/**
+ * Settings' own copy and paste, at the top of its registry sections like World's: your
+ * settings on this device as JSON, to carry to another browser. No reset here; each row and
+ * section has its own (resetControl).
+ */
+const SETTINGS_ACTIONS = `<div class="wi-world-actions wi-settings-actions" role="group" aria-label="Settings actions">`
+  + `<button type="button" class="panel-action" data-wi="copy-section" aria-label="Copy these settings as JSON">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
+  + `<button type="button" class="panel-action" data-wi="paste-section" aria-label="Paste settings from JSON">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button></div>`
+
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
   summary(sectionId: string): string
@@ -378,7 +387,7 @@ export class Inspector {
       // A card built elsewhere with this id (Settings is PerformancePanel's) takes the
       // registry's sections into its .wi-registry slot instead of a card of their own.
       const extra = this.extras.get(section.id)
-      if (extra) { if (section.aliases) extra.card.dataset.aliases = section.aliases; const slot = extra.card.querySelector('.wi-registry') ?? extra.card.querySelector(':scope > .wi-body'); slot?.querySelector(':scope > .wi-parts')?.remove(); const parts = document.createElement('div'); parts.className = 'wi-parts'; this.fillParts(section, parts); slot?.append(parts); continue }
+      if (extra) { if (section.aliases) extra.card.dataset.aliases = section.aliases; const slot = extra.card.querySelector('.wi-registry') ?? extra.card.querySelector(':scope > .wi-body'); slot?.querySelector(':scope > .wi-parts')?.remove(); const parts = document.createElement('div'); parts.className = 'wi-parts'; if (section.id === 'performance') parts.insertAdjacentHTML('beforeend', SETTINGS_ACTIONS); this.fillParts(section, parts); slot?.append(parts); continue }
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
       if (section.aliases) card.dataset.aliases = section.aliases
       const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
@@ -393,9 +402,9 @@ export class Inspector {
       if (section.id === 'world') body.insertAdjacentHTML('beforeend', WORLD_ACTIONS)
       this.fillParts(section, body)
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'
-      // The World card copies and pastes the whole world from its action row above; a second,
-      // section-only pair here would only be the same thing smaller.
-      if (section.id !== 'world') foot.innerHTML = '<button type="button" class="panel-action" data-wi="copy-section">Copy JSON</button><button type="button" class="panel-action" data-wi="paste-section">Paste</button>'
+      // No section copy in a card footer: World copies the whole world from its action row,
+      // Settings copies your own settings from its row, and Game's few rows (the mode, your
+      // switches) are set by hand (the Foreman, 25 November 2026).
       if (section.id === 'world' && this.options.onSaveWorld) {
         const save = document.createElement('button'); save.type = 'button'; save.className = 'panel-action'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
         // Saving a local copy does not edit the shared world, even for a locked guest.
