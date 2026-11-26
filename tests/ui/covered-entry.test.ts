@@ -24,6 +24,34 @@ function entry(systems: System[], gpuDone: () => Promise<void>) {
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
+it('holds input and stages a changed world until its destination draws are ready', async () => {
+  let ready!: () => void, warmed!: () => void
+  const ground = { staged: false }
+  const closeMenu = vi.fn()
+  const shell = Object.assign(Object.create(Shell.prototype), {
+    ground, game: { holdDraws: false }, overlay: { inert: false }, closeMenu, showHelp: vi.fn(),
+    waitForEntryWorld: () => new Promise<void>(resolve => { ready = resolve }),
+    warmEntryGraphics: vi.fn(() => new Promise<void>(resolve => { warmed = resolve })),
+  })
+  const apply = vi.fn(() => {
+    expect(ground.staged).toBe(true)
+    expect(shell.game.holdDraws && shell.overlay.inert).toBe(true)
+  })
+  const entering = shell.enterWithoutFlight(apply)
+  await shell.enterWithoutFlight(apply)
+  expect(apply).toHaveBeenCalledOnce()
+  expect(shell.warmEntryGraphics).not.toHaveBeenCalled()
+  ready()
+  await Promise.resolve()
+  expect(shell.warmEntryGraphics).toHaveBeenCalledOnce()
+  expect(closeMenu).not.toHaveBeenCalled()
+  warmed()
+  await entering
+  expect(ground.staged).toBe(false)
+  expect(shell.game.holdDraws).toBe(false)
+  expect(closeMenu).toHaveBeenCalledOnce()
+})
+
 it('opens play when GPU completion never arrives, even after a system fails', async () => {
   vi.spyOn(console, 'warn').mockImplementation(() => {})
   const laterSystem = vi.fn(async () => {})
