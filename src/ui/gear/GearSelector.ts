@@ -15,6 +15,7 @@
  * README.md beside this file.
  */
 import './gear.css'
+import { isKey, keycap } from '../keycap'
 
 export interface GearAction {
   readonly id: string
@@ -76,6 +77,8 @@ const METER_FADE_MS = 220
  * limited to these names. Reduced motion: no slide.
  */
 const NAME_SLIDE_MS = 180
+/** The space after the selected name before what it holds, with the cursor captured: a word's gap. */
+const HELD_GAP = 15
 const NAME_SLIDE_EASE = 'cubic-bezier(.16,1,.3,1)'
 
 /** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
@@ -83,6 +86,36 @@ export function slotPose(offset: number): { scale: number; opacity: number } {
   const a = Math.abs(offset)
   if (a >= 3) return { scale: 0.6, opacity: 0 }
   return { scale: [1, 0.76, 0.64][a], opacity: [1, 0.66, 0.32][a] }
+}
+
+/**
+ * The way to let go of what the gear holds, for the meter beside its status (the owner, 25
+ * November 2026: "When the grapple is active, you need to show the G or double-tap to let go
+ * message even when cursor input is locked"). Only while the gear holds something, which is
+ * when it has a status: a Grapple cord attached ("Cord 13 m"), a Yoink holding a vehicle. The
+ * key comes from the action itself (Gear.ts), never written here: a keyboard key as a keycap and
+ * the action, or on touch its gesture ("double-tap to let go"). An action let go of with the
+ * mouse button (Yoink's fling) reads "let go to fling".
+ */
+export function releaseHint(own: GearControls | undefined, touch: boolean): { key?: string; alt?: string; text: string } | null {
+  if (!own?.status) return null
+  const action = own.actions.find(a => a.id === 'release' || a.id === 'fling')
+  if (!action) return null
+  const label = action.label.toLowerCase()
+  if (touch) {
+    // Touch: a thumb button that lets go (TouchControls, touchActions) says it already. Yoink's
+    // fling is the TAG thumb itself letting go, which the thumb is doing: nothing to add.
+    if (action.id !== 'release' || touchActions(own).includes(action)) return null
+    const gesture = action.keys.find(k => /\btap\b/i.test(k))
+    return { text: gesture ? `${gesture.toLowerCase().replace(/\s+/g, '-')} to ${label}` : label }
+  }
+  // A keyboard: the key as a cap, then any other real input in words. A double tap of the tag
+  // control is a double-click (or a double press of L) here.
+  const key = action.keys.find(k => !k.includes(' ') && isKey(k))
+  // The second input is `alt`, dropped where the line would run too far (placeHeld).
+  const other = action.keys.find(k => /\btap\b/i.test(k)) ? 'double-click' : undefined
+  if (key) return other ? { key, alt: `or ${other} to`, text: label } : { key, text: label }
+  return { text: label === 'let go' ? label : `let go to ${label}` }
 }
 
 /** A live level, quantised so a slowly creeping value does not write the DOM every frame. */
@@ -143,8 +176,19 @@ export class GearSelector {
   /** Under the selected gear's name: its status and its charge or recharge bar. */
   private readonly meter = document.createElement('div')
   private readonly statusEl = document.createElement('p')
-  private readonly levelEl = document.createElement('div')
-  private readonly levelFill = document.createElement('i')
+  /**
+   * The charge ring round the selected gear's node (the owner, 25 November 2026: "a donut circle
+   * begin from the 12:00 position and extend around the outside ... as it charges, then have it
+   * glow a little bit when fully charged"): Plasma Thunder's charge, Grapple's cord tension,
+   * Yoink's hold. One SVG stroke drawn to the level's share of its length; nothing at 0.
+   */
+  private readonly ringEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  /** The way out of what the gear holds (a cord, a grabbed vehicle), beside its status. */
+  private readonly releaseEl = document.createElement('span')
+  /** Desktop: what the gear holds and how to let go, the first line of the detail beside the name. */
+  private readonly heldEl = document.createElement('p')
+  private readonly heldStatusEl = document.createElement('span')
+  private releaseShown = ''
   private readonly hintsEl = document.createElement('ul')
   private readonly keyHintEl = document.createElement('p')
   private readonly abort = new AbortController()
@@ -183,6 +227,11 @@ export class GearSelector {
     if (this.touch) root.dataset.touch = ''
 
     this.drum.className = 'gs-drum'
+    // The selected name's size settles at the end of its row's scale transition: place what the
+    // gear holds after it again then (placeHeld).
+    this.drum.addEventListener('transitionend', (e) => {
+      if (e.propertyName === 'transform' && (e.target as Element).classList.contains('gs-label')) this.placeHeld()
+    }, { signal: this.abort.signal })
     this.drum.setAttribute('role', 'listbox')
     this.drum.setAttribute('aria-label', 'Gear')
     this.drum.setAttribute('aria-orientation', 'vertical')
@@ -200,10 +249,12 @@ export class GearSelector {
     this.descEl.className = 'gs-desc'
     this.statusEl.className = 'gs-status'
     this.statusEl.hidden = true
-    this.levelEl.className = 'gs-level'
-    this.levelEl.hidden = true
-    this.levelEl.setAttribute('aria-hidden', 'true')
-    this.levelEl.append(this.levelFill)
+    // Centred on the lit node, inside the window (gear.css, hud-column.css), so it never moves it.
+    this.ringEl.setAttribute('class', 'gs-ring is-idle')
+    this.ringEl.setAttribute('viewBox', '0 0 16 16')
+    this.ringEl.setAttribute('aria-hidden', 'true')
+    this.ringEl.innerHTML = '<circle cx="8" cy="8" r="6.5" pathLength="100"/>'
+    window_.append(this.ringEl)
     this.hintsEl.className = 'gs-hints'
     this.hintsEl.setAttribute('aria-label', 'Controls')
     this.keyHintEl.className = 'gs-keyhint'
@@ -213,8 +264,20 @@ export class GearSelector {
     // (placeMeter). Screen readers get the status as the row's description instead.
     this.meter.className = 'gs-meter'
     this.meter.setAttribute('aria-hidden', 'true')
-    this.meter.append(this.levelEl, this.statusEl)
-    this.detail.append(this.descEl, this.hintsEl, this.keyHintEl)
+    this.releaseEl.className = 'gs-release'
+    this.releaseEl.hidden = true
+    this.heldEl.className = 'gs-held'
+    this.heldEl.hidden = true
+    this.heldStatusEl.className = 'gs-held-status'
+    this.heldEl.append(this.heldStatusEl)
+    // Where the way to let go goes: beside the name on a desktop, under the status on touch
+    // (only when no thumb button lets go, releaseHint).
+    if (this.touch) this.meter.append(this.releaseEl); else this.heldEl.append(this.releaseEl)
+    // Under the name: the bar (and on touch the status, the bar after it, so it never moves the
+    // words when it appears). On a desktop the status and the way to let go sit beside the name
+    // instead, the detail's first line (gear.css, hud-column.css): clear of the rows below.
+    this.meter.prepend(this.statusEl)
+    this.detail.append(this.heldEl, this.descEl, this.hintsEl, this.keyHintEl)
 
     root.append(spine, window_, this.drum, this.detail)
     parent.append(root)
@@ -253,9 +316,13 @@ export class GearSelector {
   private showLevel(own: GearControls | undefined): void {
     const level = levelStep(own?.level)
     if (level === this.level) return
-    if ((level < 0) !== (this.level < 0)) this.levelEl.hidden = level < 0
     this.level = level
-    if (level >= 0) this.levelFill.style.transform = `scaleX(${level})`
+    // The share of the ring drawn (its circle's pathLength is 100), from 12 o'clock clockwise.
+    // Idle (nothing charged, taut or held) there is no ring; full, it completes and glows.
+    const shown = Math.max(0, level)
+    this.ringEl.style.setProperty('--level', String(shown))
+    this.ringEl.classList.toggle('is-idle', shown <= 0)
+    this.ringEl.classList.toggle('is-full', shown >= 1)
   }
 
   dispose(): void {
@@ -334,6 +401,33 @@ export class GearSelector {
       item.label.style.setProperty('--fit', String(fit))
     }
     this.fitDetail()
+    this.placeHeld()
+  }
+
+  /**
+   * Cursor captured on a desktop, what the gear holds and how to let go follow the selected name
+   * on its own line, a word's space after its last letter (the Foreman, 25 November 2026: there
+   * is no description to align with, and beside the description's column it floated mid-sky).
+   * The detail moves there by transform (--gs-held-shift, hud-column.css); with the cursor free it
+   * stays in its column, the description's first line. Measured from the name as drawn, again
+   * once its row's scale has settled. Where the name and the line
+   * would run past a third of the window, the line drops its second input ("or double-click").
+   */
+  private placeHeld(): void {
+    const el = this.element
+    const item = this.items[this.ids.indexOf(this.current)]
+    if (this.touch || !this.focused || this.heldEl.hidden || !item) { el.style.removeProperty('--gs-held-shift'); this.releaseEl.classList.remove('is-short'); return }
+    const text = item.label.querySelector<HTMLElement>('.gs-text')
+    if (!text) return
+    // The name as drawn, in the selector's frame. Its size settles after a change of gear or of
+    // form (the row's scale transition): placeHeld runs again when it ends (the drum listens).
+    const nameRight = text.getBoundingClientRect().right - el.getBoundingClientRect().left
+    // The line's own left edge in the selector, untransformed (inside the detail's padding).
+    const shift = Math.round(nameRight + HELD_GAP - this.detail.offsetLeft - this.heldEl.offsetLeft)
+    el.style.setProperty('--gs-held-shift', `${shift}px`)
+    this.releaseEl.classList.remove('is-short')
+    const right = el.getBoundingClientRect().left + this.detail.offsetLeft + this.heldEl.offsetLeft + shift + this.heldEl.offsetWidth
+    this.releaseEl.classList.toggle('is-short', right > innerWidth / 3)
   }
 
   /**
@@ -390,6 +484,7 @@ export class GearSelector {
     if (instant) { void this.drum.offsetHeight; for (const item of this.items) item.button.classList.remove('gs-snap') }
     const active = this.items[now]
     this.placeMeter(active.button)
+    this.placeHeld()
     this.drum.setAttribute('aria-activedescendant', active.button.id)
     if (this.drum.contains(document.activeElement) && document.activeElement !== active.button) active.button.focus({ preventScroll: true })
     this.element.dataset.gear = current
@@ -455,11 +550,14 @@ export class GearSelector {
     for (const t of texts) for (const a of t.getAnimations()) a.cancel()
     change()
     if (still) return
+    const slides: Animation[] = []
     texts.forEach((t, i) => {
       const dx = drawn[i] - t.offsetLeft
       if (Math.abs(dx) < 0.25) return
-      t.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: NAME_SLIDE_MS, easing: NAME_SLIDE_EASE })
+      slides.push(t.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: NAME_SLIDE_MS, easing: NAME_SLIDE_EASE }))
     })
+    // What the gear holds follows the name to where it comes to rest (placeHeld).
+    if (slides.length) Promise.all(slides.map(a => a.finished)).then(() => this.placeHeld(), () => {})
   }
 
   private setControls(controls: GearControls | undefined): void {
@@ -470,8 +568,19 @@ export class GearSelector {
     const status = own?.status ?? ''
     if (status !== this.status) {
       this.status = status; this.statusEl.textContent = status; this.statusEl.hidden = !status
+      this.heldStatusEl.textContent = status; this.heldEl.hidden = !status; this.fitDetail(); this.placeHeld()
       const row = this.meter.parentElement
       if (row && row !== this.element) { if (status) row.setAttribute('aria-description', status); else row.removeAttribute('aria-description') }
+    }
+    // The release hint follows the status: shown while the gear holds something.
+    const release = releaseHint(own, this.touch)
+    const releaseKey = release ? `${release.key ?? ''}|${release.alt ?? ''}|${release.text}` : ''
+    if (releaseKey !== this.releaseShown) {
+      this.releaseShown = releaseKey
+      const alt = release?.alt ? Object.assign(document.createElement('span'), { className: 'gs-release-alt', textContent: `${release.alt} ` }) : null
+      this.releaseEl.replaceChildren(...(release ? [...(release.key ? [keycap(release.key), ' '] : []), ...(alt ? [alt] : []), release.text] : []))
+      this.releaseEl.hidden = !release
+      this.placeHeld()
     }
     this.own = own
     this.showLevel(own)

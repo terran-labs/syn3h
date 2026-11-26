@@ -86,23 +86,40 @@
 .gear-selector .gs-meter {
   position: absolute; left: var(--gs-meter-left, 18px); top: calc(50% + 12px); z-index: 1;
   display: flex; align-items: center; gap: 8px; white-space: nowrap; pointer-events: none; text-shadow: var(--gs-under);
+  /* The row's room: the drum clips anything past its edge. */
+  max-width: calc(100% - var(--gs-meter-left, 18px) - var(--gs-name-x, 0px));
 }
+.gear-selector .gs-meter > :is(.gs-status, .gs-release) { flex: none; }
+/* Touch rows are narrow: the release hint takes its own line under the status. */
+.gear-selector[data-touch] .gs-meter { flex-wrap: wrap; row-gap: 3px; }
+.gear-selector[data-touch] .gs-meter > .gs-release { flex-basis: 100%; margin-left: 0; font-size: 10px; letter-spacing: .08em; }
 .gear-selector .gs-meter.is-arriving { animation: gs-meter-in .22s cubic-bezier(.2,.8,.2,1) both; }
 .gear-selector .gs-meter.is-leaving { animation: gs-meter-out .22s cubic-bezier(.2,.8,.2,1) both; }
 @keyframes gs-meter-in { from { opacity: 0; } }
 @keyframes gs-meter-out { to { opacity: 0; } }
 .gear-selector .gs-meter > * { margin: 0; }
+/* What the gear holds and how to let go (GearSelector releaseHint), on a desktop the first line
+   of the detail beside the selected name: the status bright, the way to let go quieter, its key
+   a keycap, coming in with the bar's .15 s fade. On touch the status stays under the name. */
+.gear-selector .gs-held { margin: 3px 0 7px; white-space: nowrap; font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+.gear-selector .gs-held-status { color: var(--s3-accent-2); }
+.gear-selector[data-touch] .gs-held { display: none; }
+.gear-selector .gs-release { margin-left: 10px; color: var(--s3-dim); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; animation: gs-release-in .15s ease; }
+@keyframes gs-release-in { from { opacity: 0; } }
 .gear-selector .gs-status { color: var(--s3-accent-2); font: 500 10.5px/1.2 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
-/* 2 px under the readouts' own line falloff (--hud-line-under, exploration.css), so it reads
-   as a bar and not as the name's underline over bright sky and snow as well as at night: the
-   track is a dark groove (it shows against sky) with a faint light hairline (it shows against
-   night), and the fill is the light that runs along it. */
-.gear-selector .gs-level { width: 64px; height: 2px; flex: none; border-radius: 1px; background: rgb(0 0 0 / .55); box-shadow: 0 0 0 1px rgb(255 255 255 / .34); filter: var(--hud-line-under, drop-shadow(0 0 1px rgb(0 0 0 / .85)) drop-shadow(0 0 4px rgb(0 0 0 / .45))); overflow: visible; }
-.gear-selector .gs-level i { display: block; width: 100%; height: 100%; border-radius: inherit; background: var(--s3-accent-2); box-shadow: var(--gs-glow); transform-origin: 0 50%; transition: transform .2s linear; }
+/* The charge ring round the selected node (GearSelector ringEl; placed in hud-column.css):
+   one thin white stroke from 12 o'clock clockwise, drawn to the level (Plasma Thunder's charge,
+   Grapple's cord tension, Yoink's hold). None at rest; complete at full, with a soft glow of its
+   own that breathes slowly (still under reduced motion). No track, no shadow. */
+.gear-selector .gs-ring { position: absolute; width: 16px; height: 16px; overflow: visible; pointer-events: none; rotate: -90deg; transition: opacity .15s ease; }
+.gear-selector .gs-ring circle { fill: none; stroke: var(--s3-accent-2); stroke-width: 1.2; stroke-linecap: round; stroke-dasharray: 100; stroke-dashoffset: calc(100 - 100 * var(--level, 0)); transition: stroke-dashoffset .2s linear; }
+.gear-selector .gs-ring.is-idle { opacity: 0; }
+.gear-selector .gs-ring.is-full { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--s3-accent-2) 70%, transparent)); animation: gs-ring-full 2.4s ease-in-out infinite; }
+@keyframes gs-ring-full { 50% { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--s3-accent-2) 85%, transparent)); } }
 .gear-selector .gs-hints { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 5px; }
 .gear-selector .gs-hints li { display: flex; align-items: center; gap: 8px; min-height: 18px; white-space: nowrap; }
 .gear-selector .gs-keys { display: inline-flex; align-items: center; gap: 3px; }
-.gear-selector kbd {
+.gear-selector kbd:not(.keycap) {
   display: inline-block; padding: 3px 8px 2px; min-width: 22px; text-align: center;
   font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: var(--s3-ink);
   border: 1px solid var(--s3-line); border-radius: 999px; background: none; box-shadow: var(--gs-glow);
@@ -177,7 +194,9 @@ html[data-touch-hand="left"] .gear-actions { right: auto; left: var(--gear-actio
 /* Held: the glass class's pressed look (.liquid-glass.held, src/ui/glass.css); nothing here. */
 
 @media (prefers-reduced-motion: reduce) {
-  .gear-selector, .gear-selector .gs-window, :root .gear-selector .gs-drum button.gs-item, .gear-selector .gs-label, .gear-selector .gs-level i { transition: none; }
+  .gear-selector, .gear-selector .gs-window, :root .gear-selector .gs-drum button.gs-item, .gear-selector .gs-label, .gear-selector .gs-ring, .gear-selector .gs-ring circle { transition: none; }
+  .gear-selector .gs-ring.is-full { animation: none; }
+  .gear-selector .gs-release { animation: none; }
 }
 
 /* Every screen, every material stop (the owner, 21 November 2026): floating white text, no pill
