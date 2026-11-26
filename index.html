@@ -448,15 +448,21 @@
             received: received,
             total: total
           };
+          // Easing and creep go by time, not by frames: while the game builds its world and
+          // compiles its shaders a busy phone draws a frame every second or so, and the bar must
+          // catch up on the next one rather than fall behind (Slow 4G at 4x CPU, 25 November 2026).
+          var prev = 0;
           (function tick(now) {
             if (!running) return;
+            now = now || performance.now();
+            var dt = prev ? Math.min(5000, Math.max(0, now - prev)) : 16; prev = now;
             // The download's own fraction, read four times a second.
-            if (total && stage === 0 && !(now - sampled < 250)) { sampled = now || 0; var part = ENDS[0] * Math.min(1, received() / total); if (part > target) target = part; }
+            if (total && stage === 0 && !(now - sampled < 250)) { sampled = now; var part = ENDS[0] * Math.min(1, received() / total); if (part > target) target = part; }
             // Stages with nothing to measure creep; the download has its bytes (without a total, as
             // on the dev server and in builds from before it, it creeps too).
             var ceiling = (stage < ENDS.length ? ENDS[stage] : 1) - 0.015;
-            if (target < ceiling && !(total && stage === 0)) target += (ceiling - target) * 0.0006;
-            shown += (target - shown) * 0.07;
+            if (target < ceiling && !(total && stage === 0)) target += (ceiling - target) * (1 - Math.exp(-dt / 28000));
+            shown += (target - shown) * (1 - Math.exp(-dt / 230));
             root.style.setProperty("--boot-progress", shown.toFixed(4));
             // With reduced motion the bar moves in steps of a twentieth.
             root.style.setProperty("--boot-bar", (still ? Math.floor(shown * 20) / 20 : shown).toFixed(4));

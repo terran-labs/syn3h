@@ -75,7 +75,7 @@ function veil(set: { bytes: number; files: string[] } | null, opts: { search?: s
   new Function('document', 'sessionStorage', 'location', 'window', 'requestAnimationFrame', 'matchMedia', 'performance', head)(
     { documentElement: root }, { getItem: () => null }, { search: opts.search ?? '' }, win,
     (f: (now: number) => void) => { frame = f; return 0 }, () => ({ matches: !!opts.reduced }),
-    { getEntriesByType: (type: 'navigation' | 'resource') => entries[type] })
+    { now: () => now, getEntriesByType: (type: 'navigation' | 'resource') => entries[type] })
   const boot = win.__boot as { set(v: number): void; stage(p: string): void; value(): number; received(): number; total: number }
   const run = (frames: number) => { for (let i = 0; i < frames; i++) { now += 16; frame?.(now) } }
   return { boot, win, entries, vars, dataset, run, bar: () => Number(vars['--boot-bar']) }
