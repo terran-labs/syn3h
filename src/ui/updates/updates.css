@@ -47,7 +47,7 @@
 .mira-shell.exploration-ui .update-release { border: 0; background: none; }
 .mira-shell.exploration-ui.exploration-ui .update-release-toggle { padding: 8px 12px; border-radius: 10px; }
 .mira-shell.exploration-ui .update-release-line .accordion-arrow { color: var(--s3-dim); }
-.mira-shell.exploration-ui .update-version { color: #fff3df; font: 500 16px/1.2 'Barlow', sans-serif; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.mira-shell.exploration-ui .update-version { white-space: nowrap; color: #fff3df; font: 500 16px/1.2 'Barlow', sans-serif; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
 .mira-shell.exploration-ui .update-time { margin-left: auto; color: var(--s3-dim); font-size: 13px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* The headline lines up under the version, past the arrow. */
 .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 28px; }
@@ -163,13 +163,17 @@ body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { displ
   .mira-shell.exploration-ui .update-day, .mira-shell.exploration-ui .updates-more { padding-left: 18px; }
   .mira-shell.exploration-ui .updates-days { --rail-x: 5px; }
   .mira-shell.exploration-ui .update-release-toggle .update-summary { padding-left: 22px; }
-  .mira-shell.exploration-ui .update-release .update-notes { padding-left: 34px; }
+  /* Narrow rows: a beta inside a release still fits its version, time and mark on one line. */
+  .mira-shell.exploration-ui .update-release .update-notes { padding-left: 22px; }
+  .mira-shell.exploration-ui .update-betas { padding-left: 0; }
+  .mira-shell.exploration-ui .update-release-line { column-gap: 8px; }
+  .mira-shell.exploration-ui.exploration-ui .update-release-toggle { padding: 8px; }
+  .mira-shell.exploration-ui .update-release-line > .update-version + .update-badge { margin-left: 24px; }
   .mira-shell.exploration-ui .update-day-date { font-size: 24px; }
   .mira-shell.exploration-ui .update-day-line > .update-day-count { gap: 6px; min-height: calc(1.1em * 24 / 12); letter-spacing: .1em; }
   /* A release keeps its version and time on one line, the time just left of its GitHub mark; its
      pills go on the line below, under the version, as a day's pill goes under its date. */
   .mira-shell.exploration-ui .update-release-line > .update-badge { order: 3; }
-  .mira-shell.exploration-ui .update-release-line > .update-version + .update-badge { margin-left: 28px; }
   .mira-shell.exploration-ui .update-release-line:has(> .update-badge)::after { content: ''; order: 2; flex-basis: 100%; }
   /* The count keeps the date's line; a pill goes on the line below it. */
   .mira-shell.exploration-ui .update-day-line { align-items: flex-start; }
