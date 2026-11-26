@@ -65,6 +65,9 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify(registry.presence(Date.now())))
     return
   }
+  // The Worker's analytics reports (/e). A dev server records none: take them and say nothing,
+  // so a page's report on leaving is not a 404 in the browser's console.
+  if (path === '/e') { req.resume(); res.writeHead(204); res.end(); return }
   // The same answer the Worker gives at /status: counts only (held places are not connected).
   if ((req.url ?? '').split('?')[0] === '/status') {
     const live = [...rooms.values()].map((r) => r.playerCount - r.heldCount).filter((n) => n > 0)
