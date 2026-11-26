@@ -31,9 +31,7 @@
     <style>
       html, body { margin: 0; height: 100%; overflow: hidden; background: #01020a; color: #e8e6e3;
         font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
-      /* 100dvh: the visible viewport as Safari's bars come and go (100vh is the largest one); a
-         phone on its side showed the scene stopping short of the bottom behind the exit dialog. */
-      #game { display: block; width: 100vw; height: 100vh; height: 100dvh; touch-action: none; }
+      #game { display: block; width: 100vw; height: 100vh; touch-action: none; }
       #hud { position: fixed; left: 12px; bottom: 10px; pointer-events: none; text-shadow: 0 1px 2px #000; white-space: pre; }
       /* Never zoom, part 1: no double-tap zoom anywhere (manipulation allows only panning
          and, where the viewport permits it, pinching, which the script below also stops), no
