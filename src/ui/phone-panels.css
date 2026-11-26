@@ -105,3 +105,39 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-ch
 @media (prefers-reduced-motion: reduce) {
   html .mira-shell.exploration-ui.has-touch .hud-navigation, html .mira-shell.exploration-ui.has-touch .hud-navigation .nav-chevrons { transition: none; }
 }
+
+/* ---- The owner's iPhone review, 26 November 2026 ----------------------------------------
+   Close panels: no glass, a label with the HUD's drop shadow. Upright it stands directly under
+   the last panel name, never at the foot of a stretched stack; on its side it is a rotated label
+   left of the names. The list fades where it passes under the search field and at its foot, only
+   while there is more past that edge. Chat: the log takes the card's height, the field sits at
+   its foot (ChatCard, chat.css). */
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close {
+  background: none !important; border: 0 !important; box-shadow: none !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+  color: var(--s3-ink, #f4f4f4); filter: drop-shadow(0 1px 2px rgb(0 0 0 / .65)) drop-shadow(0 0 6px rgb(0 0 0 / .35));
+}
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::before,
+html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close::after { display: none; }
+@media (max-width: 700px), (max-height: 500px) {
+  /* The list as tall as its names, so what follows it (Close panels) sits right under the last. */
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards { flex: 0 1 auto; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards.is-scrolled:not(.is-at-end) { -webkit-mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); mask-image: linear-gradient(transparent, #000 28px, #000 calc(100% - 28px), transparent); }
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards.is-scrolled.is-at-end { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
+  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards:not(.is-scrolled):not(.is-at-end) { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
+  /* Chat alone on screen: the log fills the card and the field sits at its foot, one line or several. */
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body { display: flex; flex-direction: column; overflow: hidden; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body > * { flex: none; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body > .chat-log { flex: 1 1 auto; height: auto; min-height: 72px; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body > .chat-form { margin-top: auto; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  /* Rotated a quarter turn to the right (it reads top to bottom), left of the names. */
+  html .mira-shell.exploration-ui.has-touch .world-inspector { overflow: visible; }
+  html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close {
+    position: absolute; top: calc(var(--rail-command-height, 48px) + 8px); left: -46px; right: auto;
+    width: 40px; height: auto; min-height: 0; padding: 14px 0; writing-mode: vertical-rl;
+  }
+  html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close .nav-chevrons { rotate: -90deg; }
+  html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-close { left: auto; right: -46px; }
+}
