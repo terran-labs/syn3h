@@ -10,6 +10,9 @@ import { chromium, webkit } from 'playwright-core'
 import { serverUrl } from './lib/server.mjs'
 import { settledLobby, waitForState } from './stateWait.mjs'
 const origin = serverUrl('saved-worlds').replace(/\/$/, '')
+const room = 'saved-worlds-authority'
+const entry = new URL(origin)
+entry.searchParams.set('room', room)
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const savedEntries = page => page.evaluate(() => JSON.parse(localStorage.getItem('mira.savedWorlds.v1')).entries)
 const visibleToast = page => page.locator('.shell-toast:not([hidden])').allTextContents()
@@ -27,7 +30,7 @@ try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     const readyPage = page => page.waitForFunction(() => window.mira?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-    await page.goto(origin); await readyPage(page)
+    await page.goto(entry.href); await readyPage(page)
     await page.evaluate(() => {
       const { shell, params } = window.mira
       shell.stopAttract(); params.set('terrain.look', 2); params.set('world.seed', 777); params.set('terrain.treeCover', 0)
@@ -37,6 +40,8 @@ try {
     const [stored] = await savedEntries(page)
     assert.equal(stored.seed, 777); assert.equal(stored.world.values['terrain.treeCover'], 0)
     assert.ok(!Object.keys(stored.world.values).some(key => key.startsWith('audio.')))
+    // Restore the entry URL before reloading. The idle lobby intentionally cleans its address.
+    await page.evaluate(url => history.replaceState(history.state, '', url), entry.href)
     await page.reload(); await readyPage(page)
     await page.waitForFunction(() => [...document.querySelectorAll('.saved-world-moon')].some(button => !button.hidden))
     // The settled lobby (the opening skipped), as a player sees it, for the screenshot.
@@ -54,14 +59,16 @@ try {
     await page.evaluate(() => { window.mira.shell.invited = false })
     const moonBox = await page.locator('.saved-world-moon').boundingBox()
     assert.ok(moonBox)
-    // The room the player is in (the public room shows as empty, 39f704a7): a drop keeps it.
+    // A named room keeps both clients together. Unnamed saved-world entries start private rooms.
     const roomBefore = await page.evaluate(() => window.mira.shell.roomInput.value)
+    assert.equal(roomBefore, room)
     await page.mouse.click(moonBox.x + moonBox.width / 2, moonBox.y + moonBox.height / 2)
     await page.waitForFunction(() => window.mira.shell.dropping)
     await page.waitForFunction(() => !window.mira.shell.dropping && window.mira.shell.started && window.miraNet?.connected, null, { timeout: 30000 })
     assert.equal(await page.evaluate(() => window.mira.params.get('world.seed').value), 777)
     assert.equal(await page.evaluate(() => window.mira.params.get('terrain.treeCover').value), 0)
     assert.equal(await page.evaluate(() => window.mira.shell.roomInput.value), roomBefore, 'a saved world opens in the room the player was in')
+    assert.equal(await page.evaluate(() => window.miraNet.ctx.room), room, 'the host joined the named room')
     assert.equal(await page.evaluate(() => JSON.stringify(window.mira.shell.galaxy.options.worlds.find(world => world.id === 'custom'))), custom)
     assert.equal(await page.evaluate(() => window.mira.shell.galaxy.savedTarget), false)
     // Verify the real visible World footer, not merely a hidden callback fixture.
@@ -124,7 +131,7 @@ try {
     try {
       const guest = await safari.newPage({ viewport: { width: 390, height: 844 } })
       guest.on('pageerror', error => errors.push(error.message))
-      await guest.goto(origin); await readyPage(guest)
+      await guest.goto(entry.href); await readyPage(guest)
       await guest.evaluate(() => {
         const { shell, params } = window.mira
         shell.stopAttract(); params.set('terrain.look', 2); params.set('world.seed', 999)
@@ -136,9 +143,12 @@ try {
       const [beforeJoin] = await visibleToast(guest)
       await guest.locator('.saved-world-moon').dispatchEvent('click')
       await guest.waitForFunction(() => window.miraNet?.connected)
-      await waitForState(guest, 'the authoritative room settings and visible feedback', previous => {
+      assert.deepEqual(await guest.evaluate(() => ({
+        room: window.miraNet.ctx.room, host: window.miraNet.isHost, seed: window.mira.params.get('world.seed').value,
+      })), { room, host: false, seed: 777 }, 'the guest joined the existing room and received its seed')
+      await waitForState(guest, 'the saved-world entry to finish and show feedback', previous => {
         const text = document.querySelector('.shell-toast:not([hidden])')?.textContent.trim()
-        return window.mira.params.get('world.seed').value === 777 && text && text !== previous
+        return !window.mira.shell.savedEntering && text && text !== previous
       }, beforeJoin?.trim(), 30)
       await page.evaluate(() => window.miraNet.setLocked(true))
       await guest.waitForFunction(() => !window.miraNet.canEditWorld)
