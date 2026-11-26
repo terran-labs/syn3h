@@ -26,10 +26,13 @@ const webgl = argv.includes('--webgl')
 const sizes = opt('--sizes', '1280x800,390x844').split(',').map((s) => { const [w, h] = s.split('x').map(Number); return { width: w, height: h } })
 const HEIGHTS = [0.1, 0.07, 0.05, 0.03, 0.01, -0.01, -0.03, -0.05, -0.07, -0.1]
 const POSES_ALL = { level: { pitch: 0, roll: 0 }, pitched: { pitch: -15, roll: 0 }, rolled: { pitch: -4, roll: 20 } }
+// --shots sea:pose:height,...: no check; plain frames (no probe) at these poses, for judging by eye.
+const shotList = (opt('--shots', '') || '').split(',').filter(Boolean).map((t) => { const [sea, pose, h] = t.split(':'); return { sea, pose, h: Number(h) } })
 // --quick: one sea and pose, for checking the check.
 const quick = argv.includes('--quick')
 const POSES = quick ? { level: POSES_ALL.level } : POSES_ALL
-const SEAS = quick ? { calm: 0 } : { calm: 0, waves: null }
+const SEAS_ALL = { calm: 0, waves: null }
+const SEAS = quick ? { calm: 0 } : SEAS_ALL
 let saved = 0
 await mkdir(out, { recursive: true })
 const app = await serveStable({ dir, port: 0 })
@@ -109,6 +112,27 @@ for (const viewport of sizes) {
     }
     return { width: c.width, rows }
   }, { b64: png.toString('base64'), kind })
+  if (shotList.length) {
+    for (const { sea, pose, h } of shotList) {
+      await page.evaluate((h) => { const p = window.mira.params; p.set('water.waveHeight', h ?? p.get('water.waveHeight').def.default) }, SEAS_ALL[sea])
+      // Pin the clocks first, while the game runs: the waves stand still at the same instant in
+      // every build, the lens is placed against that surface, and the lens-wide blend settles on it.
+      await page.evaluate(() => { window.wlaClock = 4000; window.wlaTime = 50 })
+      await page.waitForTimeout(500)
+      await page.evaluate(({ h, pose }) => {
+        const s = window.mira, t = s.terrain, at = window.wlaSpot, V = s.game.camera.position.constructor
+        const y = t.liquidHeightAt(at.x, at.z) + h, pitch = (pose.pitch * Math.PI) / 180, roll = (pose.roll * Math.PI) / 180
+        s.player.teleport({ x: at.x + 300, y: t.heightAt(at.x + 300, at.z) + 3, z: at.z }, 0)
+        s.game.camera.up.set(Math.sin(roll), Math.cos(roll), 0)
+        s.camera.setCinematicPose(new V(at.x, y, at.z), new V(at.x, y + Math.tan(pitch) * 50, at.z - 50), 60)
+      }, { h, pose: POSES_ALL[pose] })
+      await page.waitForTimeout(3000)
+      await page.screenshot({ path: `${out}/${report.backend}-${viewport.width}x${viewport.height}-${sea}-${pose}-${h}.png` })
+      await page.evaluate(() => { window.wlaClock = null; window.wlaTime = null })
+    }
+    await ctx.close()
+    continue
+  }
   for (const [seaName, height] of Object.entries(SEAS)) {
     await page.evaluate((h) => { const p = window.mira.params; p.set('water.waveHeight', h ?? p.get('water.waveHeight').def.default) }, height)
     for (const [poseName, pose] of Object.entries(POSES)) {

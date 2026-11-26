@@ -196,7 +196,7 @@ async function pose(page, view) {
     const s = window.mira, t = s.terrain, V = s.game.camera.position.constructor, spots = window.wlSpots
     const at = view === 'shore' ? spots.coast : view === 'shallows' ? spots.shallow : spots.open
     // The lens view must stay where it is put: the lens rule would lift it clear of the surface.
-    if (view === 'lens') { const fx = s.game.systems?.find?.((x) => x.waterline); if (fx && !fx.wlLensHeld) { fx.applyLens = () => {}; fx.wlLensHeld = true } }
+    if (view === 'lens' || view.startsWith('under')) { const fx = s.game.systems?.find?.((x) => x.waterline); if (fx && !fx.wlLensHeld) { fx.applyLens = () => {}; fx.wlLensHeld = true } }
     if (!at) throw new Error(`no spot for ${view}`)
     const sea = t.liquidHeightAt(at.x, at.z)
     let from, look
@@ -217,6 +217,10 @@ async function pose(page, view) {
       for (let h = 14; h <= 19; h += 0.1) { s.params.set('sun.timeOfDay', h); await frame(); dir = sunDir(); if (dir && dir.y < Math.sin((10 * Math.PI) / 180)) { window.wlSunHour = h; break } }
       const az = dir ? Math.atan2(dir.z, dir.x) : 0
       from = new V(at.x, sea + 4, at.z); look = new V(at.x + Math.cos(az) * 100, sea - 2, at.z + Math.sin(az) * 100)
+    } else if (view === 'under1' || view === 'under5' || view === 'under0') {
+      // Under the surface, looking out level and a little up: the underwater look, same pose for every build.
+      const d = view === 'under1' ? 1 : view === 'under5' ? 5 : 0.05
+      from = new V(at.x, sea - d, at.z); look = new V(at.x + 100, sea - d + 9, at.z + 30)
     } else if (view === 'lens') {
       // The lens at the sea's surface, level: where the waterline and the per-pixel medium work.
       from = new V(at.x, sea + 0.03, at.z); look = new V(at.x + 100, sea + 0.03, at.z + 30)

@@ -28,7 +28,7 @@ import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { paletteFor } from '../terrain/palettes'
 import { cameraInWater, liquidDaylight } from './daylight'
-import { lensNearSeaNow, mediumHere, setLensCamera } from './drawnSurface'
+import { lensBlend, lensNearSeaNow, mediumHere, setLensCamera } from './drawnSurface'
 import { waterClarity } from './params'
 import { UNDERWATER_DEFAULTS, type UnderwaterSettings, underwaterLook, underwaterRamp } from './waterEffectsMath'
 
@@ -243,6 +243,7 @@ export class Underwater {
     const step = Math.max(0, Math.min(0.25, dt)) / 0.25
     this.blend.value += Math.max(-step, Math.min(step, target - this.blend.value))
     cameraAmounts.set(this.game.camera, this.blend.value)
+    lensBlend.value = this.blend.value
     medium.kind = wet ? kind : null
     medium.depth = wet ? depth : 0
     medium.amount = this.blend.value

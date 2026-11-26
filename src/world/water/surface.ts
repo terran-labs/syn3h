@@ -34,7 +34,7 @@ import { bentGrazing, curveInverseRadius } from '../curve'
 import { NO_BED, type WaterBed } from './bed'
 import { cameraInWaterNode, liquidDaylightNode } from './daylight'
 import { airFogOf } from './underwater'
-import { mediumHere, waterlineProbe } from './drawnSurface'
+import { mediumHere, undersideHaze, waterlineProbe } from './drawnSurface'
 import { refractThrough } from './refraction'
 export { buildBedTexture, type WaterBed } from './bed'
 import { fogLayersOf } from '../weather/fog'
@@ -238,7 +238,7 @@ export function hazeCurve(material: THREE.NodeMaterial): void {
     if (!builder.fogNode) return fogged
     const share = mix(float(WATER_HAZE.near), float(1), smoothstep(WATER_HAZE.from, WATER_HAZE.to, positionView.length()))
     // The medium this pixel is seen from (drawnSurface.ts): per pixel at the sea's surface.
-    const inWater = mediumHere(cameraInWaterNode)
+    const inWater = mediumHere(cameraInWaterNode, 1)
     const keep = float(1).sub(share).mul(float(1).sub(inWater))
     const layers = fogLayersOf(airFogOf(builder.fogNode))
     if (!layers) return mix(fogged as THREE.Node<'vec4'>, output as THREE.Node<'vec4'>, keep)
@@ -253,7 +253,9 @@ export function hazeCurve(material: THREE.NodeMaterial): void {
     const hazed = mix(fogInput.rgb, layers.hazeColor as THREE.Node<'vec3'>, layers.hazeFactor as THREE.Node<'vec3'>)
     const eased = mix(hazed, plain.rgb, keep)
     const above = vec4(mix(eased, layers.bankColor as THREE.Node<'vec3'>, layers.bankFactor as THREE.Node<'float'>), plain.a)
-    return mix(above, whole, inWater)
+    // Seen from under the water near its surface, the underside's haze grows with the water the
+    // sight line crosses (drawnSurface.ts undersideHaze), so it grades instead of reading as a stripe.
+    return mix(above, whole, inWater.mul(undersideHaze()))
   }
 }
 
@@ -563,7 +565,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // as a window of light rather than the fogged sky dome behind it.
   // The underside only exists for a camera in the water; from above it would be the far sea
   // turning away past the horizon, drawn as a flat slab in front of the sky.
-  material.opacityNode = mix(mix(float(0.92), float(0.85), window).mul(mediumHere(cameraInWaterNode)), material.opacityNode as THREE.Node<'float'>, fromAbove)
+  material.opacityNode = mix(mix(float(0.92), float(0.85), window).mul(mediumHere(cameraInWaterNode, 1)), material.opacityNode as THREE.Node<'float'>, fromAbove)
   // Glassy close up; rougher with distance, where many unresolved facets share a pixel and
   // a mirror would sparkle and alias.
   // Seen from below the surface is not a sky mirror (Snell's window above is the sky): fully

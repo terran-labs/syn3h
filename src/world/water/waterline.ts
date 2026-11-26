@@ -14,8 +14,8 @@
  * and bright, lava ones glowing orange that cool to dark as they slide.
  */
 import * as T from 'three/webgpu'
-import { abs, float, floor, fract, fwidth, max, mix, select, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
-import { heightAtLens, lensNearSea, lensNearSeaNow, waterlineProbe } from './drawnSurface'
+import { abs, float, floor, fract, max, mix, select, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
+import { MENISCUS_PX, heightAtLens, nearPixelHeight, lensNearSea, lensNearSeaNow, waterlineProbe } from './drawnSurface'
 
 /** How far in front of the lens the sheet sits, in near-plane distances. */
 const SHEET = 1.5
@@ -86,7 +86,7 @@ export class Waterline {
     // every pitch, roll and wave. Below it the underwater look is the scene fog's own, per pixel,
     // so the sheet adds no tint there. Lava and inland water keep the fitted plane above.
     const heightHere = heightAtLens()
-    const lineWidth = fwidth(heightHere).mul(1.2).max(0.0008)
+    const lineWidth = nearPixelHeight(MENISCUS_PX)
     const seaLine = smoothstep(lineWidth, float(0), abs(heightHere)).mul(0.85).mul(lensNearSea)
     const notSea = float(1).sub(lensNearSea)
     const lineAlpha = max(planeLine.mul(notSea), seaLine)

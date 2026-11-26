@@ -19,7 +19,7 @@
  * switch); elsewhere a uniform branch skips the work.
  */
 import * as THREE from 'three/webgpu'
-import { cameraNear, cameraWorldMatrix, float, floor, Fn, If, mod, positionView, renderGroup, select, sin, smoothstep, uniform, vec2, vec4 } from 'three/tsl'
+import { cameraNear, cameraProjectionMatrix, cameraWorldMatrix, float, floor, Fn, If, max, mix, mod, positionView, renderGroup, select, sin, smoothstep, uniform, vec2, vec4 } from 'three/tsl'
 import { SEA_COMPONENTS } from './seaWaves'
 import { detailHeight } from './seaDetail'
 
@@ -28,8 +28,42 @@ type N = any
 
 /** Metres from the sea's surface within which the lens's medium is decided per pixel. */
 export const LENS_BAND = 1.2
-/** Half width of the edge between the media, metres of height at the near plane. */
-const EDGE = 0.002
+/**
+ * Least underwater look on the water side of the line while the lens is at the surface: about what
+ * the lens-wide blend and the old waterline tint gave just under the surface, a light clear teal.
+ * The binary users (the sea's underside and haze) pass 1.
+ */
+const BELOW_LINE = 0.2
+/**
+ * The lens-wide underwater blend (underwater.ts), 0 at the surface to 1 from about 0.45 m down:
+ * how much of the water's own look the sea's underside takes regardless of how far it is seen.
+ */
+export const lensBlend = uniform(0).setGroup(renderGroup)
+/** Metres of water a sight line crosses for the underside's haze to reach about two thirds. */
+export const UNDERSIDE_REACH = 25
+/**
+ * How much of the underwater haze the sea's underside takes at this pixel: by the water the sight
+ * line crosses between the near plane and the surface (short near the line, so the underside's own
+ * ripples and reflections show; long toward the far surface), and wholly once the lens is deep.
+ * The Foreman, on the first feathered frames: a flat dark stripe below the line reads as paint.
+ */
+export function undersideHaze(): N {
+  const path = positionView.length().sub(cameraNear).max(0)
+  const byPath = float(1).sub(path.div(UNDERSIDE_REACH).negate().exp())
+  return mix(byPath, float(1), lensBlend)
+}
+/**
+ * The waterline in pixels at an 800 px tall view, scaled with the view's height. The meniscus is a
+ * thin crisp line on the computed curve; the medium is feathered across FEATHER_PX either side of
+ * it. The computed curve and the edge the mesh draws agree to a few millimetres at the lens, which
+ * is several pixels there (a pixel is a fraction of a millimetre of the near plane): feathered, that
+ * reads as the soft wet film a real lens has at the waterline, never as a hard sliver of the wrong
+ * medium. tools/waterline-agreement.mjs takes its bound from FEATHER_PX.
+ */
+export const MENISCUS_PX = 1.2
+export const FEATHER_PX = 12
+/** Pixels of the view's height the widths above are given for. */
+export const REFERENCE_HEIGHT = 800
 
 const swell = Array.from({ length: SEA_COMPONENTS }, () => uniform(new THREE.Vector4()).setGroup(renderGroup))
 const level = uniform(0).setGroup(renderGroup)
@@ -66,7 +100,17 @@ export interface DrawnSeaFrame {
  */
 let probeMode = 0
 export const waterlineProbe = uniform(0).setGroup(renderGroup).onRenderUpdate(() => probeMode)
-if (typeof window !== 'undefined') Object.assign(window, { __miraWaterlineProbe: (m: number) => { probeMode = m } })
+if (typeof window !== 'undefined') Object.assign(window, { __miraWaterlineProbe: Object.assign((m: number) => { probeMode = m }, { featherPx: FEATHER_PX, referenceHeight: 800 }) })
+
+/**
+ * Metres of the near plane that `px` pixels of an 800 px tall view span, scaled with the view: the
+ * near plane is 2 near tan(fov / 2) tall, and projection[1][1] is 1 / tan(fov / 2). The same at
+ * every pixel, so the feather and the meniscus are bands of constant width on screen. (Taken from
+ * the camera, not from fwidth of the height: that derivative read far too wide in frames.)
+ */
+export function nearPixelHeight(px: number): N {
+  return cameraNear.mul(2).div((cameraProjectionMatrix as N).element(1).element(1)).mul(px / REFERENCE_HEIGHT)
+}
 
 /** Per frame, after the sea material's update: the same numbers it drew with. */
 export function updateDrawnSea(f: DrawnSeaFrame): void {
@@ -89,6 +133,17 @@ function vertexHeight(xz: N): N {
   let h: N = float(0)
   for (const u of swell) h = h.add(u.w.mul(sin(u.x.mul(xz.x).add(u.y.mul(xz.y)).add(u.z))))
   return level.add(h.mul(shoal)).add(detailHeight(xz, baseCell))
+}
+
+/**
+ * The triangle of a clipmap cell that holds local point (u, v) in [0, 1)^2, as its three corners
+ * (cell-relative), for cell (ix, iz): the rule drawnSeaHeight follows below, written out for the test
+ * that holds it to clipmap.ts's index buffer (tests/water/drawn-surface.test.ts).
+ */
+export function cellTriangle(ix: number, iz: number, u: number, v: number): [number, number][] {
+  const odd = (((ix + iz) % 2) + 2) % 2 === 1
+  if (odd) return u + v < 1 ? [[0, 0], [1, 0], [0, 1]] : [[1, 0], [0, 1], [1, 1]]
+  return v > u ? [[0, 0], [0, 1], [1, 1]] : [[0, 0], [1, 1], [1, 0]]
 }
 
 /**
@@ -140,11 +195,16 @@ export function heightAtLens(): N {
  * the sea's surface, and per pixel while the lens is near it: 1 below the drawn surface at the near
  * plane, 0 above, over EDGE metres.
  */
-export function mediumHere(wholeLens: N): N {
+export function mediumHere(wholeLens: N, floor: number = BELOW_LINE): N {
   return Fn(() => {
     const m = float(wholeLens).toVar()
     If(lensNearSea.greaterThan(0.5), () => {
-      m.assign(smoothstep(EDGE, -EDGE, heightAtLens()))
+      // Below the line the look is the lens-wide blend, as it always was (it deepens over the
+      // first 0.45 m: just under the surface the water is light and clear), never less than
+      // `floor`, so the water side of the line is always water. Above the line it is air.
+      const h = heightAtLens()
+      const feather = nearPixelHeight(FEATHER_PX)
+      m.assign(smoothstep(feather, feather.negate(), h).mul(max(float(wholeLens), float(floor))))
     })
     return m
   })()
