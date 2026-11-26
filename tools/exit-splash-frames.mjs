@@ -8,7 +8,8 @@
  * Archipelago 4, High, no bots, interface hidden, offline; open water over 12 m deep. Scenes:
  *   zorb-deep     the ball let go 8 m under, rising fast: the breach, the largest splash.
  *   zorb-shallow  the same from 2.5 m.
- *   zorb-bob      the ball resting at the surface: must throw no exit splash.
+ *   zorb-bob      the ball let go at rest with its centre at the surface (its top never under):
+ *                 it bobs and must throw no exit splash.
  *   <kind>-enter  dropped in at speed, 10 degrees down from 4 m up.
  *   <kind>-exit   let go 3 m under, moving forward and up at speed.
  *   buggy-shore   driven (towed at 6 m/s) out of 1 m of water up a beach: its top never goes
@@ -30,7 +31,7 @@ if (Number(execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t']).
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'] })
 const errors = [], notes = []
 // [name, vehicle, zorb, start depth under the surface (negative: above), forward m/s, up m/s, frames]
-const ZORB = [['zorb-deep', 'buggy', true, 8, 4, 14, 14], ['zorb-shallow', 'buggy', true, 2.5, 4, 6, 12], ['zorb-bob', 'buggy', true, 0, 0, 0, 10]]
+const ZORB = [['zorb-deep', 'buggy', true, 8, 4, 14, 14], ['zorb-shallow', 'buggy', true, 2.5, 4, 6, 12], ['zorb-bob', 'buggy', true, 'bob', 0, 0, 10]]
 // The tank is hidden in this build (src/vehicles/available.ts): asking for it gets the buggy.
 const KINDS = phone ? ['buggy'] : ['buggy', 'jet', 'hovercraft']
 const SCENES = [...ZORB, ...KINDS.flatMap(k => [[`${k}-enter`, k, false, -4, 18, -3.2, 10], [`${k}-exit`, k, false, 3, 14, 9, 12]]), ['buggy-shore', 'buggy', false, 'shore', 6, 0, 20]]
@@ -107,7 +108,7 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
     }
     // Depth is the ball's top, or the body's centre, under the still surface.
     const r = b.zorbed ? b.zorb.radius : 0
-    b.teleport({ x: spot.x - 12, y: spot.surface - depth - r, z: spot.z }, Math.PI / 2)
+    b.teleport({ x: spot.x - 12, y: depth === 'bob' ? spot.surface : spot.surface - depth - r, z: spot.z }, Math.PI / 2)
     b.body.setLinvel({ x: forward, y: up, z: 0 }, true); b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
     const V = s.game.camera.position.constructor
     s.camera.setCinematicPose(new V(spot.x - 4, spot.surface + 5, spot.z + 22), new V(spot.x - 4, spot.surface + 1.5, spot.z))
@@ -118,13 +119,13 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
   if (depth === 'shore') {
     // Let the world at the beach arrive, then start the tow.
     await page.waitForTimeout(2500)
-    await page.evaluate(() => { const { dx, dz, forward } = window.__shore; window.syn3h.player.body.setLinvel({ x: dx * forward, y: 0, z: dz * forward }, true); window.__towing = true })
+    Object.assign(before, await page.evaluate(() => { const { dx, dz, forward } = window.__shore; window.syn3h.player.body.setLinvel({ x: dx * forward, y: 0, z: dz * forward }, true); window.__towing = true; const sim = window.__fx.spray.sim; return { entries: sim?.entries ?? 0, exits: sim?.exits ?? 0 } }))
   }
   const trace = []
   for (let i = 0; i < frames; i++) {
     await page.waitForTimeout(150)
     await page.screenshot({ path: `${out}/${tag}-${String(i).padStart(2, '0')}.png` })
-    trace.push(await page.evaluate(() => { const s = window.syn3h, b = s.player, p = (b.zorbed && b.zorb.collider ? b.zorb.collider : b.body).translation(); return { y: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), vy: +b.body.linvel().y.toFixed(1) } }))
+    trace.push({ frame: i, ...await page.evaluate((before) => { const s = window.syn3h, b = s.player, sim = window.__fx.spray.sim, p = (b.zorbed && b.zorb.collider ? b.zorb.collider : b.body).translation(); return { y: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), vy: +b.body.linvel().y.toFixed(1), entries: (sim?.entries ?? 0) - before.entries, exits: (sim?.exits ?? 0) - before.exits } }, before) })
   }
   const after = await page.evaluate(() => { const sim = window.__fx.spray.sim; return { entries: sim?.entries ?? 0, exits: sim?.exits ?? 0, droplets: sim?.dropletCount ?? 0 } })
   notes.push({ tag, entries: after.entries - before.entries, exits: after.exits - before.exits, droplets: after.droplets, trace })
