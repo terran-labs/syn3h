@@ -131,7 +131,8 @@ try {
     await touch('pointerup', 1, ox + radius * 3, oy)
     state = await stick()
     assert.equal(state.active, false); assert.equal(state.ex, 0); assert.equal(state.ey, 0); assert.equal(state.x, 0)
-    await page.waitForTimeout(250)
+    // It fades out (.15 s, touch-stick.css): waited for, not timed, on a loaded machine.
+    await page.waitForFunction(() => !window.__stick().visible, null, { timeout: 2000 }).catch(() => {})
     assert.equal((await stick()).visible, false, 'stick faded out')
 
     // pointercancel, window blur and a hidden page each let go.
