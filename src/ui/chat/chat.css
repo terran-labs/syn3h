@@ -34,6 +34,9 @@
 @media (orientation: landscape) {
   .mira-shell.has-touch .chat-strip { top: var(--edge-top, 16px); bottom: auto; right: var(--edge-right, 16px); left: max(calc(50% + 150px), calc(100% - var(--edge-right, 16px) - 300px)); width: auto; align-items: flex-end; }
 }
+/* A phone's system toast ("Joined room ...") takes the same band for a moment: the chat line waits,
+   unseen but kept, and shows when the toast goes. */
+.mira-shell.has-touch:has(.shell-toast:not([hidden])) .chat-strip { visibility: hidden; }
 .mira-shell.has-touch .chat-strip .chat-line { border-radius: var(--chat-bubble-radius) var(--chat-bubble-radius) 0 var(--chat-bubble-radius); }
 .mira-shell:not(.is-playing) .chat-strip { display: none; }
 /* A name label or readout passed behind the strip: it steps back until they part. */
