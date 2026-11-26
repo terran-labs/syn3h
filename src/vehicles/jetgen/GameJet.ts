@@ -70,11 +70,14 @@ export class GameJet {
     if (!jet) {
       // The control surfaces, petals and boom collars still move at this distance (the owner: they
       // must show at normal play distance, which is often this level for other players' jets).
-      // They cost two draws: the surfaces in one, the petals and collars in another.
+      // They cost two draws: the surfaces in one, the petals and collars in another. Neither
+      // casts a shadow: the body's shadow carries the shape at 30 m and beyond, and the parts'
+      // own would be two more draws per jet in the shadow pass.
       jet = this.mediumModels[pose] = new NextJet(this.design, .1, { flaps: true })
       jet.setGear(pose)
       if (pose === 0) jet.gear.removeFromParent()
       jet.optimize({ staticGear: true })
+      for (const mesh of jet.movingParts()) mesh.castShadow = false
       markReducedShowroomDetail(jet.object)
       this.adopt(jet)
     }

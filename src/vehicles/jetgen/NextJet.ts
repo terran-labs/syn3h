@@ -184,6 +184,11 @@ export class NextJet {
   }
   private optimized = false
 
+  /** The batched moving parts' meshes (after optimize): control surfaces, petals and collars. */
+  movingParts(): THREE.Mesh[] {
+    return [...this.flapBatches.map(b => b.mesh), ...(this.nozzleBatch ? [this.nozzleBatch.mesh] : [])]
+  }
+
   private updateGearBatches(): void {
     if (!this.gearBatches.length || this.lastBatchedGear === this.gearAmount) return
     this.lastBatchedGear = this.gearAmount
