@@ -61,6 +61,9 @@ for (const build of builds) {
       for (const el of document.body.querySelectorAll('*')) if (el !== canvas && !el.contains(canvas)) el.style.visibility = 'hidden'
       // Spots, found once: a coast (water about 5 m deep with land 50 to 90 m to one side), open
       // sea (more than 25 m deep for 300 m), and shallows (1 to 4 m deep).
+      // Depth at rest: with the waves held flat while searching, every build finds the same spots.
+      const height = s.params.get('water.waveHeight').value
+      s.params.set('water.waveHeight', 0)
       const t = s.terrain, size = t.wrapSize, sea = (x, z) => t.liquidHeightAt(x, z), depth = (x, z) => sea(x, z) - t.heightAt(x, z)
       const spots = {}
       for (let gx = -size / 2; gx < size / 2; gx += 24) for (let gz = -size / 2; gz < size / 2; gz += 24) {
@@ -73,6 +76,7 @@ for (const build of builds) {
         if (!spots.open && d > 25) { let ok = true; for (let k = 0; k <= 300 && ok; k += 30) ok = depth(gx + k, gz) > 25 && depth(gx, gz + k) > 25; if (ok) spots.open = { x: gx, z: gz } }
         if (!spots.shallow && d > 1 && d < 4 && depth(gx + 12, gz) > 0.5 && depth(gx - 12, gz) > 0.5 && depth(gx, gz + 12) > 0.5 && depth(gx, gz - 12) > 0.5) spots.shallow = { x: gx, z: gz }
       }
+      s.params.set('water.waveHeight', height)
       window.wlSpots = spots
       // Frame timing: script per frame and the GPU tail after it.
       const g = s.game, b = g.renderer.backend
@@ -151,7 +155,7 @@ async function shaderWork(page) {
 
 /** The camera for a view, through the game's own cinematic pose; the hovercraft parked aside. */
 async function pose(page, view) {
-  await page.evaluate((view) => {
+  await page.evaluate(async (view) => {
     const s = window.mira, t = s.terrain, V = s.game.camera.position.constructor, spots = window.wlSpots
     const at = view === 'shore' ? spots.coast : view === 'shallows' ? spots.shallow : spots.open
     if (!at) throw new Error(`no spot for ${view}`)
@@ -164,10 +168,12 @@ async function pose(page, view) {
     } else if (view === 'open') {
       from = new V(at.x, sea + 60, at.z); look = new V(at.x + 400, sea + 5, at.z + 120)
     } else if (view === 'glitter') {
-      // Toward the sun's azimuth, from the scene's directional light, with the sun put low.
-      s.params.set('sun.timeOfDay', 17)
+      // Toward the sun's azimuth, from the scene's directional light, with the sun put low: the
+      // afternoon hour at which it first stands under 10 degrees.
+      const sunDir = () => { let d = null; s.game.scene.traverse((o) => { if (!d && o.isDirectionalLight) { o.updateMatrixWorld(); o.target.updateMatrixWorld(); d = o.getWorldPosition(o.position.clone()).sub(o.target.getWorldPosition(o.position.clone())).normalize() } }); return d }
       let dir = null
-      s.game.scene.traverse((o) => { if (!dir && o.isDirectionalLight) dir = o.position.clone().sub(o.target.position).normalize() })
+      const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+      for (let h = 14; h <= 19; h += 0.1) { s.params.set('sun.timeOfDay', h); await frame(); dir = sunDir(); if (dir && dir.y < Math.sin((10 * Math.PI) / 180)) { window.wlSunHour = h; break } }
       const az = dir ? Math.atan2(dir.z, dir.x) : 0
       from = new V(at.x, sea + 4, at.z); look = new V(at.x + Math.cos(az) * 100, sea - 2, at.z + Math.sin(az) * 100)
     } else {

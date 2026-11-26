@@ -93,8 +93,9 @@ export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFlo
  * Built so that no two of them, nor any with the swell, can beat into a lattice:
  *  - wavelengths step by irregular ratios (0.58 to 0.66), never a simple fraction of each other;
  *  - headings are scattered unevenly round most of the compass, not a narrow fan;
- *  - steepness (amplitude times wavenumber) falls toward the short end, as on a real wind sea,
- *    so the longest chop sets the texture and the ripples only add a fine sparkle on top;
+ *  - steepness (amplitude times wavenumber) falls from the long chop to the short and then holds:
+ *    the ripples near the camera stay steep enough to give crisp small highlights (the Foreman,
+ *    on the first frames: the near field must be as crisp as before, not soft streaks);
  *  - each one's phase is bent by noise with its own pair of weights (WARP), so their crests
  *    wander independently instead of all bending together.
  * Those under RIPPLE_LENGTH are the fine ripples: water.ripple scales them, they grow only near
@@ -102,8 +103,8 @@ export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFlo
  * dispersion, like the swell.
  */
 export const CHOP: readonly [number, number, number][] = [
-  [9.1, 0.25, 0.12], [5.3, -0.7, 0.10], [3.4, 1.15, 0.085], [2.05, -1.6, 0.07],
-  [1.33, 0.6, 0.06], [0.81, 2.3, 0.05], [0.52, -0.2, 0.04], [0.33, -2.6, 0.035],
+  [9.1, 0.25, 0.12], [5.3, -0.7, 0.10], [3.4, 1.15, 0.085], [2.05, -1.6, 0.075],
+  [1.33, 0.6, 0.075], [0.81, 2.3, 0.07], [0.52, -0.2, 0.065], [0.33, -2.6, 0.06],
 ]
 /** Phase warp weights per CHOP component, on the two ripple noises. */
 const WARP: readonly [number, number][] = [[1.1, 0.6], [0.7, 1.6], [2.1, -0.9], [-1.4, 1.9], [2.4, 1.2], [-0.8, 2.6], [1.7, -2.2], [-2.5, -1.1]]
@@ -477,11 +478,13 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
         nx.assign(n1)
         const patch = patchAt(p.xz)
         const still = mode === 'still' ? 0.45 : 1
-        // Chop is never fully calm (55 per cent in a lull); ripples fade in a lull and grow near the camera.
+        // Chop is never fully calm (55 per cent in a lull); ripples ease in a lull and grow near the camera.
         const chopShare = chop.mul(still).mul(float(0.55).add(patch.mul(0.45)))
-        const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.2).add(patch.mul(0.8))).mul(smoothstep(160, 25, dist))
-        // Glitter: the share of each wave's slope kept as a sharp facet; the rest roughens (filteredRoughness).
-        const facet = mix(float(0.45), float(1), glitter)
+        const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.5).add(patch.mul(0.5))).mul(smoothstep(160, 25, dist))
+        // Glitter: with distance, the share of each wave's slope kept as a sharp facet; the rest
+        // roughens (filteredRoughness), so the middle distance is a sheen with sparse glints. Near
+        // the camera every facet is sharp: there the ripples are seen one by one.
+        const facet = mix(float(1), mix(float(0.45), float(1), glitter), smoothstep(30, 150, dist))
         const add = (gx: THREE.Node<'float'>, gz: THREE.Node<'float'>, length: number, slope: THREE.Node<'float'>, keep: THREE.Node<'float'>) => {
           lostDetail.addAssign(slope.mul(slope).mul(0.5).mul(float(1).sub(keep.mul(keep))))
           cx.addAssign(gx.mul(slope).mul(keep))
