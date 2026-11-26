@@ -960,8 +960,7 @@ export class Shell implements System {
     this.stopAttract()
     // No galaxy to fly through (or no motion wanted): straight in.
     if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      if (id !== current) this.applyGalaxyWorld(galaxyId)
-      if (this.started) this.closeMenu(); else this.play()
+      this.enterGalaxyWithoutFlight(galaxyId)
       return true
     }
     if (!this.started) { this.requestEntryCursor(); this.unlockAudio() }
@@ -971,6 +970,17 @@ export class Shell implements System {
       if (!this.started) { this.begin(); this.onPlay?.() }
     })
     return true
+  }
+  private enterGalaxyWithoutFlight(galaxyId: string): void {
+    if (this.dropping) return
+    const changed = galaxyId.split('~')[0] !== currentPlanet().id
+    if (this.started) {
+      if (changed) void this.enterWithoutFlight(() => this.applyGalaxyWorld(galaxyId))
+      else this.closeMenu()
+    } else {
+      if (changed) this.applyGalaxyWorld(galaxyId)
+      this.play()
+    }
   }
   /** True from a drop's tap until the player is on the ground. */
   private dropping = false
@@ -1024,17 +1034,23 @@ export class Shell implements System {
   }
 
   /** Reduced motion, direct play and autoplay use the same covered production draws. */
-  private async enterWithoutFlight() {
+  private async enterWithoutFlight(changeWorld?: () => void) {
     if (this.dropping) return
     this.dropping = true
     this.game.holdDraws = true
     this.overlay.inert = true
+    // Stage the replacement terrain before publishing its recipe to world listeners.
+    const ground = changeWorld ? this.ground : undefined
+    const staged = ground?.staged
     try {
+      if (ground) ground.staged = true
+      changeWorld?.()
       await this.waitForEntryWorld()
       await this.warmEntryGraphics()
     } catch (error) {
       console.warn('World preparation failed; entering anyway.', error)
     } finally {
+      if (ground) ground.staged = staged
       this.game.holdDraws = false
       this.dropping = false
       this.closeMenu()
@@ -1965,8 +1981,7 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
         // straight in. Taps are already drops (tapWorld); this covers the paths that are not.
-        if (id !== currentPlanet().id) this.applyGalaxyWorld(chosen)
-        if (this.started) this.closeMenu(); else this.play()
+        this.enterGalaxyWithoutFlight(chosen)
       },
       // Short landscape supplies its own frame; while the update banner shows, it makes room for
       // the banner's band the way the galaxy's own framing does elsewhere (Galaxy, topInset):
