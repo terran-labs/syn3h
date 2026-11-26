@@ -436,8 +436,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     // its materials' reflection at scene.environment, and a map that first appears inside a
     // draw recompiles every one of them mid-frame. On WebGL 2 that released programs still
     // compiling, and three.js then polled the deleted programs every frame (GL_INVALID_VALUE).
-    // Later refreshes keep to the world draws.
-    if (!reflections.ready) prepareReflections()
+    // Later refreshes keep to the world draws, and behind the opaque lobby none is made: only
+    // when a world draw is due this frame (Game.worldDrawDue).
+    if (!reflections.ready && game.worldDrawDue()) prepareReflections()
 
     // Cascades are computed from the camera projection; redo them when it changes.
     const cam = game.camera

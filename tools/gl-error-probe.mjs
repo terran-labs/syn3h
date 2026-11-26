@@ -54,6 +54,8 @@ await page.waitForTimeout(5000)
 const NAMES = ['paint showroom 1', 'Smooth tyres and chrome rings showroom 1', 'Stators showroom 1', 'Shocks showroom 1', 'Suspension arms showroom 1']
 const drawn = await page.evaluate(async (names) => {
   const b = window.mira.game.renderer.backend, gl = b.gl, draw = b.draw, seen = {}
+  // Linked programs are a WebGL question; on WebGPU the build counts below cover it.
+  if (!gl) return seen
   b.draw = function (ro, ...a) {
     const r = draw.call(this, ro, ...a)
     const m = ro.material?.name ?? ''
@@ -77,14 +79,14 @@ await phase('switch back to buggy', () => window.mira.swapVehicle('buggy'))
 const log = await page.evaluate(() => window.__glErrors)
 const byPhase = {}
 for (const e of log) { const k = `${e.phase}: ${e.name} ${e.error}`; byPhase[k] = byPhase[k] ?? { count: 0, firstFrame: e.frame, centre: e.centre, playing: e.playing, transitioning: e.transitioning }; byPhase[k].count++; byPhase[k].lastFrame = e.frame; byPhase[k].lastTransitioning = e.transitioning }
-console.log(`${label}: entry (play, no transition) at frame ${entry.frame}; quality level ${quality}`)
+console.log(`${label}: entry (play, no transition) at frame ${entry.frame}, ${(entry.t / 1000).toFixed(1)} s after navigation; quality level ${quality}`)
 console.log(`${label}: GL errors by phase ${JSON.stringify(byPhase, null, 1)}`)
 console.log(`${label}: buggy materials over 30 frames, settled ${JSON.stringify(drawn)}`)
 const built = await page.evaluate(() => window.__built)
 const builtByPhase = {}
 for (const b of built) (builtByPhase[b.phase] ??= []).push(b.what)
 console.log(`${label}: built in play ${built.length} ${JSON.stringify(builtByPhase)}`)
-console.log(`${label}: page errors ${errors.length}`)
+console.log(`${label}: page errors ${errors.length} ${JSON.stringify(errors.slice(0, 3))}`)
 if (log.length || built.length || errors.length || Object.values(drawn).some((d) => d.draws !== d.linked)) failed = true
 await page.close()
 }

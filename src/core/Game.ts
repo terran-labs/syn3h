@@ -492,7 +492,7 @@ export class Game {
     if (held) this.presentHeldFrames++
     // ?frameCap=30 (flashSwitches.ts): in play, at most one drawn frame every 30 ms.
     const capped = flashSwitches.frameCap30 && view === 'playing' && now - this.lastDraw < 30
-    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading)
+    const draw = !held && !capped && !this.holdDraws && !this.applyingQuality && !(this.renderer as unknown as GuardedRenderer)._isDeviceLost && this.worldDrawDue(view)
     if (draw) {
       // Before drawing: a size that changed without a usable resize event is applied here, and a
       // render scale the governor chose last frame (QualityController.deferPixelRatio).
@@ -1208,6 +1208,12 @@ export class Game {
   }
   private lastDraw = 0
   private shell: Element | null = null
+  /**
+   * Whether the world is drawn this frame, the view allowing: always in play; behind the opaque
+   * galaxy only for the first startup frames and while a quality level loads. Systems that must
+   * prepare before the world's first draw (Environment's first sky capture) ask this in update.
+   */
+  worldDrawDue(view = this.view()): boolean { return view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading }
   /** See viewState. The shell element is looked up until it exists, then kept. */
   private view() {
     if (typeof document === 'undefined') return 'playing' as const
