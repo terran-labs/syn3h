@@ -22,10 +22,10 @@ try {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`http://127.0.0.1:${app.server.address().port}/?planet=alpine&seed=4&autoplay=1&vehicle=buggy&daydream=0&room=bench-${backend}${backend === 'webgl' ? '&webgl=1' : ''}`)
-    await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.shell.transitioning && window.syn3hNet?.isHost, null, { timeout: 90000 })
-    assert.equal(await page.evaluate(() => window.syn3h.game.backend), backend)
+    await page.waitForFunction(() => window.mira?.shell.playing && !window.mira.shell.transitioning && window.miraNet?.isHost, null, { timeout: 90000 })
+    assert.equal(await page.evaluate(() => window.mira.game.backend), backend)
     await page.evaluate(() => {
-      const { params, game } = window.syn3h
+      const { params, game } = window.mira
       game.quality.setAuto(false)
       // Measure settled presets. The manual transition veil starts asynchronous
       // preparation for other variants, which can continue into the next block.
@@ -37,17 +37,17 @@ try {
       params.set('sun.dayLength', 0)
     })
     await page.waitForFunction(() => {
-      const { bots, materialize } = window.syn3h
+      const { bots, materialize } = window.mira
       return bots.vehicles.length === 4 && bots.vehicles.every(v => !materialize.isMaterializing(v))
     }, null, { timeout: 120000 })
     // An immobile driver eventually requests rescue and teleports out of the fixture.
     // Park the drivers for this local page. Vehicle rendering and world updates keep running.
     await page.evaluate(() => {
-      const { game, bots } = window.syn3h
+      const { game, bots } = window.mira
       for (const brain of bots.brainList) game.remove(brain, false)
     })
     const placeActors = () => {
-      const { terrain, bots, player, camera } = window.syn3h
+      const { terrain, bots, player, camera } = window.mira
       const pad = terrain.spawnPoint(0).position
       const place = (x, z, height) => pad.clone().set(pad.x+x, terrain.heightAt(pad.x+x, pad.z+z)+height, pad.z+z)
       for (const [i, vehicle] of [player, ...bots.vehicles].entries()) {
@@ -59,11 +59,11 @@ try {
     const order = [0, 3, 1, 4, 2, 5]
     const byLevel = new Map()
     for (const level of [...order, ...order.toReversed()]) {
-      await page.evaluate(level => window.syn3h.game.quality.setLevel(level), level)
-      await page.waitForFunction(level => window.syn3h.game.quality.governor.level === level && !document.querySelector('.quality-change-veil'), level, { timeout: 90000 })
+      await page.evaluate(level => window.mira.game.quality.setLevel(level), level)
+      await page.waitForFunction(level => window.mira.game.quality.governor.level === level && !document.querySelector('.quality-change-veil'), level, { timeout: 90000 })
       await page.evaluate(placeActors)
       const block = await page.evaluate(async () => {
-        const { game, bots } = window.syn3h
+        const { game, bots } = window.mira
         const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
         for (let i = 0; i < 60; i++) await frame()
         const actors = bots.vehicles.map(v => ({ id: v.object.id, pos: v.body.translation() }))
