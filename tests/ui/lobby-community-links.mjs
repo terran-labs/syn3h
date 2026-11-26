@@ -45,9 +45,28 @@ try {
     const measurements = { id }
     try {
       await page.goto(address + '?webgl=1&tap=0&intro=0', { waitUntil: 'domcontentloaded', timeout: 90000 })
+      // The boot state flips before the veil's opacity and visibility transitions finish.
       await page.locator('html[data-boot="done"]').waitFor({ state: 'attached', timeout: 90000 })
+      await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 45000 })
+      await page.evaluate(() => document.fonts.ready)
+      await page.waitForFunction(() => {
+        const galaxy = window.mira?.shell?.galaxy
+        if (!galaxy?.live || galaxy.opening !== null || galaxy.returning !== null || !galaxy.settled
+          || document.documentElement.hasAttribute('data-opening')) return false
+        const targets = document.querySelectorAll(
+          '.lobby-version-dock > button, .lobby-community a, .lobby-gear-dock > button',
+        )
+        return targets.length === 6 && [...targets].every(target => {
+          for (let element = target; element; element = element.parentElement) {
+            const style = getComputedStyle(element)
+            if (element.hidden || element.inert || style.visibility !== 'visible' || Number(style.opacity) !== 1) return false
+          }
+          const { x, y, width, height } = target.getBoundingClientRect()
+          return width > 0 && height > 0
+            && target.contains(document.elementFromPoint(x + width / 2, y + height / 2))
+        })
+      }, null, { timeout: 45000 })
       const version = page.locator('[data-lobby-version]')
-      await version.waitFor({ timeout: 45000 })
       const nav = page.getByRole('navigation', { name: 'Mira community' })
       const anchors = nav.getByRole('link')
       assert.deepEqual(await anchors.evaluateAll(elements => elements.map(link => [
@@ -101,6 +120,18 @@ try {
       assert.ok(await version.evaluate(button => button === document.activeElement), 'Updates returns focus to the version button')
       await page.locator('.lobby-about').click()
       await page.locator('.lobby-sheet-about[open]').waitFor()
+      await page.waitForFunction(() => {
+        const panel = document.querySelector('.lobby-sheet-about[open] .lobby-sheet-panel')
+        const galaxy = window.mira?.shell?.galaxy
+        if (!panel || !galaxy || galaxy.liftShown !== (galaxy.markLift > 0 ? 1 : 0)) return false
+        const image = panel.querySelector('[data-slot="front"] img')
+        return Number(getComputedStyle(panel).opacity) === 1
+          && !panel.getAnimations({ subtree: true }).some(animation => {
+            const duration = animation.effect?.getComputedTiming().endTime
+            return Number.isFinite(duration) && (animation.pending || animation.playState === 'running')
+          })
+          && image?.complete && image.naturalWidth > 0
+      }, null, { timeout: 45000 })
       assert.equal(await version.isVisible() || await nav.isVisible(), false, 'Welcome hides the entire version dock')
       if (width === 390) await page.screenshot({ path: resolve(out, id + '-welcome.png') })
       await page.keyboard.press('Escape')
