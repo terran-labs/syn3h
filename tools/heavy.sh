@@ -4,6 +4,10 @@
 #
 #   tools/heavy.sh npx vitest run tests/net --maxWorkers=2
 #   tools/heavy.sh node tools/smoke.mjs http://localhost:5183/ /tmp/x.png
+#   tools/heavy.sh status      who holds each slot, for how long, and who waits (takes no slot)
+#
+# A job is stopped after MIRA_HEAVY_TIMEOUT_S seconds (default 1800; 0 for none): its own process
+# group only, with the slot freed and a line in heavy.log in the slot folder.
 #
 # Every job takes a slot, even when the machine is idle. Letting all lanes skip the
 # semaphore below a load threshold caused a simultaneous restart to launch an entire
@@ -16,5 +20,6 @@
 . "$(dirname "$0")/lib/legacy-env.sh" # legacy environment names, see docs/NAMES.md
 : "${VITEST_MAX_WORKERS:=2}"; : "${VITEST_MAX_THREADS:=2}"; : "${VITEST_MAX_FORKS:=2}"
 export VITEST_MAX_WORKERS VITEST_MAX_THREADS VITEST_MAX_FORKS
+[ "$*" = status ] && exec python3 "$(dirname "$0")/heavy.py" status
 [ -n "${MIRA_HEAVY_BYPASS:-}" ] && exec nice -n 5 "$@"
 exec python3 "$(dirname "$0")/heavy.py" "$@"

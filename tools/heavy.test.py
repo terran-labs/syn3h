@@ -19,6 +19,37 @@ class HeavyTests(unittest.TestCase):
         self.temp.cleanup()
     def run_job(self, code, **kwargs):
         return subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', code], env=self.env, **kwargs)
+    def test_a_job_over_its_time_limit_is_stopped_and_frees_its_slot(self):
+        # A hung job held a slot for 84 minutes on 25 November.
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '1', 'MIRA_HEAVY_TIMEOUT_S': '1'}
+        started = time.time()
+        hung = subprocess.run(['sh', str(SCRIPT), 'python3', '-c', 'import time; time.sleep(60)'], env=env, capture_output=True, text=True, timeout=40)
+        self.assertEqual(hung.returncode, 124)
+        self.assertLess(time.time() - started, 30)
+        self.assertIn('stopped pid', hung.stderr)
+        self.assertIn('time.sleep(60)', (self.root / 'slots' / 'heavy.log').read_text())
+        after = subprocess.run(['sh', str(SCRIPT), 'true'], env=env, timeout=20)
+        self.assertEqual(after.returncode, 0, 'the slot is free again')
+
+    def test_status_lists_holders_and_waiters_without_taking_a_slot(self):
+        env = {**self.env, 'MIRA_HEAVY_SLOTS': '1'}
+        holder = subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', 'import time; time.sleep(30)'], env=env)
+        try:
+            time.sleep(1.5)
+            waiter = subprocess.Popen(['sh', str(SCRIPT), 'python3', '-c', 'print("waiting job")'], env=env)
+            time.sleep(1.5)
+            out = subprocess.run(['sh', str(SCRIPT), 'status'], env=env, capture_output=True, text=True, timeout=10)
+            self.assertEqual(out.returncode, 0)
+            self.assertIn('slot 1: pid', out.stdout)
+            self.assertIn('time.sleep(30)', out.stdout)
+            self.assertIn('waiting: pid', out.stdout)
+            self.assertIn('waiting job', out.stdout)
+            self.assertIsNone(waiter.poll(), 'status took no slot: the waiter still waits')
+        finally:
+            for p in (holder, locals().get('waiter')):
+                if p and p.poll() is None:
+                    p.terminate(); p.wait(timeout=10)
+
     def test_limits_concurrency_and_preserves_failure(self):
         log = self.root / 'events'
         code = f"import time; p={str(log)!r}; open(p,'a').write('1\\n'); time.sleep(.2); open(p,'a').write('-1\\n')"

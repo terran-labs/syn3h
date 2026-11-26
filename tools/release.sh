@@ -66,7 +66,8 @@ cd "$(dirname "$0")/.."
 # fully, 'gate', while it waits for the load to fall before starting this).
 if [ -z "${MIRA_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
   _hold_root="${MIRA_HEAVY_ROOT:-/tmp/syn3h-heavy-v2}"; mkdir -p "$_hold_root" && printf '%s\nrunning\n' "$$" >"$_hold_root/hold"
-  MIRA_HEAVY_RELEASE=1 MIRA_RELEASE_SLOT=1 exec tools/heavy.sh env MIRA_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
+  # A release may run long (R2, both addresses, a rollback): its own limit, not the 30 minute default.
+  MIRA_HEAVY_TIMEOUT_S="${MIRA_HEAVY_TIMEOUT_S:-7200}" MIRA_HEAVY_RELEASE=1 MIRA_RELEASE_SLOT=1 exec tools/heavy.sh env MIRA_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
 fi
 REPO="$(pwd)"
 N="${1:-}"
