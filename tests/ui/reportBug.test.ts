@@ -18,7 +18,7 @@ const longest = 'z'.repeat(1000)
 describe('report a bug', () => {
   it('names vehicles as players see them, never by internal id or the old product name', () => {
     for (const out of [discordMessage({ sentence: '', report: clean }), new URL(githubIssueUrl({ sentence: '', report: clean })).searchParams.get('body')!]) {
-      expect(out).not.toMatch(/syn3h/i)
+      expect(out).not.toMatch(/syn3h/i) // rename-keep: checks the old name never appears
       expect(out).toContain('Play: Buggy, 12 bots (Buggy 6, Jet 6)')
     }
   })
