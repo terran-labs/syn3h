@@ -91,6 +91,9 @@ export const BLOCKED: readonly string[] = [
   'kill', 'kil', 'die', 'dead', 'death', 'murd', 'gun', 'shoot', 'shot', 'fire', 'hit', 'stab', 'blood', 'gore', 'war', 'bomb',
   'laser', 'weapon', 'eliminat', 'destroy', 'destruct', 'explod', 'explos', 'slay', 'slain', 'massac', 'terror', 'army', 'tank',
   'nuke', 'knife', 'sword', 'blade', 'axe', 'bullet', 'grenad', 'missil', 'rocket', 'attack', 'hate', 'hurt', 'pain', 'wound', 'corpse', 'tomb', 'grave',
+  // A name only the creator wears (CREATOR_RESERVED_NAMES; the owner, 25 Nov 2026: "I will be
+  // the only Aubrey"): no bot or generated player name may come near it.
+  'aubr',
 ]
 
 /** True when a generated or typed name contains a blocked word. */

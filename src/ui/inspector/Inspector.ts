@@ -23,6 +23,8 @@ import './motion.css'
 import { bindSwitch } from './switch'
 import { cardsToClose, shareHeights, type FitCard } from './cardFit'
 import './me-card.css'
+import { creatorKeyRow } from '../creatorKeyRow'
+import { savePlayerName } from '../playerName'
 
 /** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
 const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="currentColor" d="M5 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM8 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-3 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>'
@@ -350,7 +352,7 @@ export class Inspector {
       head.innerHTML = CARD_HEAD; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
       if (section.id === 'you') {
-        body.append(this.vehicleControl, this.nameControl)
+        body.append(this.vehicleControl, this.nameControl, creatorKeyRow(this.abort.signal))
         const dots = document.createElement('span'); dots.className = 'wi-colour-dots'; dots.setAttribute('aria-label', 'Vehicle colours')
         dots.innerHTML = '<i data-colour="body"></i><i data-colour="accent"></i>'; head.querySelector('.wi-sum')!.after(dots)
       }
@@ -573,6 +575,9 @@ export class Inspector {
     }
     input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); input.blur() } }, { signal: this.abort.signal })
     input.addEventListener('blur', save, { signal: this.abort.signal })
+    // Saved on this device as it is typed, so closing the page mid-edit keeps it; the room is
+    // told only on Enter or blur (a rename per keystroke would hit its rate limit).
+    if (this.options.onRename) input.addEventListener('input', () => savePlayerName(input.value, 'typed'), { signal: this.abort.signal })
     input.addEventListener('focus', () => input.select(), { signal: this.abort.signal })
     row.append(label, input)
     if (this.options.rollName && this.options.onRename) {

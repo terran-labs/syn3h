@@ -90,6 +90,7 @@ import { RaceBridge, type RaceBots, type RacePresentation } from './races'
 import { RemoteArrivals } from './arrivals'
 import { TintTransition, type TintPair } from '../vehicles/tints'
 import { onRescue } from '../core/rescueLog'
+import { helloCreatorField } from '../core/creatorKey'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -355,6 +356,7 @@ export class NetClient implements System {
       selfId: () => this.id,
       nameOf: (id) => this.displayName(id),
       colorOf: (id) => isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : this.players.get(id)?.colors[0] ?? DEFAULT_COLORS[0],
+      roleOf: (id) => isBotId(id) ? undefined : this.players.get(id)?.role,
       connected: () => this.connected,
       send: (msg) => this.send(msg),
     })
@@ -550,6 +552,8 @@ export class NetClient implements System {
         ...(this.dropReport ? { drop: this.dropReport } : {}),
         // "Bots may play with me": only a no is sent; an older room ignores the field.
         ...(playWithMe.value ? {} : { play: false }),
+        // The creator key, if this device holds one: the room grants the creator role for it.
+        ...helloCreatorField(),
       })
       this.dropReport = null
     }
@@ -957,6 +961,8 @@ export class NetClient implements System {
       n++
       tag.id = String(id); tag.vehicle = vehicle; tag.name = this.displayName(id); tag.bot = isBotId(id)
       tag.color = vehicle.colors.body
+      // Only the room's word: a bot never carries a role.
+      tag.role = tag.bot ? undefined : this.players.get(id)?.role
       const notes: string[] = []
       if (id === it) notes.push('IT')
       if (id === holder) notes.push('HILL')

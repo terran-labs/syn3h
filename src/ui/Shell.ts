@@ -1,5 +1,6 @@
 import { clipSearchResults } from './panelGlass'
 import { liquidSelected } from './glassMaterial'
+import { bindVersionLabel } from './creatorReveal'
 import { longFrames } from '../core/longFrames'
 import { cancelStartupPlayRequest, recordStartupPlayRequest, recordStartupReveal } from '../core/diagnostics'
 import { markShaderReveal } from '../core/diagnosticShaders'
@@ -415,7 +416,8 @@ export class Shell implements System {
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
     // The version beside the lobby's settings gear opens What's new.
-    this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
+    // A slow single click opens Updates; five quick ones reveal the Creator key row (creatorReveal.ts).
+    bindVersionLabel(this.lobbySettings.version, () => { this.audio.cue('click'); this.showUpdates() }, signal)
     // About and Updates, each its own sheet from its icon above the gear. Their content is
     // built on first open, so nothing in them is requested before the player asks.
     const edges = () => this.galaxy?.wordmarkEdges() ?? null
@@ -529,7 +531,8 @@ export class Shell implements System {
     window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
-    this.nameInput.addEventListener('input', () => { this.nameSource = 'typed' }, { signal })
+    // Saved as it is typed, so a reload before Play keeps it (an empty field saves nothing).
+    this.nameInput.addEventListener('input', () => { this.nameSource = 'typed'; savePlayerName(this.nameInput.value, 'typed') }, { signal })
     // The public room is an empty field (placeholder "Public room"), never its internal name.
     const entryRoom = roomFromQuery(new URL(location.href).searchParams)
     this.roomInput.value = isDefaultRoom(entryRoom) ? '' : entryRoom

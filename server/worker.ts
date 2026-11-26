@@ -76,6 +76,10 @@ interface Env {
   FROZEN?: FrozenBucket
   /** Launch analytics dataset (server/analytics.ts); absent in tests and local runs that omit it. */
   ANALYTICS?: AnalyticsSink
+  /** SHA-256 (hex) of the creator key, a wrangler secret; unset turns the creator role off. */
+  CREATOR_KEY_SHA256?: string
+  /** Comma-separated names only the creator may take (server/creator.ts); empty is fine. */
+  CREATOR_RESERVED_NAMES?: string
 }
 
 interface Attachment {
@@ -686,6 +690,7 @@ export class RoomDO {
       onPersist: (s) => void this.state.storage.put('room', s),
       // No binding, no analytics work at all: no sessions, copies or extra roster saves.
       analytics: this.env.ANALYTICS ? (event, common, extra) => { this.rows.write(event, common, extra) } : undefined,
+      creatorKeySha256: this.env.CREATOR_KEY_SHA256, reservedNames: this.env.CREATOR_RESERVED_NAMES,
     })
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {

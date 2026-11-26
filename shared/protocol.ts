@@ -199,7 +199,17 @@ export interface PlayerInfo {
    * the stop words in chat still work for everyone.
    */
   play?: boolean
+  /**
+   * What the room vouches for about this player: 'creator' when its hello proved the creator
+   * key (server/creator.ts). Set only by the room; any role a client sends is ignored. Absent
+   * for everyone else and from older rooms; an older client ignores it and shows no badge.
+   * A general field so later roles (a moderator, say) need no protocol change.
+   */
+  role?: PlayerRole
 }
+
+/** Roles the room may assert on a PlayerInfo. Kept equal to server/creator.ts ROLES. */
+export type PlayerRole = 'creator'
 
 /**
  * Game modes, the value of the shared parameter `game.mode`.
@@ -386,9 +396,11 @@ export type ClientMessage =
    * an older room ignores them, and a frozen client sends none (its session still counts).
    * aid: the anonymous id; build: client version; device: phone, tablet or desktop; backend:
    * webgpu or webgl2; quality: level 0 to 5; ref: the entry campaign tag (?ref=).
+   * `creator`: the creator key this device holds (src/core/creatorKey.ts), sent so the room can
+   * grant the creator role. Never relayed, stored or logged; a wrong one is treated as absent.
    */
   | { type: 'hello'; v: number; largeWelcome?: true; sparseWorld?: true; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string; drop?: DropReport; play?: boolean
-      aid?: string; build?: string; device?: string; backend?: string; quality?: number; ref?: string }
+      aid?: string; build?: string; device?: string; backend?: string; quality?: number; ref?: string; creator?: string }
   /**
    * Change vehicle kind, colours or name after joining. `name` is optional and newer: an older
    * room ignores it, and the name then changes at the next join. The room cleans and
