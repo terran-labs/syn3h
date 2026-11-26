@@ -118,7 +118,7 @@
 @keyframes gs-ring-full { 50% { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--s3-accent-2) 85%, transparent)); } }
 .gear-selector .gs-hints { list-style: none; margin: 9px 0 0; padding: 0; display: grid; gap: 5px; }
 .gear-selector .gs-hints li { display: flex; align-items: center; gap: 8px; min-height: 18px; white-space: nowrap; }
-.gear-selector .gs-keys { display: inline-flex; align-items: center; gap: 3px; }
+.gear-selector .gs-keys { display: inline-flex; align-items: center; gap: 3px; font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; }
 .gear-selector .gs-or { color: var(--s3-dim); font-size: 10px; opacity: .7; }
 .gear-selector .gs-act { color: var(--s3-ink); font-size: 13.5px; letter-spacing: .03em; }
 .gear-selector .gs-keyhint { margin-top: 9px; color: var(--s3-soft, var(--s3-dim)); font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
