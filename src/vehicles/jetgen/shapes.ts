@@ -142,8 +142,10 @@ export class Builder {
    * @param detail 1 is full detail; .5 roughly quarters the triangle count.
    * @param hard straight-edged, faceted wings and fins with square tips, for the angular military
    *   designs. Hulls stay smooth curves so the body shades cleanly.
+   * @param flaps build control surfaces as moving parts at any detail, for a reduced model that
+   *   must still show them move (the game jet's medium level).
    */
-  constructor(readonly detail = 1, readonly hard = false, readonly smooth = false) {}
+  constructor(readonly detail = 1, readonly hard = false, readonly smooth = false, readonly movingFlaps = false) {}
   private segs(n: number): number { return Math.max(1, Math.round(n * this.detail)) }
   private ring(n: number): number { return Math.max(6, 2 * Math.round(n * this.detail / 2)) }
 
@@ -417,11 +419,11 @@ export class Builder {
   /**
    * `flap` is the share of the chord, at the trailing edge, that is a control surface. The fixed
    * part ends at the hinge line and the moving part is registered in `flaps`, not in `pieces`.
-   * Below detail 0.4 the surface stays whole: at that distance nobody sees it move.
+   * Below detail 0.4 the surface stays whole unless the builder was asked for flaps.
    */
   surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean; flap?: number } = {}): void {
     const sides = o.mirror === false ? [false] : [false, true]
-    if (!o.flap || this.detail < .4) { for (const m of sides) this.surfSide(keys, o, m); return }
+    if (!o.flap || (this.detail < .4 && !this.movingFlaps)) { for (const m of sides) this.surfSide(keys, o, m); return }
     // Two aerofoils in tandem. Each keeps the whole surface's thickness in metres, so the fixed
     // part closes on the hinge line and the flap's rounded nose sits just behind it.
     const f = o.flap, gap = .012

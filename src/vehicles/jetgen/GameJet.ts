@@ -4,9 +4,20 @@ import { JetPlume } from './JetPlume'
 import { JetTailLights } from './JetTailLights'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
-import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
+import { detailLevel, registerVehicleDetail } from '../skins/mergeStatic'
 import { markReducedShowroomDetail } from '../skins/showroom'
 import { jetScale } from './size'
+import { defineParam } from '../../../shared/params'
+
+/**
+ * How far the moving parts swing at full stick, as a multiple of the original's 20 degrees
+ * (VhiclJet.cs 161): the tail ring's control surfaces, the main thruster's petals and the boom
+ * thrusters' collars. Visual only; the forces are the original's whatever this is. Above 1 the
+ * look exceeds the physical vector, so it reads at chase-camera distance.
+ */
+export const jetArticulation = defineParam<number>({ id: 'jet.articulation', label: 'Thruster and vane movement (look)', group: 'Jet', scope: 'client', default: 1.5, min: 0, max: 2, step: .05 })
+/** 20 degrees, the original's nozzle limit, in radians. */
+const FULL_TRAVEL = .35
 
 type Level = 0 | 1 | 2
 
@@ -34,8 +45,6 @@ export class GameJet {
   private farModel?: ReturnType<typeof buildJetSilhouette>
   private level: Level = 0
   private gear = 0
-  private pitch = 0
-  private yaw = 0
   private throttle = 0
   private readonly controls = new THREE.Vector3()
   private body: THREE.ColorRepresentation = this.design.paint
@@ -59,12 +68,16 @@ export class GameJet {
   medium(pose: 0 | 1): NextJet {
     let jet = this.mediumModels[pose]
     if (!jet) {
-      jet = this.mediumModels[pose] = new NextJet(this.design, .1)
+      // The control surfaces, petals and boom collars still move at this distance (the owner: they
+      // must show at normal play distance, which is often this level for other players' jets).
+      // They cost two draws: the surfaces in one, the petals and collars in another. Neither
+      // casts a shadow: the body's shadow carries the shape at 30 m and beyond, and the parts'
+      // own would be two more draws per jet in the shadow pass.
+      jet = this.mediumModels[pose] = new NextJet(this.design, .1, { flaps: true })
       jet.setGear(pose)
-      // At 30 m the fixed nozzle lip carries the silhouette; omit its four tiny moving petals.
-      jet.thruster.removeFromParent()
       if (pose === 0) jet.gear.removeFromParent()
-      mergeStatic(jet.object, true)
+      jet.optimize({ staticGear: true })
+      for (const mesh of jet.movingParts()) mesh.castShadow = false
       markReducedShowroomDetail(jet.object)
       this.adopt(jet)
     }
@@ -108,13 +121,12 @@ export class GameJet {
   }
 
   /**
-   * @param pitch, yaw nozzle deflection in radians (NextJet.setVector).
-   * @param controls stick deflection -1..1 for the tail ring's control surfaces: x pitch (nose up
+   * @param controls stick deflection -1..1 that every moving part follows: x pitch (nose up
    *   positive), y roll (right wing down positive), z yaw (nose right positive).
    * @param hover whether the belly ports carry the jet (their plumes show) or the rear nozzles do.
    */
-  update(gear: number, pitch: number, yaw: number, throttle: number, controls?: THREE.Vector3, hover = gear >= .5): void {
-    this.gear = gear; this.pitch = pitch; this.yaw = yaw; this.throttle = throttle
+  update(gear: number, throttle: number, controls?: THREE.Vector3, hover = gear >= .5): void {
+    this.gear = gear; this.throttle = throttle
     if (controls) this.controls.copy(controls)
     this.plume.set(throttle, hover)
     this.show()
@@ -122,7 +134,7 @@ export class GameJet {
 
   /** Reset the parked model before its next arrival, including an already built hidden close model. */
   resetPose(): void {
-    this.gear = this.pitch = this.yaw = this.throttle = 0
+    this.gear = this.throttle = 0
     this.controls.set(0, 0, 0)
     this.plume.set(0, true)
     this.plume.mesh.visible = true
@@ -131,15 +143,26 @@ export class GameJet {
   }
 
   private poseNear(jet: NextJet): void {
-    jet.setGear(this.gear); jet.setVector(this.pitch, this.yaw); jet.setThrottle(this.throttle)
-    jet.setControls(this.controls.x, this.controls.y, this.controls.z)
+    jet.setGear(this.gear); jet.setThrottle(this.throttle)
+    this.articulate(jet)
+  }
+
+  /**
+   * Every moving part from the stick: nose up turns the exhausts up and the ring's trailing
+   * edges up, a roll to the right tips the right collar's exhaust up and the left one's down,
+   * nose right turns the exhausts to the right. Signed as NextJet.setVector and setControls.
+   */
+  private articulate(jet: NextJet): void {
+    const travel = FULL_TRAVEL * jetArticulation.value, c = this.controls
+    jet.setVector(c.x * travel, c.z * travel, c.y * travel, travel)
+    jet.setControls(c.x, c.y, c.z, travel)
   }
 
   /** Build the level on screen if needed, bring it up to date and hide the others. */
   private show(): void {
     const pose = this.gear >= .5 ? 1 : 0
     if (this.level === 0) this.poseNear(this.near)
-    else if (this.level === 1) this.medium(pose).setThrottle(this.throttle)
+    else if (this.level === 1) { const jet = this.medium(pose); jet.setThrottle(this.throttle); this.articulate(jet) }
     else void this.far
     if (this.nearModel) this.nearModel.object.visible = this.level === 0
     this.mediumModels.forEach((j, i) => { if (j) j.object.visible = this.level === 1 && i === pose })

@@ -34,7 +34,8 @@ export class NextJet {
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
   private gearBatches: MovingBatch[] = []
-  private petalBatch?: MovingBatch
+  /** The main thruster's petals and the boom thrusters' collars: one material, one draw. */
+  private nozzleBatch?: MovingBatch
   private flapBatches: MovingBatch[] = []
   private lastBatchedGear = -1
   /** Control surfaces: a handle at the hinge, the hinge axis, and which way the trailing edge moves. */
@@ -58,10 +59,16 @@ export class NextJet {
   readonly vector = new THREE.Vector2()
   private petal?: THREE.MeshStandardMaterial
   private readonly vanes: { group: THREE.Group; axis: 'x' | 'y'; sign: number }[] = []
+  /** A gimballed collar on each boom thruster's lip, and which side of the jet it is on. */
+  private readonly pods: { group: THREE.Group; side: number }[] = []
   private vectorSet = false
+  private readonly podVector = new THREE.Vector2()
 
-  /** @param detail 1 is full detail, lower values cut the triangle count (see Builder). */
-  constructor(readonly design: JetDesign, readonly detail = 1) {
+  /**
+   * @param detail 1 is full detail, lower values cut the triangle count (see Builder).
+   * @param o.flaps build the control surfaces as moving parts even below detail 0.4.
+   */
+  constructor(readonly design: JetDesign, readonly detail = 1, o: { flaps?: boolean } = {}) {
     // The vehicle pattern (src/vehicles/PATTERN.md): no look is authored here. Each surface is
     // tagged with a role and the shared showroom shading builds the scales, clear coat, flakes,
     // canopy, night fill and lava glow, the same as on every other vehicle. The plain numbers
@@ -87,7 +94,7 @@ export class NextJet {
       // Cockpit interior: matte, dark, its own numbers as the trim role allows.
       trim: setRole(new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: .15, roughness: .8 }), 'trim'),
     }
-    const b = new Builder(detail, design.hard ?? false, design.smooth ?? false); design.build(b)
+    const b = new Builder(detail, design.hard ?? false, design.smooth ?? false, o.flaps ?? false); design.build(b)
     const pieces = b.pieces
     this.nozzles = b.nozzles; this.hover = b.hover
     if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance(); this.cockpit = true }
@@ -113,6 +120,16 @@ export class NextJet {
         this.vanes.push({ group, axis, sign: 0 })
       }
       petal(Math.PI, 0, halfHeight, 'x'); petal(0, 0, -halfHeight, 'x'); petal(Math.PI / 2, halfWidth, 0, 'y'); petal(Math.PI * 1.5, -halfWidth, 0, 'y')
+      // Each boom thruster ends in a short collar that sleeves its lip and gimbals on it: up and
+      // down together for pitch, opposite ways for roll, sideways for yaw.
+      for (const n of this.nozzles) {
+        if (Math.abs(n.x) < .01) continue
+        const group = new THREE.Group(); group.position.set(n.x, n.y, n.z); this.object.add(group)
+        const g = this.own(new THREE.CylinderGeometry(n.r * .86, n.r * 1.05, .3, Math.max(6, Math.round(14 * this.detail)), 1, true))
+        g.rotateX(Math.PI / 2); g.translate(0, 0, .15 - .05)
+        const mesh = new THREE.Mesh(g, this.petal); mesh.castShadow = true; group.add(mesh)
+        this.pods.push({ group, side: Math.sign(n.x) })
+      }
       this.setVector(0, 0)
     }
     for (const f of b.flaps) {
@@ -143,22 +160,33 @@ export class NextJet {
    * Merge the fixed body and draw every moving assembly in batches: the gear in one per material,
    * the four vectoring petals in one and the control surfaces in one per material.
    */
-  optimize(): void {
-    if (this.gearBatches.length) return
+  optimize(o: { staticGear?: boolean } = {}): void {
+    if (this.optimized) return
+    this.optimized = true
     const meshes = (root: THREE.Object3D) => { const list: THREE.Mesh[] = []; root.traverse(o => { if (o instanceof THREE.Mesh) list.push(o) }); return list }
     const byMaterial = (root: THREE.Object3D, sources: THREE.Mesh[], name: string) =>
       [...new Set(sources.map(o => o.material))].map(material => new MovingBatch(root, sources.filter(o => o.material === material), name))
-    this.gearBatches = byMaterial(this.gear, meshes(this.gear), 'jet-gear-batch')
+    if (!o.staticGear) this.gearBatches = byMaterial(this.gear, meshes(this.gear), 'jet-gear-batch')
     this.lastBatchedGear = this.gearAmount
-    const petals = meshes(this.thruster)
-    if (petals.length) this.petalBatch = new MovingBatch(this.thruster, petals, 'jet-petal-batch')
+    const nozzleParts = [...(this.thruster.parent ? meshes(this.thruster) : []), ...this.pods.flatMap(p => meshes(p.group))]
+    if (nozzleParts.length) this.nozzleBatch = new MovingBatch(this.object, nozzleParts, 'jet-nozzle-batch')
     this.flapBatches = byMaterial(this.object, this.flaps.flatMap(f => meshes(f.group)), 'jet-flap-batch')
-    // Batches keep their handles; only merge the fixed direct body leaves.
-    const moving = new Set([...this.flapBatches.map(b => b.mesh)])
+    // Batches keep their handles; only merge the fixed direct body leaves, and a gear that
+    // stays in one pose (the medium level's).
+    const moving = new Set([...this.flapBatches.map(b => b.mesh), this.nozzleBatch?.mesh])
     const body = new THREE.Group()
     for (const o of [...this.object.children]) if (o instanceof THREE.Mesh && !moving.has(o)) body.add(o)
-    mergeStatic(body)
+    const gearParent = o.staticGear ? this.gear.parent : null
+    if (gearParent) body.add(this.gear)
+    mergeStatic(body, Boolean(gearParent))
+    if (gearParent) gearParent.add(this.gear)
     for (const o of [...body.children]) this.object.add(o)
+  }
+  private optimized = false
+
+  /** The batched moving parts' meshes (after optimize): control surfaces, petals and collars. */
+  movingParts(): THREE.Mesh[] {
+    return [...this.flapBatches.map(b => b.mesh), ...(this.nozzleBatch ? [this.nozzleBatch.mesh] : [])]
   }
 
   private updateGearBatches(): void {
@@ -238,20 +266,23 @@ export class NextJet {
   }
 
   /**
-   * Vector the main thruster, in radians, limited to 20 degrees as in VhiclJet.cs 161.
-   * Positive pitch turns the exhaust up, positive yaw turns it to the right seen from behind.
-   * The top and bottom petals move together for pitch and the side petals for yaw.
+   * Vector the thrusters, in radians, each limited to `limit` (20 degrees by default, as in
+   * VhiclJet.cs 161). Positive pitch turns the exhaust up, positive yaw turns it to the right
+   * seen from behind. The main thruster's top and bottom petals move together for pitch and the
+   * side petals for yaw; the boom collars tilt with pitch, opposite ways with roll (positive
+   * turns the right one's exhaust up) and sideways with yaw.
    */
-  setVector(pitch: number, yaw: number): void {
-    const limit = .35, x = Math.min(limit, Math.max(-limit, pitch)), y = Math.min(limit, Math.max(-limit, yaw))
-    if (x === this.vector.x && y === this.vector.y && this.vectorSet) return
+  setVector(pitch: number, yaw: number, roll = 0, limit = .35): void {
+    const c = (v: number) => Math.min(limit, Math.max(-limit, v)), x = c(pitch), y = c(yaw), r = c(roll)
+    if (x === this.vector.x && y === this.vector.y && r === this.podVector.x && this.vectorSet) return
     this.vectorSet = true
-    this.vector.set(x, y)
+    this.vector.set(x, y); this.podVector.set(r, 0)
     for (const v of this.vanes) {
       if (v.axis === 'x') v.group.rotation.x = -x
       else v.group.rotation.y = y
     }
-    this.petalBatch?.update()
+    for (const p of this.pods) p.group.rotation.set(-c(x + r * p.side), y, 0, 'YXZ')
+    this.nozzleBatch?.update()
   }
 
   /**
@@ -259,18 +290,20 @@ export class NextJet {
    * right wing down and positive yaw is nose right. Every surface turns about its own hinge by
    * how far that would move its trailing edge the way an aeroplane's would go: up for nose up,
    * up on the right and down on the left for a roll to the right, and to the right for nose
-   * right. A sloping panel therefore answers all three, a vertical one only yaw. Up to 20 degrees.
+   * right. A sloping panel therefore answers all three, a vertical one only yaw. Up to `travel`
+   * radians (20 degrees by default).
    */
-  setControls(pitch: number, roll: number, yaw: number): void {
+  setControls(pitch: number, roll: number, yaw: number, travel = .35): void {
     const c = (v: number) => Math.min(1, Math.max(-1, v)), p = c(pitch), r = c(roll), y = c(yaw)
-    if (p === this.controls.x && r === this.controls.y && y === this.controls.z) return
-    this.controls.set(p, r, y)
+    if (p === this.controls.x && r === this.controls.y && y === this.controls.z && travel === this.travel) return
+    this.controls.set(p, r, y); this.travel = travel
     for (const f of this.flaps) {
       const wanted = f.normal.y * (p + r * f.side) + f.normal.x * y
-      f.group.quaternion.setFromAxisAngle(f.axis, .35 * c(wanted))
+      f.group.quaternion.setFromAxisAngle(f.axis, travel * c(wanted))
     }
     for (const batch of this.flapBatches) batch.update()
   }
+  private travel = .35
 
   /** Triangles in the whole model, landing gear included. */
   triangles(): number {

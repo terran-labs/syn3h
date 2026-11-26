@@ -20,6 +20,22 @@ import {MARK_END_FADE,tyreMarkFadeIn,tyreMarkLife,tyreMarkSoftness,tyreMarkStren
 import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
 import {warmGear} from '../../weapons/warm'
+import {MK2_FITTINGS} from '../jetgen/shipped'
+import {defineParam} from '../../../shared/params'
+
+/**
+ * Wingtip trails (the jet in flight, the buggy with its wings open). Each tip lays a ribbon:
+ * a new quad every TRAIL_INTERVAL seconds, the newest one stretched to the tip every frame so
+ * the head glides. A trail eases in when it starts and each newly laid stretch is born faint,
+ * so nothing appears at full brightness. The jet's trail starts above TRAIL_START m/s and
+ * stops below TRAIL_STOP: the gap keeps it from chattering at one speed.
+ */
+const TRAIL_START=22,TRAIL_STOP=18,TRAIL_INTERVAL=.04,TRAIL_WIDTH=.1,TRAIL_LIFE=.8,TRAIL_ALPHA=.22
+/** Seconds over which a newly laid stretch of trail eases in from nothing. */
+const TRAIL_TIP_FADE=.06
+/** Trails share one ring; enough for every vehicle in a crowded room to trail at once. */
+const TRAIL_CAPACITY=2048
+export const trailFadeIn=defineParam<number>({id:'fx.trailFadeIn',label:'Wingtip trail fade in (s)',group:'Effects',scope:'client',default:.3,min:0,max:2,step:.05})
 
 const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
 /** Shares of the wind velocity given to a new dust particle and to exhaust and energy trails. */
@@ -63,7 +79,7 @@ class EffectWorld implements System {
   readonly stats={vehicles:0,particles:0,marks:0,emitted:0,updateMs:0,peakUpdateMs:0,batches:7,pools:0}
   constructor(readonly game:Game){
     // Every sprite and the tyre mark are generated in the shader (sprites.ts); nothing is loaded.
-    this.marks=new RibbonBatch(1024,tyreMarkAlpha,false,MARK_END_FADE);this.trails=new RibbonBatch(256,undefined,true)
+    this.marks=new RibbonBatch(1024,tyreMarkAlpha,false,MARK_END_FADE);this.trails=new RibbonBatch(TRAIL_CAPACITY,undefined,true,1,{facing:true,keepLive:true});this.trails.fadeIn.value=TRAIL_TIP_FADE
     this.lamps.frustumCulled=false;this.lamps.count=0
     this.lamps.setColorAt(0,new T.Color(0,0,0))
     this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
@@ -219,8 +235,15 @@ class VehicleEffects {
   private readonly recentId=new Float64Array(4*RECENT)
   private readonly recentStart=new Float32Array(4*RECENT*2)
   private readonly recentCount=[0,0,0,0]
+  /** Per wingtip: the last laid trail point, when and how bright, and the quad stretching from it. */
   private readonly previousTips=[new T.Vector3(),new T.Vector3()]
   private readonly hasTip=[false,false]
+  private readonly tipBorn=[0,0]
+  private readonly tipAlpha=[0,0]
+  private readonly tipQuad=[-1,-1]
+  private trailing=false
+  /** 0..1: how far a trail that just started has eased in (fx.trailFadeIn). */
+  private trailStrength=0
   private readonly lastPosition=new T.Vector3()
   private readonly localVelocity=new T.Vector3()
   private readonly color=new T.Color()
@@ -312,7 +335,7 @@ class VehicleEffects {
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
   }
   captureLanding(){if(this.vehicle.landedThisStep)this.pendingLanding=Math.max(this.pendingLanding,this.vehicle.landingImpact)}
-  private reset(){this.pendingLanding=0;for(let i=0;i<4;i++)this.endMark(i);this.hasTip.fill(false);this.wasGrounded=false}
+  private reset(){this.pendingLanding=0;for(let i=0;i<4;i++)this.endMark(i);this.stopTrails();this.trailing=false;this.wasGrounded=false}
   /** Wheel `i`'s mark ends here: its last metre fades out instead of stopping square. */
   private endMark(i:number){
     if(!this.hasMark[i])return
@@ -474,22 +497,27 @@ class VehicleEffects {
         }
       }
     }
-    const trails=(this.buggy&&v.wingsOpen)||(v.kind==='jet'&&v.input.special&&speed>20)
-    if(trails&&this.trailTimer>=.04/rateScale){
-      this.trailTimer=0
+    this.trailing=(this.buggy&&v.wingsOpen)||(v.kind==='jet'&&v.input.special&&speed>(this.trailing?TRAIL_STOP:TRAIL_START))
+    if(this.trailing){
+      this.trailStrength=trailFadeIn.value>0?Math.min(1,this.trailStrength+dt/trailFadeIn.value):1
+      const lay=this.trailTimer>=TRAIL_INTERVAL/rateScale
+      if(lay)this.trailTimer=0
+      const alpha=TRAIL_ALPHA*this.trailStrength
+      trailColor.copy(this.color).multiplyScalar(2)
       for(let i=0;i<2;i++){
         const prev=this.previousTips[i]
         if(this.buggy){
           // Follow the skin's current deformed wing, including its active detail level.
           // Never bridge a missing/closed wing to its next available trail point.
-          if(!v.getWingTip(i?1:-1,tip)){this.hasTip[i]=false;continue}
+          if(!v.getWingTip(i?1:-1,tip)){this.hasTip[i]=false;this.tipQuad[i]=-1;continue}
           this.point(tip.x,tip.y,tip.z,tip)
-        }else this.point((i?1:-1)*3.85,.13,1.14,tip)
-        if(this.hasTip[i]){side.copy(tip).sub(prev).cross(toCamera.copy(w.game.camera.position).sub(tip)).normalize();w.trails.add(prev,tip,side,.1,.8,.22,trailColor.copy(this.color).multiplyScalar(2))}
-        prev.copy(tip);this.hasTip[i]=true
+        }else{const t=MK2_FITTINGS.wingTips[i];this.point(t.x,t.y,t.z,tip)}
+        if(this.hasTip[i])this.tipQuad[i]=w.trails.trail(prev,this.tipBorn[i],this.tipAlpha[i],tip,alpha,TRAIL_WIDTH,TRAIL_LIFE,trailColor,this.tipQuad[i])
+        if(lay||!this.hasTip[i]){prev.copy(tip);this.tipBorn[i]=w.clock;this.tipAlpha[i]=alpha;this.tipQuad[i]=-1;this.hasTip[i]=true}
       }
-    }else if(!trails)this.hasTip.fill(false)
+    }else this.stopTrails()
   }
+  private stopTrails(){this.hasTip.fill(false);this.tipQuad.fill(-1);this.trailStrength=0}
   dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headlightRig?.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();if(this.ownsSpots)for(const spot of this.spots)spot.dispose()}
 }
 

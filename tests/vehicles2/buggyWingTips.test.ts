@@ -88,7 +88,8 @@ it('writes ribbon endpoints at the real tips and resets history across unavailab
     remove: (system: EffectSystem) => { systems.delete(system); system.dispose() },
   })
   const detach = attachVehicleEffects(bed.game, bed.terrain, buggy, { local: false })
-  const trail = bed.game.scene.children.find(o => o instanceof T.Mesh && o.geometry.getAttribute('fxAge') && o.geometry.index?.count === 256 * 6) as T.Mesh
+  // The wingtip trail batch: the one whose quads face the camera (RibbonBatch `facing`).
+  const trail = bed.game.scene.children.find(o => o instanceof T.Mesh && o.geometry.getAttribute('fxAge') && o.geometry.getAttribute('fxSide')) as T.Mesh
   const count = () => trail.geometry.drawRange.count
   const tick = () => {
     buggy.update(.1, 1)

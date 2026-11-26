@@ -26,6 +26,8 @@ export const jetLift = defineParam({id:'jet.lift',label:'Lift',group:'Jet',scope
  * share of air missing, so they do nothing on an Earthlike world.
  */
 const JET_THRUSTER_AUTHORITY=.85
+/** Per second: how fast the moving parts follow the stick (the input smoothing's rate, Vhicl.cs 269). */
+const CONTROL_GLIDE=10
 /**
  * The angles of attack (radians) the weathervane leaves alone in pitch: the flow up to this far
  * above the nose (the original's lift coefficient saturates at 0.3) or this far below it.
@@ -132,10 +134,14 @@ export class Jet extends Vehicle {
   }
   private readonly gearCollider: RAPIER.Collider
   private readonly smoothed = new THREE.Vector4()
-  private vectorPitch = 0
-  private vectorYaw = 0
-  /** Stick deflection shown on the tail ring's control surfaces: pitch, roll, yaw. */
+  /**
+   * Stick deflection the moving parts show (ring surfaces, petals, boom collars): pitch, roll,
+   * yaw. Smoothed per frame from the input, which remote and bot jets carry too.
+   */
   private readonly controls = new THREE.Vector3()
+  private readonly controlTarget = new THREE.Vector3()
+  /** The hover hold's throttle as last written into input.z, or NaN (see applyForces). */
+  private heldThrottle = NaN
   readonly modelReady = Promise.resolve()
   /**
    * The thrust the HUD shows, -1 to 1: in flight the throttle actually applied (0 to 1, never
@@ -226,6 +232,9 @@ export class Jet extends Vehicle {
   }
 
   protected applyForces(dt:number):void {
+    // A hold written last step and not replaced since (a vehicle nobody re-polled) is no command.
+    if(this.input.z===this.heldThrottle)this.input.z=0
+    this.heldThrottle=NaN
     if(this.isLocal) this.liftKeys()
     this.neutralThrottle()
     this.wingsOpen=!this.hoverMode
@@ -258,7 +267,6 @@ export class Jet extends Vehicle {
       }
     }
     if(this.hoverMode){
-      this.vectorPitch = this.vectorYaw = 0
       // Not inside a zorb ball: the hold would thrust along the tumbling jet's up axis and carry
       // the ball off sideways or into the air. Manual throttle still works there.
       // Rapier contacts still describe the previous position on the first step after a teleport.
@@ -271,6 +279,9 @@ export class Jet extends Vehicle {
         // must keep its weight, or it is frictionless and slides down any slope.
         const nearGround=clamp((position.y-this.terrain.heightAt(position.x,position.z)-1.6*this.size)/this.size,0,1)
         input.z=lerp(input.z,hold,jetHoverHold.value*nearGround);this.smoothed.z=input.z
+        // Into the command as well, as neutralThrottle does in flight: it is what this jet flies,
+        // so other players' copies draw its plume and the HUD shows its thrust.
+        if(input.z>0){this.input.z=input.z;this.heldThrottle=input.z}
       }
       // Q (lift below zero): a controlled descent toward jet.descentRate, never a push down.
       // Lift only reduces, from what balances weight toward none; the original's Q was none.
@@ -304,8 +315,6 @@ export class Jet extends Vehicle {
       // and flew on tail-first.
       const throttle=this.input.brakes?0:clamp(input.z,0,1)
       const thrust=new THREE.Vector3(0,0,-1).applyQuaternion(thrustRotation).applyQuaternion(q).multiplyScalar(throttle*jetFlightThrust.value*weight*.99)
-      // The force equations stay original; only the four nozzle petals move visually.
-      this.vectorPitch = thrustPitch; this.vectorYaw = -thrustYaw
       const nozzle=this.nozzlePosition.clone().applyQuaternion(q).add(position)
       this.body.addForceAtPoint(thrust,nozzle,true)
       // Control surfaces need air; reaction thrusters take over as it thins, so the jet still
@@ -396,10 +405,15 @@ export class Jet extends Vehicle {
   }
   override update(dt:number,alpha:number):void {
     super.update(dt,alpha)
-    // Visual only: the ring's surfaces follow the smoothed stick in both modes, signed like the
-    // nozzle petals. Pulling back (y below 0) is nose up; x is roll right; w is yaw right.
-    this.controls.set(-this.smoothed.y, this.smoothed.x, this.smoothed.w)
-    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls, this.hoverMode)
+    // Visual only: the moving parts follow the stick in both modes. Pulling back (y below 0) is
+    // nose up; x is roll right, and in hover also a turn (the hover torque yaws on x + w); w is
+    // yaw right. From the input, not the physics: remote copies and parked bodies step no
+    // forces but carry the input. Smoothed per frame so they glide at any frame rate. Inside a
+    // zorb ball the stick drives the ball and the parts rest.
+    const i=this.input,still=this.zorbed||this.object.userData.materializing===true
+    this.controlTarget.set(still?0:clamp(-i.y,-1,1),still?0:clamp(i.x,-1,1),still?0:clamp(this.hoverMode?i.x+i.w:i.w,-1,1))
+    this.controls.lerp(this.controlTarget,1-Math.exp(-dt*CONTROL_GLIDE))
+    this.model.update(this.gearAmount, Math.max(0, this.smoothed.z), this.controls, this.hoverMode)
     // A ball carries its vehicle; even idle thrust must stay dark inside it.
     this.model.plume.mesh.visible = !this.zorbed
   }
@@ -436,7 +450,7 @@ export class Jet extends Vehicle {
     this.holdReleased = this.freshHoldRelease = false
     this.smoothed.set(0, 0, 0, 0)
     this.controls.set(0, 0, 0)
-    this.vectorPitch = this.vectorYaw = 0
+    this.heldThrottle = NaN
     this.wingsOpen = false
     this.atmosDensity = 1.225
     this.stallFactor = 1
