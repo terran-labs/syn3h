@@ -74,7 +74,7 @@ function observeSwitch() {
   const { game, shell, planets, terrain } = window.mira
   const root = shell.element, canvas = game.renderer.domElement
   const observation = window.worldSwitchObservation = {
-    trusted: null, cover: null, reveal: null, control: null,
+    trusted: null, cover: null, coveredDraw: null, reveal: null, control: null,
     descending: false, blurred: false, builds: [], frames: [],
   }
   const sample = () => ({
@@ -83,6 +83,7 @@ function observeSwitch() {
     held: game.holdDraws, playing: shell.playing, suspended: game.input.suspended,
   })
   const inspect = () => {
+    if (observation.trusted === null) return
     const at = performance.now(), state = sample()
     if (root.classList.contains('is-descending')) observation.descending = true
     if (canvas.style.filter.includes('blur(')) observation.blurred = true
@@ -94,22 +95,31 @@ function observeSwitch() {
   }
   const mutations = new MutationObserver(inspect)
   for (const element of [root, canvas, shell.overlay]) mutations.observe(element, { attributes: true })
-  for (const type of ['pointerup', 'click', 'keydown']) window.addEventListener(type, event => {
-    if (event.isTrusted && observation.trusted === null) observation.trusted = performance.now()
+  for (const type of ['pointerup', 'click']) window.addEventListener(type, event => {
+    const target = event.target
+    if (!(target instanceof Element) || !event.isTrusted || observation.trusted !== null) return
+    const action = type === 'pointerup' ? target.matches('.galaxy-canvas') : target.closest('.galaxy-label, .galaxy-world-key')
+    if (action) observation.trusted = performance.now()
   }, { capture: true })
 
   const backend = game.renderer.backend, create = backend.createRenderPipeline
   backend.createRenderPipeline = function (renderObject, ...args) {
+    if (observation.trusted === null) return create.call(this, renderObject, ...args)
     const at = performance.now(), state = sample()
-    let terrainLayer = null
-    for (let object = renderObject.object; object; object = object.parent) {
-      if (object.name === 'groundcover' || object.name === 'volcanics') {
-        terrainLayer = object.name
-        break
+    try { return create.call(this, renderObject, ...args) }
+    finally { observation.builds.push({ at, ...state }) }
+  }
+  const draw = backend.draw
+  backend.draw = function (renderObject, ...args) {
+    const result = draw.call(this, renderObject, ...args)
+    if (observation.trusted !== null && observation.coveredDraw === null && observation.reveal === null &&
+        renderObject.scene === game.scene && renderObject.camera === game.camera && !renderObject.material?.isShadowPassMaterial) {
+      const state = sample()
+      if (state.world === 'alpine' && state.ready && state.covered && state.held) {
+        observation.coveredDraw = { at: performance.now(), ...state }
       }
     }
-    try { return create.call(this, renderObject, ...args) }
-    finally { observation.builds.push({ at, terrainLayer, ...state }) }
+    return result
   }
   // This callback follows the real world draw in the same task, while its canvas is readable.
   const recorder = game.blankFrames, afterDraw = recorder.afterDraw
@@ -183,8 +193,7 @@ async function checkCase({ view, route, backend }) {
     assert.equal(trace.reveal.ready, true, `${label}: destination terrain is ready`)
     assert.equal(trace.descending, route === 'flight' || route === 'skip', `${label}: expected flight path`)
     assert.equal(trace.blurred, route === 'flight', `${label}: only the full flight shows the blurred air transition`)
-    assert.ok(trace.builds.some(build => build.world === 'alpine' && build.terrainLayer && build.covered && build.held),
-      `${label}: the covered draw creates destination terrain pipelines`)
+    assert.ok(trace.coveredDraw && trace.coveredDraw.at <= trace.reveal.at, `${label}: draws the ready destination under cover`)
     assert.equal(trace.builds.filter(build => build.at >= trace.control.at && build.at <= trace.control.at + 10000).length,
       0, `${label}: no new pipelines during the first ten seconds of control`)
     assert.ok(trace.frames.every(frame => frame.world === 'alpine' && !frame.suspended && frame.nonblank > 3),
