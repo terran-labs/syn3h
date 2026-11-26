@@ -173,7 +173,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
 <p class="welcome-newsletter">Want news about Mira? <a class="welcome-newsletter-link" href="${NEWSLETTER_URL}" target="_blank" rel="noopener noreferrer">Join the newsletter</a></p>
 ${aboutLinksHtml}
 ${licencesHtml}
-<p class="welcome-privacy">Mira keeps anonymous counts of things like which worlds and vehicles get played and what kind of device and graphics they run on, and crash reports, so we can make it better. No accounts, no ads, nothing sold.</p>
+<p class="welcome-privacy">Mira keeps anonymous counts of things like which worlds and vehicles get played and what kind of device and graphics they run on, and crash reports, so we can make it better. No accounts, no ads, nothing sold. Other players in your world can see your kind of device and your state or country, never closer. To hide your location, in a world: Panels, then Me, then Privacy, and turn off <em>Show my location to other players</em>.</p>
 `
 }
 
