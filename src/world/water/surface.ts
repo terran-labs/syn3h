@@ -102,8 +102,8 @@ export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFlo
  * dispersion, like the swell.
  */
 export const CHOP: readonly [number, number, number][] = [
-  [9.1, 0.25, 0.085], [5.3, -0.7, 0.07], [3.4, 1.15, 0.058], [2.05, -1.6, 0.048],
-  [1.33, 0.6, 0.04], [0.81, 2.3, 0.034], [0.52, -0.2, 0.028], [0.33, -2.6, 0.024],
+  [9.1, 0.25, 0.12], [5.3, -0.7, 0.10], [3.4, 1.15, 0.085], [2.05, -1.6, 0.07],
+  [1.33, 0.6, 0.06], [0.81, 2.3, 0.05], [0.52, -0.2, 0.04], [0.33, -2.6, 0.035],
 ]
 /** Phase warp weights per CHOP component, on the two ripple noises. */
 const WARP: readonly [number, number][] = [[1.1, 0.6], [0.7, 1.6], [2.1, -0.9], [-1.4, 1.9], [2.4, 1.2], [-0.8, 2.6], [1.7, -2.2], [-2.5, -1.1]]
@@ -347,7 +347,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
    */
   const patchAt = (xz: THREE.Node<'vec2'>) => {
     const n = mx_noise_float(vec3(xz.x.mul(PATCH_FREQUENCY), xz.y.mul(PATCH_FREQUENCY), time.mul(PATCH_RATE)))
-    return mix(float(1), smoothstep(-0.4, 0.45, n), patchiness)
+    return mix(float(1), smoothstep(-0.55, 0.3, n), patchiness)
   }
 
   /**
@@ -477,9 +477,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
         nx.assign(n1)
         const patch = patchAt(p.xz)
         const still = mode === 'still' ? 0.45 : 1
-        // Chop is never fully calm (35 per cent in a lull); ripples die in a lull and grow near the camera.
-        const chopShare = chop.mul(still).mul(float(0.35).add(patch.mul(0.65)))
-        const rippleShare = chop.mul(still).mul(rippleStrength).mul(patch.mul(patch)).mul(smoothstep(160, 25, dist))
+        // Chop is never fully calm (55 per cent in a lull); ripples fade in a lull and grow near the camera.
+        const chopShare = chop.mul(still).mul(float(0.55).add(patch.mul(0.45)))
+        const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.2).add(patch.mul(0.8))).mul(smoothstep(160, 25, dist))
         // Glitter: the share of each wave's slope kept as a sharp facet; the rest roughens (filteredRoughness).
         const facet = mix(float(0.45), float(1), glitter)
         const add = (gx: THREE.Node<'float'>, gz: THREE.Node<'float'>, length: number, slope: THREE.Node<'float'>, keep: THREE.Node<'float'>) => {

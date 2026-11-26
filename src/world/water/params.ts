@@ -33,7 +33,7 @@ export const waterRipple = defineParam({
  * folded into the surface's roughness (a soft sheen). 0 a satin sea, 1 the default sparkle.
  */
 export const waterGlitter = defineParam({
-  ...P, id: 'water.glitter', label: 'Sun glitter', default: 0.7, min: 0, max: 1, step: 0.05,
+  ...P, id: 'water.glitter', label: 'Sun glitter', default: 0.85, min: 0, max: 1, step: 0.05,
 })
 /**
  * Calm and rough patches: large slow areas (about 150 m) where the wind's chop and ripples

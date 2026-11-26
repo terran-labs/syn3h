@@ -33,7 +33,7 @@ const webgl = flag('--webgl'), cost = flag('--cost'), framesOnly = flag('--frame
 // --preview-swell L: a labelled preview of a longer physical swell (water.waveLength L). It
 // changes the shared wave length for the page, physics included, so it is for frames only.
 const previewSwell = Number(opt('--preview-swell', '0'))
-const levels = opt('--levels', '1,4,5').split(',').map(Number)
+const levels = opt('--levels', '1,3,5').split(',').map(Number)
 const sizes = opt('--sizes', '1280x800,390x844').split(',').map((s) => { const [w, h] = s.split('x').map(Number); return { width: w, height: h } })
 const views = opt('--views', 'shore,open,glitter,shallows').split(',')
 await mkdir(out, { recursive: true })
@@ -165,7 +165,7 @@ async function pose(page, view) {
       from = new V(at.x, sea + 60, at.z); look = new V(at.x + 400, sea + 5, at.z + 120)
     } else if (view === 'glitter') {
       // Toward the sun's azimuth, from the scene's directional light, with the sun put low.
-      s.params.set('sun.timeOfDay', 17.4)
+      s.params.set('sun.timeOfDay', 17)
       let dir = null
       s.game.scene.traverse((o) => { if (!dir && o.isDirectionalLight) dir = o.position.clone().sub(o.target.position).normalize() })
       const az = dir ? Math.atan2(dir.z, dir.x) : 0
