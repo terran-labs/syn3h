@@ -8,6 +8,8 @@
  *   PORT=8791 npm run server
  *   MIRA_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/reconnect-check.mjs
+ * If using a free proxy port, pass the same port in MIRA_RECONNECT_PROXY_PORT here
+ * and in the dev server's VITE_SERVER_URL before starting Vite.
  *   node tools/reconnect-check.mjs --rejoin 8     the soak for `game.rejoin`
  *
  * With --rejoin N the room has `game.rejoin` on and the connection is dropped N times, for 1
@@ -23,7 +25,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const rejoinAt = process.argv.indexOf('--rejoin')
 const cycles = rejoinAt >= 0 ? Number(process.argv[rejoinAt + 1] ?? 6) : 0
 // Run the proxy as a direct child (no npx in between), so stopping it stops the listener.
-const startProxy = () => spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
+const proxyPort = process.env.MIRA_RECONNECT_PROXY_PORT ?? '8794'
+const startProxy = () => spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', proxyPort, '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
 let proxy = startProxy()
 await wait(3000)
 const browsers = []
