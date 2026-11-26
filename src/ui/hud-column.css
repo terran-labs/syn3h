@@ -129,6 +129,9 @@
    (GearSelector.placeHeld); the move runs with the names' slide. Too long, it keeps its key. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail { translate: 0 0; transition: translate .18s cubic-bezier(.16,1,.3,1); }
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] .gs-detail { translate: var(--gs-held-shift, 0px) 0; }
+/* Touch: the rows are too close for a line under the name, so it follows the name too
+   (GearSelector.placeHeld); with the panels open the detail stands under the drum instead. */
+:root .mira-shell.exploration-ui.has-touch:not(.is-panels) .gear-selector .gs-detail { translate: var(--gs-held-shift, 0px) 0; }
 .gear-selector .gs-release.is-short .gs-release-alt { display: none; }
 @media (prefers-reduced-motion: reduce) { :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-detail { transition: none; } }
 :root .mira-shell.exploration-ui .gear-selector .gs-act { font: var(--col-type); letter-spacing: var(--col-track); text-transform: uppercase; color: var(--s3-dim); }

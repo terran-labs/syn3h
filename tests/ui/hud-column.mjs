@@ -118,20 +118,19 @@ const oneColumn = (m, at) => {
 }
 /**
  * What the gear holds and how to let go: on a desktop the line beside the selected name
- * (.gs-held, its hint .gs-release), on touch the status under the name. Each drawn whole (in the
- * window, and inside the drum where it sits in a row), overlapping no gear name, the world name
- * or the description.
+ * (.gs-held, its hint .gs-release), on touch too (its rows are too close to carry it beneath).
+ * Each drawn whole in the window, overlapping no gear name, the world name or the description.
  */
 const releaseHint = (page) => page.evaluate(() => {
   const box = (e) => e && !e.hidden && e.checkVisibility({ visibilityProperty: true, opacityProperty: true }) ? e.getBoundingClientRect() : null
   const touch = document.querySelector('.mira-shell').classList.contains('has-touch')
   const meter = document.querySelector('.gear-selector .gs-meter:not(.is-leaving)')
-  const status = box(touch ? meter?.querySelector('.gs-status') : document.querySelector('.gear-selector .gs-held'))
+  const status = box(document.querySelector('.gear-selector .gs-held'))
   const hint = box(document.querySelector('.gear-selector .gs-release'))
   const drum = document.querySelector('.gear-selector .gs-drum').getBoundingClientRect()
   const others = [...document.querySelectorAll('.gear-selector .gs-drum .gs-text, .focus-hud .fh-top, .gear-selector .gs-desc')].map(box).filter(Boolean)
   const overlaps = (r) => others.some((o) => r.left < o.right - 1 && r.right > o.left + 1 && r.top < o.bottom - 1 && r.bottom > o.top + 1)
-  const whole = (r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && (!touch || (r.left >= drum.left && r.right <= drum.right && r.top >= drum.top && r.bottom <= drum.bottom))
+  const whole = (r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight
   const letGo = [...document.querySelectorAll('.gear-actions button[data-action=release]')].some((b) => b.checkVisibility({ visibilityProperty: true, opacityProperty: true }))
   return {
     status: status && { whole: whole(status), clear: !overlaps(status) },
@@ -322,7 +321,7 @@ try {
     await page.waitForTimeout(400)
     const touchHint = await releaseHint(page)
     // A visible LET GO thumb button says how to let go; without one the hint must show.
-    assert.ok(touchHint.status?.whole && touchHint.status.clear && (touchHint.letGo ? !touchHint.shown : touchHint.hint?.whole && touchHint.hint.clear), `${viewport.width}x${viewport.height}: the status under the name, and a way to let go shown ${JSON.stringify(touchHint)}`)
+    assert.ok(touchHint.status?.whole && touchHint.status.clear && (touchHint.letGo ? !touchHint.shown : touchHint.hint?.whole && touchHint.hint.clear), `${viewport.width}x${viewport.height}: the status beside the name, and a way to let go shown ${JSON.stringify(touchHint)}`)
     assert.ok(touchHint.letGo, `${viewport.width}x${viewport.height}: the LET GO thumb button shows while a cord is attached`)
     await context.close()
   }
