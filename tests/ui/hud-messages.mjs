@@ -44,7 +44,10 @@ try {
     await page.evaluate(() => { window.mira.params.set('hud.mode', 1, 'local'); window.mira.shell.inspector.open = false; window.mira.shell.tips.restart() })
     await page.evaluate(() => window.miraNet.chat.receive({ type: 'chat', from: 4242, text: 'Zeptock, that was an orange-level situation. Also beautiful.' }))
     await page.waitForFunction(() => document.querySelector('.chat-strip .chat-line') && document.querySelector('.spawn-help.is-tips:not([hidden])'), null, { timeout: 20000 })
-    await page.waitForTimeout(500)
+    // The HUD comes in group by group on entering a world (hudReveal.ts); read and measure the
+    // tips once theirs has finished, at full strength.
+    await page.waitForFunction(() => { const el = document.querySelector('.spawn-help'), s = getComputedStyle(el); return el.checkVisibility({ visibilityProperty: true }) && Number(s.opacity) === 1 && !el.getAnimations().some(a => a.playState === 'running') }, null, { timeout: 20000 })
+    await page.waitForTimeout(300)
     const tips = await page.evaluate(() => [...document.querySelectorAll('.spawn-help.is-tips [data-tip]')].map(el => el.dataset.tip))
     assert.deepEqual(tips, ['jet.hover.liftoff', 'jet.hover.mode', 'jet.hover.move'], `${size}: a new pilot is told how to lift off, switch and move`)
     assert.match(await page.locator('.spawn-help [data-tip="jet.hover.liftoff"]').innerText(), /^E\s*hold: lift off and climb · Q\s*come down/, `${size}: the lift-off line names E and Q`)
