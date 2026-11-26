@@ -516,7 +516,9 @@ export class SpraySim {
     // Ballistic droplets live until they land; the cap only bounds a stray one.
     // Drawn sizes vary (0.6 to 1.7 times), from their own hash so the motion's random
     // sequence is untouched.
-    d[o + DAGE] = 0; d[o + DLIFE] = kind ? .7 + this.random() * .5 : 3; d[o + DSIZE] = size * scale * (kind ? 1 : .6 + 1.1 * hashUnit(++this.drops) ** 1.5)
+    // Kind 0 a drop, 1 mist, 2 a sheet (a dense, opaque piece of a breach's lip).
+    const mist = kind === 1
+    d[o + DAGE] = 0; d[o + DLIFE] = mist ? .7 + this.random() * .5 : 3; d[o + DSIZE] = size * scale * (mist ? 1 : .6 + 1.1 * hashUnit(++this.drops) ** 1.5)
     d[o + DFLOOR] = this.surface(x, z, floor); d[o + DKIND] = kind
   }
 
@@ -667,7 +669,7 @@ export class SpraySim {
     for (let i = 0, c = n(26 * b); i < c; i++) {
       const a = (i + this.random() * .6) / Math.max(1, c) * Math.PI * 2, r = R * (.95 + this.random() * .15)
       const out = (2 + this.random() * 2.5) * grow * Math.min(2, .5 + R / 3), up = (5 + this.random() * 4) * grow
-      this.drop(x + Math.cos(a) * r, y + .15, z + Math.sin(a) * r, vx * .3 + Math.cos(a) * out, up, vz * .3 + Math.sin(a) * out, (.5 + this.random() * .4) * grow, y, 0, scale, true)
+      this.drop(x + Math.cos(a) * r, y + .15, z + Math.sin(a) * r, vx * .3 + Math.cos(a) * out, up, vz * .3 + Math.sin(a) * out, (.5 + this.random() * .4) * grow, y, 2, scale, true)
     }
     // Crown: thrown out and up from the rim, landing two to three radii out.
     for (let i = 0, c = n(160 * b); i < c; i++) {
@@ -690,17 +692,21 @@ export class SpraySim {
       const a = this.random() * Math.PI * 2, r = R * (1 + this.random() * .8)
       this.mistAt(x + Math.cos(a) * r, y + .4 + this.random() * R, z + Math.sin(a) * r, Math.cos(a) * (1 + this.random() * 2) * grow, .5 + this.random() * 1.5, Math.sin(a) * (1 + this.random() * 2) * grow, (1 + this.random() * 1.4) * grow, y, scale, 1.1 + this.random() * .9)
     }
+    // A collar of white water round the ball at the surface, dense from the first frame and lying
+    // for two or three seconds: the base the crown rises out of, which reads by day as white foam
+    // on blue water where white drops on a pale sky do not.
+    this.ring(x, y, z, R * (1.4 + .6 * b) * scale, 1, 2.2 + 1.2 * b, 3)
     // Foam: a strong ring at the rim and a wider, fainter one, both lingering.
     this.ring(x, y, z, R * (2.2 + .8 * b) * scale, Math.min(1, .55 + .3 * b), 2.2 + 1.4 * b)
     this.ring(x, y, z, R * (3.4 + 1.6 * b) * scale, Math.min(1, .3 + .25 * b), 3 + 1.6 * b)
     return b
   }
 
-  /** A soft foam ring spreading on the surface from (x, z). */
-  private ring(x: number, y: number, z: number, size: number, strength: number, life: number) {
+  /** A soft foam ring spreading on the surface from (x, z); `soft` 3 a dense collar of white water instead. */
+  private ring(x: number, y: number, z: number, size: number, strength: number, life: number, soft = 1) {
     const i = this.ringCount < this.cap.rings ? this.ringCount++ : 0, o = i * R, rr = this.rings
     rr[o + RX] = x; rr[o + RY] = y + WAKE_LIFT; rr[o + RZ] = z; rr[o + RAGE] = 0; rr[o + RLIFE] = life
-    rr[o + RSIZE] = size; rr[o + RSTRENGTH] = strength; rr[o + RSOFT] = 1
+    rr[o + RSIZE] = size; rr[o + RSTRENGTH] = strength; rr[o + RSOFT] = soft
   }
 
   /** A small ring where a drop of `size` (radius, m) landed. */
@@ -839,7 +845,8 @@ export class SpraySim {
       }
       const size = mist ? d[o + DSIZE] * (1 + age * 1.6) : d[o + DSIZE]
       a[i * 4] = d[o + DX]; a[i * 4 + 1] = d[o + DY]; a[i * 4 + 2] = d[o + DZ]; a[i * 4 + 3] = size
-      b[i * 4] = d[o + DVX]; b[i * 4 + 1] = d[o + DVY]; b[i * 4 + 2] = d[o + DVZ]; b[i * 4 + 3] = mist ? alpha + 2 : alpha
+      // Mist flagged as alpha + 2, a sheet as alpha + 4.
+      b[i * 4] = d[o + DVX]; b[i * 4 + 1] = d[o + DVY]; b[i * 4 + 2] = d[o + DVZ]; b[i * 4 + 3] = mist ? alpha + 2 : d[o + DKIND] === 2 ? alpha + 4 : alpha
     }
     return n
   }

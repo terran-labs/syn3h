@@ -30,6 +30,9 @@ const phone = process.argv.includes('--phone')
 // name what a mark on the water is.
 const opt = (k) => process.argv.find(a => a.startsWith(`--${k}=`))?.slice(k.length + 3)
 // --only=<scene>[,<scene>...]; --hours=<h>[,<h>...] (default 14 and 22; 14 only with --phone).
+// --view=chase: the player's own chase camera at its default distance instead of the side camera.
+// --sky=deep: a clear, deep blue sky (low turbidity and haze) over the same sea.
+const view = opt('view') ?? 'side', sky = opt('sky') ?? 'pale'
 const serveDir = opt('dir') ?? process.cwd(), only = opt('only')?.split(','), split = opt('split') === undefined ? null : Number(opt('split'))
 await mkdir(out, { recursive: true })
 const app = await serveStable({ dir: serveDir, port: 0 })
@@ -46,7 +49,7 @@ const HOURS = opt('hours')?.split(',').map(Number) ?? (phone ? [14] : [14, 22])
 
 for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, frames] of SCENES) {
   if (only && !only.includes(name)) continue
-  const tag = `${name}-${hour === 14 ? 'day' : hour === 22 ? 'night' : `h${hour}`}${phone ? '-phone' : ''}`
+  const tag = `${name}-${hour === 14 ? 'day' : hour === 22 ? 'night' : `h${hour}`}${view === 'chase' ? '-chase' : ''}${sky === 'deep' ? '-deepsky' : ''}${phone ? '-phone' : ''}`
   const page = await (await browser.newContext({ viewport: phone ? { width: 844, height: 390 } : { width: 1280, height: 720 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`))
   await page.routeWebSocket(/\/ws/, (s) => s.close())
@@ -62,6 +65,7 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
   const spot = await page.evaluate((hour) => {
     const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', hour); s.params.set('sun.dayLength', 0);
+    if (sky === 'deep') { s.params.set('sky.turbidity', 1.2); s.params.set('sky.mieCoefficient', .001); s.params.set('weather.fogDensity', .00008); s.params.set('weather.cloudCoverage', .05) }
     const deep = (x, z) => t.liquidKindAt?.(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 12
     for (let r = 30; r < 3000; r += 15) for (let a = 0; a < 64; a++) {
       const ang = a / 64 * Math.PI * 2, x = sp.x + Math.cos(ang) * r, z = sp.z + Math.sin(ang) * r
@@ -119,7 +123,8 @@ for (const hour of HOURS) for (const [name, vehicle, zorb, depth, forward, up, f
     b.teleport({ x: spot.x - 12, y: depth === 'bob' ? spot.surface + r : spot.surface - depth - r, z: spot.z }, Math.PI / 2)
     b.body.setLinvel({ x: forward, y: up, z: 0 }, true); b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
     const V = s.game.camera.position.constructor
-    s.camera.setCinematicPose(new V(spot.x - 4, spot.surface + 5, spot.z + 22), new V(spot.x - 4, spot.surface + 1.5, spot.z))
+    if (view === 'side') s.camera.setCinematicPose(new V(spot.x - 4, spot.surface + 5, spot.z + 22), new V(spot.x - 4, spot.surface + 1.5, spot.z))
+    else s.camera.clearCinematicPose?.(0)
     window.__fx = fx
     return { entries: fx.spray.sim?.entries ?? 0, exits: fx.spray.sim?.exits ?? 0 }
   }, { spot, depth, forward, up })

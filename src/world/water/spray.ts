@@ -100,7 +100,7 @@ function batch(capacity: number, names: string[]) {
  */
 function dropletMaterial(light: N, tint: N, lava = false) {
   const a = attribute('sprayA', 'vec4'), b = attribute('sprayB', 'vec4')
-  const centre = a.xyz, size = a.w, velocity = b.xyz, mist = b.w.greaterThan(1.5)
+  const centre = a.xyz, size = a.w, velocity = b.xyz, sheet = b.w.greaterThan(3.5), mist = b.w.greaterThan(1.5).and(sheet.not())
   const toCamera = cameraPosition.sub(centre), distance = toCamera.length(), view = toCamera.div(distance.max(1e-4))
   // Never thinner than about a pixel and a half at 720p; a widened drop is fainter in proportion,
   // so distant spray adds up to a haze instead of vanishing or turning into chalk.
@@ -134,13 +134,15 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   const puff = float(1).sub(smoothstep(.1, 1, q.length().add(n.mul(.3)))).pow(1.5).mul(n.mul(.6).add(.4))
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
   const near = smoothstep(1.5, 6, distance)
-  const alpha = select(mist, b.w.sub(2), b.w).mul(near)
+  const alpha = select(sheet, b.w.sub(4), select(mist, b.w.sub(2), b.w)).mul(near)
   // Big clots (splash crowns and columns) are churned full of air: a soft white tuft, uneven
   // with noise, with a faint haze of fine mist round it, never a flat disc.
   const aerated = smoothstep(.03, .12, size)
   const tuft = float(1).sub(smoothstep(0, 1, rs.add(n.sub(.5).mul(.45)))).pow(1.4).mul(n.mul(.5).add(.6)).mul(float(1).sub(fall).pow(.8))
   const drop = body.mul(.65).add(rim.mul(.35)).add(glint.mul(.5)).min(1)
-  m.opacityNode = select(mist, puff.mul(alpha).mul(.6), mix(drop.mul(.8), tuft.mul(.9), aerated).mul(alpha).mul(cover.mul(.75).add(.25)))
+  // A sheet (a breach's lip) is solid water: a dense body with a soft, uneven rim, never thinned.
+  const solid = float(1).sub(smoothstep(.7, 1, rs.add(n.sub(.5).mul(.3)))).mul(float(1).sub(fall).pow(.6))
+  m.opacityNode = select(sheet, solid.mul(alpha).mul(.97), select(mist, puff.mul(alpha).mul(.6), mix(drop.mul(.8), tuft.mul(.9), aerated).mul(alpha).mul(cover.mul(.75).add(.25))))
   // A drop is clear water: the sea's colour through it, deeper below and paler where its upper
   // side catches the sky, with a white glint and rim, so it reads against a pale sky as well as
   // against the sea. A clot is white with air on top where it catches the sky, and the sea's own
@@ -149,12 +151,12 @@ function dropletMaterial(light: N, tint: N, lava = false) {
   // at night).
   const up = positionWorld.y.sub(centre.y).div(radius.max(1e-4)).clamp(-1, 1)
   const water = mix(tint.mul(.9), mix(tint, vec3(.8, .9, 1), .45), smoothstep(-.6, .8, up))
-  const clot = mix(mix(tint.mul(.85), vec3(1, 1, 1), .22), vec3(1.15, 1.18, 1.2), smoothstep(-.7, .55, up))
+  const clot = mix(mix(tint.mul(.55), vec3(1, 1, 1), .15), vec3(1.15, 1.18, 1.2), smoothstep(-.7, .55, up))
   const lit = mix(mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85)), clot, aerated.mul(.85))
   // Spray thrown into the sun scatters it forward: lit tops of clots and mist read brighter than
   // lit sand; their shaded sides do not.
   const sunlit = mix(float(1), float(1.35), aerated.mul(smoothstep(-.2, .8, up)))
-  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .62).mul(1.2), lit.mul(sunlit)).mul(light)
+  m.colorNode = select(sheet, clot.mul(mix(float(1), float(1.25), smoothstep(-.2, .8, up))), select(mist, mix(tint, vec3(1, 1, 1), .62).mul(1.2), lit.mul(sunlit))).mul(light)
   if (lava) {
     // Molten drops glow on their own and cool as they fade: yellow-orange to a dark clot.
     // Lava "mist" is a hot, dark smoke.
@@ -182,7 +184,8 @@ function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
   const A = attribute('foamA', 'vec4'), B = attribute('foamB', 'vec4'), S = attribute('foamSide', 'vec4'), L = attribute('foamLook', 'vec4')
   const kindLength = S.xy.length()
   const ring = kindLength.lessThan(.5)
-  const ripplet = ring.and(B.w.greaterThan(1.5))
+  const collar = ring.and(B.w.greaterThan(2.5))
+  const ripplet = ring.and(B.w.greaterThan(1.5)).and(collar.not())
   const q = uv().mul(2).sub(1), t = uv().y
   const sides = normalize(mix(S.xy, S.zw, t).add(1e-5))
   const strip = mix(A.xyz, B.xyz, t).add(vec3(sides.x, 0, sides.y).mul(mix(A.w, B.w, t).mul(q.x)))
@@ -218,7 +221,9 @@ function foamMaterial(light: N, tint: N, lava = false, octaves = 2) {
   const ringFoam = band.mul(arcs).mul(float(1).sub(outerGone)).mul(flecks.mul(.6).add(.55))
   const inside = float(1).sub(smoothstep(.3, .75, rr)).mul(float(1).sub(smoothstep(0, .35, age))).mul(.12)
   const patch = float(1).sub(smoothstep(0, .95, rr)).pow(1.5).mul(smoothstep(.3, .7, flecks.mul(.6).add(lace.mul(.5)))).mul(.6)
-  const ringAlpha = select(ripplet, patch, ringFoam.add(inside)).mul(float(1).sub(smoothstep(.92, 1, q.length()))).mul(fade)
+  // A collar: a dense disc of white water with a broken edge, thinning to patches as it ages.
+  const collarFoam = float(1).sub(smoothstep(.45, .95, rr.add(flecks.sub(.5).mul(.25)))).mul(flecks.mul(.35).add(.75)).mul(float(1).sub(smoothstep(.5, 1, age)))
+  const ringAlpha = select(collar, collarFoam, select(ripplet, patch, ringFoam.add(inside))).mul(float(1).sub(smoothstep(.92, 1, q.length()))).mul(fade)
   const alpha = select(ring, ringAlpha, stripAlpha).clamp(0, 1)
   m.opacityNode = alpha.mul(.95)
   // Fresh foam is white with air; as it settles it takes the liquid's own colour.
