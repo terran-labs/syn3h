@@ -13,8 +13,11 @@ import { writeFile } from 'node:fs/promises'
 import { chromium } from 'playwright-core'
 import { serveStable } from './serve-stable.mjs'
 
-const args = process.argv.slice(2).filter(a => !a.startsWith('--')), webgl = process.argv.includes('--webgl')
-const dir = args[0] ?? '.', label = (args[1] ?? 'build') + (webgl ? '-webgl' : '')
+// --forced-climb: the observer enters at Medium, then the governor's own in-play climb to High is
+// applied (quality.governor.setManualLevel and quality.apply('governor', false): no veil, as a
+// climb back to a level just dropped from is applied in play), and the vehicles come into view after it.
+const args = process.argv.slice(2).filter(a => !a.startsWith('--')), webgl = process.argv.includes('--webgl'), forced = process.argv.includes('--forced-climb')
+const dir = args[0] ?? '.', label = (args[1] ?? 'build') + (webgl ? '-webgl' : '') + (forced ? '-forced' : '')
 const app = await serveStable({ dir, port: 0 })
 const base = `http://127.0.0.1:${app.server.address().port}/`
 const room = `rvb${Date.now().toString(36)}`
@@ -30,7 +33,7 @@ try {
     await page.evaluate(() => { const s = window.mira; s.params.set('bots.keepCount', true); s.params.set('bots.count', 0); s.game.quality.setAuto(false) })
     return page
   }
-  const a = await open('Observer', 'buggy', 3)
+  const a = await open('Observer', 'buggy', forced ? 2 : 3)
   const b = await open('Other', 'buggy', 0)
   // A records every pipeline while __builds is an array, with what it was for.
   await a.evaluate(() => {
@@ -41,8 +44,9 @@ try {
         const m = renderObject?.material, o = renderObject?.object, chain = []
         for (let p = o; p && chain.length < 6; p = p.parent) chain.push(p.name || p.type)
         const remote = [...window.miraNet.remotes.values()].find(r => { for (let p = o; p; p = p.parent) if (p === r.vehicle.object) return true; return false })
+          ?? window.mira.bots.vehicles.map(v => ({ vehicle: v, bot: true })).find(r => { for (let p = o; p; p = p.parent) if (p === r.vehicle.object) return true; return false })
         const q = window.mira.game.quality.getQualityState(), shade = window.mira.params.get('gfx.vehicleShading')?.value
-        window.__builds.push(`[rung ${q.rung} shading ${shade}] ${remote ? remote.vehicle.kind : 'not a remote'} | ${m?.type ?? '?'}${m?.name ? ` "${m.name}"` : ''} | ${o?.type ?? '?'}${o?.name ? ` "${o.name}"` : ''} | ${chain.join(' < ')}`)
+        window.__builds.push(`[rung ${q.rung} shading ${shade}] ${remote ? `${remote.bot ? 'bot ' : ''}${remote.vehicle.kind}` : 'not a vehicle'} | ${m?.type ?? '?'}${m?.name ? ` "${m.name}"` : ''} | ${o?.type ?? '?'}${o?.name ? ` "${o.name}"` : ''} | ${chain.join(' < ')}`)
       }
       return make.call(this, renderObject, ...rest)
     }
@@ -78,11 +82,31 @@ try {
       console.log(`${label} ${phase}: other player's ${kind} into view at 120 to 30 m: ${builds.length} pipelines`)
     }
   }
-  await show('after entry at High')
-  await a.evaluate(() => window.mira.game.quality.setLevel(4))
-  await a.waitForFunction(() => window.mira.game.quality.governor.level === 4 && !document.querySelector('.quality-change-veil'), null, { timeout: 120000 })
-  await frames(a, 90)
-  await show('after a climb to Ultra')
+  if (forced) {
+    // Six bots on the observer, materialised and parked out of sight 400 m behind its camera.
+    await a.evaluate(() => window.mira.params.set('bots.count', 6))
+    await a.waitForFunction(() => { const { bots, materialize } = window.mira; return bots.vehicles.length === 6 && bots.vehicles.every(v => !materialize.isMaterializing(v)) }, null, { timeout: 180000 })
+    await a.evaluate((pose) => { const s = window.mira, t = s.terrain, V = t.spawnPoint(0).position.constructor; for (const brain of s.bots.brainList) s.game.remove(brain, false); s.bots.vehicles.forEach((v, i) => { const x = pose.x + 20 * i, z = pose.z + 400; v.teleport(new V(x, t.heightAt(x, z) + 2, z), 0); v.body.setBodyType(2, true) }) }, pose)
+    await frames(a, 60)
+    // The governor's in-play climb, Medium to High, without a veil.
+    await a.evaluate(() => { const q = window.mira.game.quality; q.governor.setManualLevel(3); q.reapply = true; q.apply('governor', false) })
+    await frames(a, 60)
+    await show('after an in-play governor climb, Medium to High')
+    await a.evaluate(() => { window.__builds = [] })
+    await a.evaluate((pose) => { const s = window.mira, t = s.terrain, V = t.spawnPoint(0).position.constructor; s.bots.vehicles.forEach((v, i) => { const d = 30 + 12 * i, x = pose.x + (i % 2 ? 6 : -6), z = pose.z - d; v.teleport(new V(x, t.heightAt(x, z) + 2, z), Math.PI / 2); v.body.setBodyType(2, true) }) }, pose)
+    await frames(a, 120)
+    const builds = await a.evaluate(() => { const l = window.__builds; window.__builds = null; return { l, kinds: window.mira.bots.vehicles.map(v => v.kind) } })
+    const grouped = {}
+    for (const x of builds.l) grouped[x] = (grouped[x] ?? 0) + 1
+    out.phases.push({ phase: 'after the same climb: own bots into view at 30 to 90 m', kind: builds.kinds.join(','), total: builds.l.length, grouped })
+    console.log(`${label}: own bots (${builds.kinds.join(', ')}) into view: ${builds.l.length} pipelines`)
+  } else {
+    await show('after entry at High')
+    await a.evaluate(() => window.mira.game.quality.setLevel(4))
+    await a.waitForFunction(() => window.mira.game.quality.governor.level === 4 && !document.querySelector('.quality-change-veil'), null, { timeout: 120000 })
+    await frames(a, 90)
+    await show('after a climb to Ultra')
+  }
 } catch (e) { out.errors.push(String(e)) } finally {
   await writeFile(`/tmp/syn3h-queue/remote-view-builds-${label}.json`, JSON.stringify(out, null, 2))
   await browser.close(); await app.close()
