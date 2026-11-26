@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseInline, parseMarkdown, safeHref, type Inline } from '../../src/ui/updates/markdown'
+import { EMPTY_LINE, parseFeed, planUpdates, versionDay } from '../../src/ui/updates/days'
+import { FEED_URL, VERSIONS_URL } from '../../src/ui/updates/feed'
 import { bareVersion, compareVersions, isNewer, latestVersion } from '../../src/ui/updates/version'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -99,5 +101,97 @@ describe('the release feed', () => {
     const again = buildFeed(repo, 12, 'v26.11.1607', new Date('2026-11-16T23:59:00Z')).releases
     expect(again.map(r => r.version)).toEqual(['26.11.1607', '26.11.1605'])
     expect(again[0].date).toBe('2026-11-16 14:41 PST')
+  })
+})
+
+describe('Updates grouped by day', () => {
+  const rel = (version: string, date: string, summary = `Release ${version}`, extra: object = {}) =>
+    ({ version, date, summary, digest: '- One.\n- Two.', url: 'https://example.com/wrong', ...extra })
+  const feed = {
+    releases: [
+      rel('26.11.2500', '2026-11-25 13:27 PST', 'Parallel universes'),
+      rel('26.11.2405', '2026-11-24 22:01 PST', 'Headlights light the ground'),
+      rel('26.11.2400', '2026-11-24 00:36 PST', 'A darker backdrop'),
+      rel('26.11.2308', '2026-11-23 23:37 PST'),
+    ],
+  }
+
+  it('groups by the Pacific day in the version, never the date text or the viewer\'s zone', () => {
+    // Bug: v26.11.2400, cut at 00:36 Pacific, filed under 23 November for a player in New York
+    // or 24 November vs 25 for one in Tokyo. The version alone decides; the date string is
+    // deliberately contradictory here and must not move it.
+    const shifted = parseFeed({ releases: [rel('26.11.2400', '2026-11-23 21:36 PST'), rel('26.11.2308', '2026-11-24 02:37 PST')] })
+    const days = planUpdates(shifted, null).days
+    expect(days.map(d => [d.key, d.releases.map(r => r.release.version)])).toEqual([
+      ['2026-11-24', ['26.11.2400']], ['2026-11-23', ['26.11.2308']],
+    ])
+    expect(planUpdates(parseFeed(feed), null).days.map(d => d.label)).toEqual(['25 November', '24 November', '23 November'])
+    expect(versionDay('26.12.3107')?.key).toBe('2026-12-31')
+  })
+
+  it('marks the day that holds the running version, and only that day', () => {
+    // Bug: "You are playing this" on the newest day when the player is on an older release.
+    const days = planUpdates(parseFeed(feed), '26.11.2400').days
+    expect(days.map(d => d.playing)).toEqual([false, true, false])
+    expect(days[1].releases.filter(r => r.playing).map(r => r.release.version)).toEqual(['26.11.2400'])
+    // A beta the player is on marks the day of the production release that contains it.
+    const withBeta = parseFeed({ releases: [rel('26.11.2602', '2026-11-26 10:00 PST', 'P', { betas: [rel('26.11.2601', '2026-11-26 09:00 PST')] })] })
+    expect(planUpdates(withBeta, '26.11.2601').days[0].playing).toBe(true)
+  })
+
+  it('links every release, beta and change to its own page on GitHub', () => {
+    // Bug: every row linking the newest tag, or a feed's stale url sending a player elsewhere.
+    const body = { releases: [...feed.releases, rel('26.11.2602', '2026-11-26 10:00 PST', 'P', {
+      betas: [rel('26.11.2601', '2026-11-26 09:00 PST')],
+      changes: [{ title: 'Water', commit: 'abc1234' }, { title: 'Bad', commit: 'javascript:alert(1)' }],
+    })] }
+    const entries = planUpdates(parseFeed(body), null).days.flatMap(d => d.releases).flatMap(r => [r, ...r.betas])
+    expect(entries).toHaveLength(6)
+    // Production links its GitHub release; a beta has none, so it links its own notes file.
+    for (const r of entries) {
+      expect(r.href).toBe(r.beta
+        ? `https://github.com/terran-labs/syn3h/blob/main/release-notes/releases/v${r.release.version}.md`
+        : `https://github.com/terran-labs/syn3h/releases/tag/v${r.release.version}`)
+    }
+    expect(entries.filter(r => r.beta).map(r => r.release.version)).toEqual(['26.11.2601'])
+    expect(entries[0].changes).toEqual([
+      { title: 'Water', href: 'https://github.com/terran-labs/syn3h/commit/abc1234' }, { title: 'Bad', href: null },
+    ])
+  })
+
+  it('shows the build\'s own entry as a beta on beta hosts and as production once promoted', () => {
+    // Bug: the promoted bytes still calling the production release a beta on mira.cc, linking a
+    // notes file instead of its GitHub release; or a beta.mira.cc page passing a beta off as production.
+    const body = { build: '26.11.2602', releases: [rel('26.11.2602', '2026-11-26 10:00 PST', 'P', { channel: 'beta' }), ...feed.releases] }
+    const own = (host: string) => planUpdates(parseFeed(body, host), null).days[0].releases[0]
+    for (const host of ['mira.cc', 'www.mira.cc']) {
+      expect(own(host)).toMatchObject({ beta: false, href: 'https://github.com/terran-labs/syn3h/releases/tag/v26.11.2602' })
+    }
+    for (const host of ['beta.mira.cc', 'mira-staging.example.workers.dev']) {
+      expect(own(host)).toMatchObject({ beta: true, href: 'https://github.com/terran-labs/syn3h/blob/main/release-notes/releases/v26.11.2602.md' })
+    }
+    // Older entries are production on either host.
+    expect(planUpdates(parseFeed(body, 'beta.mira.cc'), null).days[1].releases.every(r => !r.beta)).toBe(true)
+  })
+
+  it('shows a plain line for an empty or malformed feed instead of a broken sheet', () => {
+    for (const body of [null, 'nonsense', {}, { releases: 'x' }, { releases: [] }, { releases: [null, 7, { version: 'release-41-g0b1c2d3' }, { summary: 'no version' }] }]) {
+      expect(planUpdates(parseFeed(body), '26.11.2500')).toEqual({ days: [], empty: EMPTY_LINE })
+    }
+    // Half-broken entries still render as releases with what they have.
+    const partial = planUpdates(parseFeed({ releases: [{ version: '26.11.2500' }] }), null)
+    expect(partial.days[0].releases[0].release).toMatchObject({ version: '26.11.2500', summary: '', digest: '', date: '' })
+  })
+
+  it('opens the newest day and its newest release, and keeps the rest closed', () => {
+    // Bug: What's new opening on a closed list, or on an old day.
+    const days = planUpdates(parseFeed(feed), null).days
+    expect(days.map(d => d.expanded)).toEqual([true, false, false])
+    expect(days.flatMap(d => d.releases).filter(r => r.open).map(r => r.release.version)).toEqual(['26.11.2500'])
+  })
+
+  it('reads the live feeds from the address the page came from, so beta never points at production', () => {
+    // Bug: a beta.mira.cc player told to update and sent to mira.cc.
+    for (const url of [FEED_URL, VERSIONS_URL]) expect(url).toMatch(/^\/[^/]/)
   })
 })

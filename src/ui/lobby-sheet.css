@@ -30,6 +30,16 @@
 /* The title row is as tall as the X beside it, so the text below starts clear of both. */
 .mira-shell.exploration-ui .lobby-sheet .lobby-sheet-title { display: flex; align-items: center; min-height: 48px; margin: 0 0 16px; padding-right: 64px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
 
+/* Updates wears the display face the Welcome guide's headings use (Barlow Condensed 600, capitals,
+   light tracking, the heading accent), with All releases on GitHub level with it, left of the X. */
+.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 190px; font: 600 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: var(--s3-accent-2); }
+.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { position: absolute; top: 32px; right: 56px; }
+@media (max-width: 600px), (max-height: 500px) {
+  .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 64px; font-size: 28px; }
+  .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { top: 24px; right: 60px; padding: 0 14px; }
+  .mira-shell.exploration-ui .lobby-sheet-updates .updates-github-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+
 /* Close is the shared bare X (.card-close, card-chrome.css). A tap outside and Escape close as well. */
 /* In a sheet it stands in the column's upper right, level with the title (the body's top padding). */
 .mira-shell.exploration-ui .lobby-sheet .lobby-sheet-close { position: absolute; right: 8px; top: 30px; }
