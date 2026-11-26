@@ -277,7 +277,9 @@ for(const [name,width,height,below] of [['phone-upright',390,844,'section'],['ph
     const seen=el=>{const b=el.getBoundingClientRect();const l=Math.max(b.left,clip.l),t=Math.max(b.top,clip.t),rt=Math.min(b.right,clip.r),bt=Math.min(b.bottom,clip.b);return rt-l>1&&bt-t>1?{l,t,r:rt,b:bt}:null}
     const hit=(a,b)=>a&&b&&a.l<b.r-1&&a.r>b.l+1&&a.t<b.b-1&&a.b>b.t+1
     const box=sel=>{const el=document.querySelector(sel);if(!el)return null;const b=el.getBoundingClientRect();return b.width?{l:b.left,t:b.top,r:b.right,b:b.bottom}:null}
-    const keep={logo:box('.shell-logo'),close:box('.lobby-sheet-about .lobby-sheet-close'),buttons:box('.lobby-sheet-about .lobby-gear-dock')??box('.lobby-gear-dock')}
+    // The name as drawn (in space, Galaxy.wordmarkScreenBox), not the HTML logo's box, which is much larger than the mark.
+    const drawn=window.mira?.shell?.galaxy?.wordmarkScreenBox?.(),mark=drawn&&drawn.width?{l:drawn.x,t:drawn.y,r:drawn.x+drawn.width,b:drawn.y+drawn.height}:box('.shell-logo')
+    const keep={logo:mark,close:box('.lobby-sheet-about .lobby-sheet-close'),buttons:box('.lobby-sheet-about .lobby-gear-dock')??box('.lobby-gear-dock')}
     const parts=[...r.querySelectorAll('.welcome-ring-arrow, .welcome-ring-dot, .welcome-ring-caption, .welcome-ring-card')].filter(el=>getComputedStyle(el).display!=='none'&&Number(getComputedStyle(el).opacity)>0.01)
     for(const el of parts){
      const b=el.getBoundingClientRect(), what=el.className
