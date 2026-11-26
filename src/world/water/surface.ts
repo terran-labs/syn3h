@@ -110,6 +110,8 @@ export const CHOP: readonly [number, number, number][] = [
 const WARP: readonly [number, number][] = [[1.1, 0.6], [0.7, 1.6], [2.1, -0.9], [-1.4, 1.9], [2.4, 1.2], [-0.8, 2.6], [1.7, -2.2], [-2.5, -1.1]]
 /** Chop shorter than this, metres, counts as fine ripples. */
 export const RIPPLE_LENGTH = 1.5
+/** Metres from the camera over which fine ripples go from seen one by one to sheen only. */
+const RIPPLE_SEEN: readonly [number, number] = [15, 55]
 /** Chop longer than this also moves the vertices near the camera (visual only). */
 const DETAIL_GEOMETRY_LENGTH = 2
 /**
@@ -480,7 +482,10 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
         const still = mode === 'still' ? 0.45 : 1
         // Chop is never fully calm (55 per cent in a lull); ripples ease in a lull and grow near the camera.
         const chopShare = chop.mul(still).mul(float(0.55).add(patch.mul(0.45)))
-        const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.5).add(patch.mul(0.5))).mul(smoothstep(160, 25, dist))
+        const rippleShare = chop.mul(still).mul(rippleStrength).mul(float(0.5).add(patch.mul(0.5)))
+        // Ripples are seen one by one only near the camera (RIPPLE_SEEN): further out their slope
+        // still counts, as roughness, so the water keeps its sheen without printing their pattern.
+        const rippleSeen = smoothstep(RIPPLE_SEEN[1], RIPPLE_SEEN[0], dist)
         // Glitter: with distance, the share of each wave's slope kept as a sharp facet; the rest
         // roughens (filteredRoughness), so the middle distance is a sheen with sparse glints. Near
         // the camera every facet is sharp: there the ripples are seen one by one.
@@ -493,9 +498,12 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
         CHOP.forEach(([length, heading, steepness], i) => {
           const k = (Math.PI * 2) / length
           const dx = Math.cos(heading), dz = Math.sin(heading)
-          const arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(n1.mul(WARP[i][0])).add(n2.mul(WARP[i][1]))
+          // The shorter the wave, the harder its phase is bent, so short crossings never settle into a grid.
+          const bend = Math.sqrt(CHOP[0][0] / length)
+          const arg = p.x.mul(k * dx).add(p.z.mul(k * dz)).add(time.mul(Math.sqrt(9.81 * k))).add(n1.mul(WARP[i][0] * bend)).add(n2.mul(WARP[i][1] * bend))
           const c = cos(arg)
-          add(c.mul(dx), c.mul(dz), length, (length < RIPPLE_LENGTH ? rippleShare : chopShare).mul(steepness), resolved(length).mul(facet))
+          const ripple = length < RIPPLE_LENGTH
+          add(c.mul(dx), c.mul(dz), length, (ripple ? rippleShare : chopShare).mul(steepness), resolved(length).mul(facet).mul(ripple ? rippleSeen : float(1)))
         })
         // A little noise in the slope near the camera; its features are about 3 m across (1 / 0.3).
         add(n1, n2, 3, near.mul(SLOPE_NOISE), resolved(3))
