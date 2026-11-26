@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { GameJet } from '../../src/vehicles/jetgen/GameJet'
+import { GameJet, jetArticulation } from '../../src/vehicles/jetgen/GameJet'
 import { Builder, GROUND_Y } from '../../src/vehicles/jetgen/shapes'
 import { MK2_FITTINGS } from '../../src/vehicles/jetgen/shipped'
 import { roleOf } from '../../src/vehicles/skins/showroom'
@@ -22,15 +22,17 @@ describe('approved Mk2 game model', () => {
   it('meets geometry and draw budgets with gear up, moving and down at every detail level', () => {
     const jet = new GameJet()
     for (const gear of [0, .25, .75, 1]) {
-      jet.update(gear, .3, -.2, .8)
+      jet.update(gear, .8, new THREE.Vector3(.8, -.3, -.5))
       for (const level of [0, 1, 2] as const) {
         jet.setLevel(level)
         // Base model budget, then plume (<=400 triangles) and fitted tail lights (28), one draw each.
         jet.plume.mesh.visible = false; jet.tailLights.mesh.visible = false
         const cost = visibleCost(jet.object)
         jet.plume.mesh.visible = true; jet.tailLights.mesh.visible = true
-        expect(cost.triangles).toBeLessThanOrEqual([12000, 2500, 500][level])
-        expect(cost.draws).toBeLessThanOrEqual([9, 3, 1][level])
+        expect(cost.triangles).toBeLessThanOrEqual([12000, 2800, 500][level])
+        // Medium: body, glass and glow, plus the moving ring surfaces and the petals with the
+        // boom collars, which must still be seen to move at that distance.
+        expect(cost.draws).toBeLessThanOrEqual([9, 5, 1][level])
         expect(visibleCost(jet.object).draws - cost.draws).toBe(2)
         expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(428)
       }
@@ -48,8 +50,10 @@ describe('approved Mk2 game model', () => {
     jet.near.ridePosition!.position.toArray().forEach((c, i) => expect(c).toBeCloseTo(eye[i], 6))
     expect(roleOf(jet.near.materials.glass)).toBe('canopy')
     expect(roleOf(jet.near.materials.glow)).toBe('glow')
-    jet.update(1, .2, -.2, 1)
-    expect(jet.near.vector.toArray()).toEqual([.2, -.2])
+    // The petals follow the stick: nose up and yaw, at full travel (jet.articulation).
+    jet.update(1, 1, new THREE.Vector3(.2, 0, -.2))
+    const travel = .35 * jetArticulation.value
+    jet.near.vector.toArray().forEach((v, i) => expect(v).toBeCloseTo([.2 * travel, -.2 * travel][i], 6))
     // Through the ring above the fuselage: silhouette must not fill the hole with a cap.
     jet.far.updateMatrixWorld(true)
     const ray = new THREE.Raycaster(new THREE.Vector3(0, .65, 4), new THREE.Vector3(0, 0, -1), 0, 2)
@@ -92,7 +96,7 @@ it('shares fixed jet resources across concurrent actors and retains them when al
   const idle = b.plume.levels
   a.setLevel(2)
   a.setColors(0x123456, 0xabcdef)
-  a.update(0, 0, 0, 1, undefined, false)
+  a.update(0, 1, undefined, false)
   expect(a.plume.levels).not.toEqual(idle)
   expect(b.plume.levels).toEqual(idle)
   expect(plume.userData.plumeColor.getHex()).toBe(0xabcdef)
@@ -135,17 +139,17 @@ it('builds a detail level only when it is first shown', () => {
   const jet = new GameJet()
   expect(jet.built()).toEqual([false, false, false, false])
   // A jet that spawns far away costs one small outline, in the player's colour.
-  jet.setColors('#123456', '#abcdef'); jet.setLevel(2); jet.update(0, 0, 0, .5)
+  jet.setColors('#123456', '#abcdef'); jet.setLevel(2); jet.update(0, .5)
   expect(jet.built()).toEqual([false, false, false, true])
   expect((jet.far.material as THREE.MeshStandardMaterial).color.getHexString()).toBe('123456')
   // Closing in builds the medium pose in use, then the close model with the gear state so far.
   jet.setLevel(1); expect(jet.built()).toEqual([false, true, false, true])
-  jet.update(1, 0, 0, .5); expect(jet.built()).toEqual([false, true, true, true])
+  jet.update(1, .5); expect(jet.built()).toEqual([false, true, true, true])
   jet.setLevel(0)
   expect(jet.near.gearAmount).toBe(1)
   expect((jet.near.materials.paint as THREE.MeshStandardMaterial).color.getHexString()).toBe('123456')
   // Hidden close model does no gear work; it catches up when it is shown again.
-  jet.setLevel(2); jet.update(0, 0, 0, 0); expect(jet.near.gearAmount).toBe(1)
+  jet.setLevel(2); jet.update(0, 0); expect(jet.near.gearAmount).toBe(1)
   jet.setLevel(0); expect(jet.near.gearAmount).toBe(0)
   let visible = 0
   for (const o of jet.object.children) if (o.visible && o !== jet.plume.mesh && o !== jet.tailLights.mesh && (o instanceof THREE.Mesh || o.children.length)) visible++
@@ -166,8 +170,10 @@ describe('Mk2 moving parts and thrusters', () => {
   const flankRight = (x: number, y: number) => x > .7 && Math.abs(y - .05) < .3
 
   it('deflects the tail ring like control surfaces and draws them in one batch', () => {
+    // Directions at the original's travel; larger looks swing the edges out of the regions picked.
+    const saved = jetArticulation.value; jetArticulation.value = 1
     const jet = new GameJet(), controls = new THREE.Vector3()
-    const pose = (pitch: number, roll: number, yaw: number) => { jet.update(0, 0, 0, .5, controls.set(pitch, roll, yaw)); return { ur: trailingEdge(jet, upperRight), ul: trailingEdge(jet, upperLeft), fr: trailingEdge(jet, flankRight) } }
+    const pose = (pitch: number, roll: number, yaw: number) => { jet.update(0, .5, controls.set(pitch, roll, yaw)); return { ur: trailingEdge(jet, upperRight), ul: trailingEdge(jet, upperLeft), fr: trailingEdge(jet, flankRight) } }
     const rest = pose(0, 0, 0)
     // Nose up: both upper trailing edges rise together; the vertical flanks do not move.
     const up = pose(1, 0, 0)
@@ -179,17 +185,17 @@ describe('Mk2 moving parts and thrusters', () => {
     // Nose right: the flank's trailing edge swings right, like a rudder.
     const yaw = pose(0, 0, 1)
     expect(yaw.fr.x - rest.fr.x).toBeGreaterThan(.03)
-    // Never more than 20 degrees, whatever the inputs add up to.
+    // Never more than the full travel (jet.articulation times 20 degrees), whatever the inputs add up to.
     const most = pose(1, 1, 1)
-    expect(most.ur.distanceTo(rest.ur)).toBeLessThan(.75 * .38 * 2 * Math.sin(.35 / 2) + .01)
-    // Petals and flaps are one draw each: five in flight, eight with the gear down.
+    expect(most.ur.distanceTo(rest.ur)).toBeLessThan(.75 * .38 * 2 * Math.sin(.35 * jetArticulation.value / 2) + .01)
+    // Petals with the boom collars, and the flaps, are one draw each: five in flight, eight with the gear down.
     let draws = 0; jet.near.object.traverseVisible(o => { if (o instanceof THREE.Mesh) draws++ })
     expect(draws).toBeLessThanOrEqual(5)
     expect(jet.plume.mesh.parent).toBe(jet.object)
-    jet.update(1, .2, .1, .5, controls.set(.5, 0, 0)); draws = 0
+    jet.update(1, .5, controls.set(.5, 0, 0)); draws = 0
     jet.near.object.traverseVisible(o => { if (o instanceof THREE.Mesh) draws++ })
     expect(draws).toBeLessThanOrEqual(8)
-    jet.dispose()
+    jet.dispose(); jetArticulation.value = saved
   })
 
   it('walls every thruster off from the inside of the hull', () => {
@@ -270,16 +276,16 @@ describe('Mk2 thrust plume', () => {
 
   it('glows at idle, grows with throttle, flares at full, and follows hover or flight', () => {
     const jet = new GameJet(), v = new THREE.Vector3()
-    jet.update(1, 0, 0, 0, v, true)
+    jet.update(1, 0, v, true)
     const idle = jet.plume.levels
     // Hover at rest: the belly ports show a short glow and the rear nozzles idle.
     expect(idle[3]).toBeGreaterThan(.3); expect(idle[1]).toBeGreaterThan(.2)
-    jet.update(1, 0, 0, .6, v, true); const lift = jet.plume.levels
+    jet.update(1, .6, v, true); const lift = jet.plume.levels
     expect(lift[2]).toBeGreaterThan(idle[2] * 2); expect(lift[3]).toBeGreaterThan(idle[3] * 2)
     // Flight: the rear cones carry it and the ports are dark.
-    jet.update(0, 0, 0, .6, v, false); const cruise = jet.plume.levels
+    jet.update(0, .6, v, false); const cruise = jet.plume.levels
     expect(cruise[3]).toBe(0); expect(cruise[0]).toBeCloseTo(lift[2], 5)
-    jet.update(0, 0, 0, 1, v, false); const full = jet.plume.levels
+    jet.update(0, 1, v, false); const full = jet.plume.levels
     // The last 15 percent of throttle adds a flare beyond the straight line.
     expect(full[1] - cruise[1]).toBeGreaterThan(1.1 * .4 + .5); expect(full[0]).toBeGreaterThan(1.2)
     // One draw, never culled short, coloured by the player's accent.
@@ -310,7 +316,7 @@ describe('Mk2 fitted tail lights',()=>{
    expect(lens.min.y).toBeGreaterThan(housing.min.y);expect(lens.max.y).toBeLessThan(housing.max.y)
   }
   const colors=Array.from(g.attributes.color.array)
-  jet.setColors('#00ff00','#0000ff');jet.update(0,0,0,1)
+  jet.setColors('#00ff00','#0000ff');jet.update(0,1)
   expect(Array.from(g.attributes.color.array)).toEqual(colors)
   for(const level of [0,1,2] as const){jet.setLevel(level);expect(jet.tailLights.mesh.visible).toBe(true)}
   jet.dispose()

@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { Vector3 } from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
-import { Jet, jetNeutralThrottle } from '../../src/vehicles/Jet'
+import { Jet, jetHoverHold, jetNeutralThrottle } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
@@ -44,7 +44,9 @@ describe('human neutral flight throttle',()=>{
  it('leaves hover, brakes, settle and Zorb free of neutral flight thrust',()=>{
   const h=setup()
   try{
-   h.game.input.state.special=false;h.step(h.v);expect(h.v.input.z).toBe(0)
+   // In hover the altitude hold writes its own throttle into input.z; with it off, nothing does.
+   const hold=jetHoverHold.value;jetHoverHold.value=0
+   try{h.game.input.state.special=false;h.step(h.v);expect(h.v.input.z).toBe(0)}finally{jetHoverHold.value=hold}
    h.game.input.state.special=true;h.game.input.state.brakes=true;h.step(h.v);expect(h.v.input.z).toBe(0)
    h.game.input.state.brakes=false;h.v.releaseHoverHold();h.step(h.v);expect(h.v.input.z).toBe(0)
    h.game.input.state.zorb=true;h.step(h.v);expect(h.v.input.z).toBe(0)
