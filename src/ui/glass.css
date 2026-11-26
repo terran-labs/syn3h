@@ -415,7 +415,7 @@ html[data-glass-material="liquid"] [data-ui-frost="off"] [data-glass-surface="sc
      Collapsed cards, expanded cards and their ghosts all use the same curve. */
   html[data-glass-material="liquid"]:not([data-drive-glass="shed"], [data-gfx="0"]) [data-glass-surface="scroll"]:not([data-ui-frost="off"] *) {
     --panel-material-fill: rgb(8 8 10 / .1);
-    --panel-material-filter: blur(3px) brightness(.74) saturate(1.4) contrast(.82) brightness(.56);
+    --panel-material-filter: blur(3px) brightness(.74) saturate(1.4) contrast(.76) brightness(.50);
   }
 }
 /* Keep the marker's face above the ordinary panel face and its tier overrides. */
