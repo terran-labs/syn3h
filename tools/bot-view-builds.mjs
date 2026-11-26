@@ -40,7 +40,9 @@ try {
     // Every pipeline created, with what it is for; recording switched on and off around a window.
     const b = game.renderer.backend, make = b.createRenderPipeline
     window.__builds = null
+    window.__requests = []
     b.createRenderPipeline = function (renderObject, ...rest) {
+      window.__requests.push(performance.now())
       if (window.__builds) {
         const m = renderObject?.material, o = renderObject?.object, chain = []
         for (let p = o; p && chain.length < 8; p = p.parent) chain.push(p.name || p.type)
@@ -53,9 +55,11 @@ try {
   for (const [level, n, range] of LEVELS) {
     // How long the climb takes and keeps its veil up, from the request to the veil gone.
     const climbStart = Date.now(), climbLoad = (await import('node:os')).loadavg()[0], deadlinesBefore = deadlines.length
-    await page.evaluate(level => window.syn3h.game.quality.setLevel(level), level)
-    await page.waitForFunction(level => window.syn3h.game.quality.governor.level === level && !document.querySelector('.quality-change-veil'), level, { timeout: 90000 })
+    const t0 = await page.evaluate(level => { const t = performance.now(); window.syn3h.game.quality.setLevel(level); return t }, level)
+    await page.waitForFunction(level => window.syn3h.game.quality.governor.level === level && !document.querySelector('.quality-change-veil'), level, { timeout: 120000, polling: 50 })
     const climbMs = Date.now() - climbStart
+    // The veil split: up to the climb's last pipeline request, then waiting for its compiles.
+    const split = await page.evaluate(t0 => { const t1 = performance.now(), r = window.__requests.filter(t => t >= t0 && t <= t1); const last = r.length ? Math.max(...r) : t0; return { requests: r.length, toLastRequestMs: Math.round(last - t0), afterLastRequestMs: Math.round(t1 - last) } }, t0)
     await page.evaluate(n => window.syn3h.params.set('bots.count', n), n)
     await page.waitForFunction(n => { const { bots, materialize } = window.syn3h; return bots.vehicles.length === n && bots.vehicles.every(v => !materialize.isMaterializing(v)) }, n, { timeout: 180000 })
     // Brains off, everyone parked out of sight behind the camera, and a moment to settle.
@@ -100,7 +104,7 @@ try {
       })
       return { kinds: [...warm.reserve.keys()], meshes, geometryMB: +(bytes / 1048576).toFixed(2) }
     })
-    out.levels.push({ level, bots: n, range, kinds, total: builds.length, grouped, climbMs, climbLoad: +climbLoad.toFixed(1), deadline: deadlines.slice(deadlinesBefore), reserve })
+    out.levels.push({ level, bots: n, range, kinds, total: builds.length, grouped, climbMs, climbLoad: +climbLoad.toFixed(1), deadline: deadlines.slice(deadlinesBefore), split, reserve })
     console.log(`${label} level ${level}: ${builds.length} pipelines built bringing ${n} bots (${[...new Set(kinds)].join(', ')}) into view to ${range} m; climb ${climbMs} ms`)
   }
 } catch (e) { out.errors.push(String(e)) } finally {
