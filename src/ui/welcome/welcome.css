@@ -36,12 +36,6 @@
 .mira-shell .welcome-body.welcome-body p.welcome-note, .welcome-body .welcome-note { color: var(--w-soft); font-size: 13.5px; }
 .welcome-body .welcome-kicker { margin: 0 0 14px; font: 500 11.5px/1.2 'Barlow', sans-serif; letter-spacing: .2em; text-transform: uppercase; color: var(--w-soft); }
 
-/* Key caps: the left column's plain bright glyphs (gear.css), a hairline pill around the key. */
-.welcome-body kbd {
-  display: inline-block; min-width: 1.9em; margin: 0 .12em; padding: .18em .55em .1em; box-sizing: border-box;
-  font: 500 11.5px/1.25 'Barlow', sans-serif; letter-spacing: .12em; text-transform: uppercase; text-align: center; vertical-align: .08em;
-  color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 999px; background: none; white-space: nowrap;
-}
 .welcome-body .welcome-pill { display: inline-block; padding: .25em .8em .15em; font: 500 11px/1.2 'Barlow', sans-serif; letter-spacing: .14em; text-transform: uppercase; color: var(--w-ink); border: 1px solid var(--w-line); border-radius: 999px; }
 
 /* Pictures: 16:9, rounded, the average colour until the picture arrives. */
@@ -195,7 +189,9 @@ html .mira-shell .welcome-body .welcome-ring-dot.welcome-ring-dot:is(:hover, :ac
 .welcome-drive { display: flex; align-items: center; gap: 18px; margin: 0 0 14px; }
 .mira-shell .welcome-body.welcome-body .welcome-drive p { margin: 0; font-size: 14px; line-height: 1.4; }
 .welcome-wasd { display: grid; grid-template-columns: repeat(3, 34px); gap: 5px; flex: none; }
-.welcome-wasd kbd { display: grid; place-items: center; height: 30px; margin: 0; padding: 0; min-width: 0; border-radius: 9px; font-size: 12.5px; }
+.welcome-body .welcome-keys kbd.keycap + kbd.keycap { margin-left: .25em; }
+/* The drive keys drawn as a keyboard's own layout: the same keycap, set in a grid. */
+.welcome-wasd kbd.keycap { display: grid; place-items: center; height: 30px; padding: 0; min-width: 0; font-size: 12px; }
 .welcome-keys { display: grid; gap: 2px; }
 .welcome-keys li { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 12px; align-items: center; padding: 4px 0; font-size: 14px; line-height: 1.4; }
 .welcome-keys li > span { white-space: nowrap; color: var(--w-ink); font-size: 13px; }

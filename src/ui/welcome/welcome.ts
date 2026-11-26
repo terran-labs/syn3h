@@ -26,6 +26,7 @@ import { GEAR_DESCRIPTIONS, GEAR_LABELS } from '../../weapons/Gear'
 import { WELCOME_SHOTS, type WelcomeShot } from './shots.generated'
 import { ringHtml, wireRing, type RingShot } from './ring'
 import './welcome.css'
+import { keycapHtml } from '../keycap'
 
 export type WelcomeWhere = 'lobby' | 'play'
 /** `where`: the host (the lobby or play). Nothing in the guide differs by it now; kept so the hosts need not change. */
@@ -70,7 +71,8 @@ const RING_SHOTS: (RingShot & { id: string })[] = [
   { id: 'lava-night', title: 'Night on the volcano', caption: 'Night on the volcanic world: the sea is lava.' },
   { id: 'swamp-river', title: 'Through the Mire', caption: 'A river through the Mire.' },
 ]
-const k = (key: string, label = key) => `<kbd aria-label="${escape(label)}">${escape(key)}</kbd>`
+/** A key as the interface's one keycap (keycap.ts); a mouse click is not a key and stays a word. */
+const k = (key: string) => key === 'click' ? 'click' : keycapHtml(key)
 
 /** The five pieces of gear, each with a mark drawn in SVG. Order as the gear rack shows them. */
 const GEAR_MARKS: Record<keyof typeof GEAR_LABELS, string> = {
@@ -126,16 +128,16 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
 <div class="welcome-controls">
   <section aria-labelledby="welcome-keyboard">
     <h4 class="welcome-kicker" id="welcome-keyboard">Keyboard and mouse</h4>
-    <div class="welcome-drive"><div class="welcome-wasd"><span></span>${k('W', 'W, forward')}<span></span>${k('A', 'A, left')}${k('S', 'S, back')}${k('D', 'D, right')}</div><p>Drive and steer. The arrow keys work too.</p></div>
+    <div class="welcome-drive"><div class="welcome-wasd"><span></span>${k('W')}<span></span>${k('A')}${k('S')}${k('D')}</div><p>Drive and steer. The arrow keys work too.</p></div>
     <ul class="welcome-keys">
       <li><span>${k('Shift')}</span>brake</li>
       <li><span>${k('Space')}</span>wings; in the jet, switch between hover and cruise</li>
       <li><span>${k('E')}${k('Q')}</span>jet: climb, descend</li>
-      <li><span>${k('L')}<i>or</i>${k('click', 'Mouse click')}</span>use gear</li>
+      <li><span>${k('L')}<i>or</i>${k('click')}</span>use gear</li>
       <li><span>${k('1')}<i>to</i>${k('5')}</span>choose gear</li>
       <li><span>${k('X')}</span>Zorb ball</li>
       <li><span>${k('U')}</span>flip upright, when nearly stopped</li>
-      <li><span>${k('click', 'Mouse click')}</span>capture the mouse to look round</li>
+      <li><span>${k('click')}</span>capture the mouse to look round</li>
       <li><span>${k('C')}</span>camera views</li>
       <li><span>${k('H')}</span>this vehicle’s controls</li>
       <li><span>${k('J')}</span>invite players</li>

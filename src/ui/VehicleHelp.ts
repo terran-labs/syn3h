@@ -1,4 +1,5 @@
 import type { VehicleKind } from '../vehicles'
+import { keycap, shortcut } from './keycap'
 
 export function vehicleHelp(kind: VehicleKind): string[] {
   // Lift-off first: on the ground W only tips the nose, and the throttle is what flies.
@@ -62,6 +63,18 @@ export function helpParts(line: string): Array<{ keys?: string; text: string }> 
     return at > 0 && namesKeys(part.slice(0, at)) ? { keys: part.slice(0, at), text: part.slice(at + 2) } : { text: part }
   })
 }
+/**
+ * A lone capital letter in a plain part of a help line ("Hold E to lift off", "in flight E /
+ * Q", "A / D roll") is a key. A and I are keys only beside a "/" join; elsewhere they are
+ * words. A letter joined to a word ("D-pad") is not a key.
+ */
+const LONE_KEY = /(?<![\w-])([B-HJ-Z]|[AI](?= \/ )|(?<=\/ )[AI])(?![\w-])/
+export function inlineParts(text: string): Array<{ key?: string; text?: string }> {
+  return text.split(new RegExp(LONE_KEY.source, 'g')).map((piece, i) => i % 2 ? { key: piece } : { text: piece }).filter((p) => p.key ?? p.text)
+}
+export function inlineKeys(text: string): Node[] {
+  return inlineParts(text).map((p) => p.key !== undefined ? keycap(p.key) : document.createTextNode(p.text!))
+}
 export function renderHelp(element: HTMLElement, kind: VehicleKind, touch = false, quick = false, gear = false): void {
   element.replaceChildren()
   const lines = quick ? quickHelp(kind, touch, gear) : touch ? [touchHelp(kind), ...(gear ? gearTouchHelp : [])] : [...vehicleHelp(kind), ...(gear ? gearHelp : []), chatHelp, ...cameraHelp]
@@ -78,7 +91,7 @@ export function fillHelpLine(element: HTMLElement, text: string): void {
   element.replaceChildren()
   helpParts(text).forEach((part, i) => {
     if (i) element.append(' · ')
-    if (part.keys) { const key = document.createElement('kbd'); key.textContent = part.keys; element.append(key, ' ') }
-    element.append(part.text)
+    if (part.keys) element.append(...shortcut(part.keys), ' ')
+    element.append(...inlineKeys(part.text))
   })
 }

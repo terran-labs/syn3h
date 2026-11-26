@@ -45,7 +45,7 @@ html .mira-shell .pause-actions button {
 .mira-shell .pause-actions .pause-short { display: none; }
 /* No keyboard to press S on a touch screen. */
 .mira-shell.has-touch .pause-actions kbd { display: none; }
-.mira-shell .pause-actions kbd { margin-left: 6px; padding: 2px 5px; border: 1px solid currentColor; border-radius: 4px; font: inherit; font-size: 10px; letter-spacing: 0; opacity: .7; }
+.mira-shell .pause-actions kbd { margin-left: 6px; }
 .mira-shell .pause-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
 /* Saved: the camera becomes a tick for a moment. */
 .mira-shell .pause-actions .pause-shot.is-saved .pause-icon { stroke: var(--s3-accent-2, currentColor); }

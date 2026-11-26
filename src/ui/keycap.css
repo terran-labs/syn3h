@@ -1,13 +1,12 @@
 /* The keycap (keycap.ts): a keyboard shortcut as tiny text inside a thin rounded outline (the
    owner, 25 November 2026). One rule set for every cap in the interface. Generated: no image,
-   no fill, no glass and no shadow box. The text inherits the HUD's text falloff where it sits
-   (its parent's text-shadow) and the outline takes the HUD lines' own falloff
-   (--hud-line-under, exploration.css), so a cap reads over bright sky and at night like the
-   words around it. Sized in em, from the text beside it: smaller than its label. */
+   no fill, no glass and no shadow. The glyph inherits the text falloff where it sits (its
+   parent's text-shadow), so a cap reads over bright sky and at night like the words around
+   it; the outline is the text's own colour, a little quieter. Sized in em, from the text beside it: smaller than its label. */
 kbd.keycap {
   display: inline-block; box-sizing: border-box; min-width: 1.7em; margin: 0; padding: 0 .4em;
   font: 600 .72em/1.5 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .06em; text-transform: uppercase;
   text-align: center; white-space: nowrap; vertical-align: .1em; color: inherit; opacity: 1;
-  background: none; border: 1px solid color-mix(in srgb, currentColor 58%, transparent); border-radius: .45em; box-shadow: none;
-  text-shadow: inherit; filter: var(--hud-line-under, none);
+  background: none; border: 1px solid color-mix(in srgb, currentColor 70%, transparent); border-radius: .45em; box-shadow: none;
+  text-shadow: inherit;
 }

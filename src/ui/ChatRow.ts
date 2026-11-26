@@ -6,9 +6,12 @@
  * is lit while something is unread and hollow otherwise; the count is bright type just after the name.
  */
 import { chatLink } from './chat/chatLink'
+import { keycapHtml } from './keycap'
 import { chatOn, chatShow } from '../../shared/chat'
 import { params } from '../../shared/params'
 
+/** The key that opens chat (ChatCard's CHAT_KEY). */
+const CHAT_KEY = 'Y'
 const TITLE = 'Talk with everyone in this world. Opens Chat; Y does the same.'
 
 export class ChatRow {
@@ -23,7 +26,7 @@ export class ChatRow {
   constructor(parent: HTMLElement, signal?: AbortSignal) {
     this.element.className = 'hud-chat'
     this.button.type = 'button'; this.button.className = 'acc-row'; this.button.dataset.id = 'chat'
-    this.button.innerHTML = '<span class="acc-name" aria-hidden="true">Chat</span><kbd aria-hidden="true">Y</kbd><i class="acc-pip" aria-hidden="true"></i>'
+    this.button.innerHTML = `<span class="acc-name" aria-hidden="true">Chat</span>${keycapHtml(CHAT_KEY)}<i class="acc-pip" aria-hidden="true"></i>`
     this.count.className = 'chat-count'; this.count.setAttribute('aria-hidden', 'true'); this.count.hidden = true
     // Just after the word, inside the name's fixed column: the key column never moves.
     this.button.querySelector('.acc-name')!.append(this.count)
