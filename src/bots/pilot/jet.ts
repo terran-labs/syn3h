@@ -98,7 +98,11 @@ function headingError(fx: number, fz: number, dx: number, dz: number): number {
 }
 
 export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
-  const profile: NavProfile = { maxGrade: Infinity, liquid: 'ignored', flies: true, roadCost: 1, cruiseAltitude: jetPilotTuning.cruiseAltitude }
+  const profile: NavProfile = {
+    maxGrade: Infinity, liquid: 'ignored', flies: true, roadCost: 1, cruiseAltitude: jetPilotTuning.cruiseAltitude,
+    // The arrival profile's own deceleration, read live so a lead tuning it tunes both.
+    get stopAccel() { return jetPilotTuning.stopAccel },
+  }
   const status: PilotStatus = { stuckFor: 0, airborne: false, flipped: false }
   // Scratch space, reused every step.
   const q = new THREE.Quaternion(), inv = new THREE.Quaternion()
