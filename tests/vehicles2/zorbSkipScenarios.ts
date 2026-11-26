@@ -8,6 +8,7 @@ import * as THREE from 'three/webgpu'
 import { FIXED_DT } from '../../src/core/physics'
 import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
+import { zorbPlaningSpeed } from '../../src/vehicles/zorb'
 import { basinBed, type Liquid } from '../vehicles/liquidScenarios'
 
 export interface ZorbSea {
@@ -19,7 +20,7 @@ export interface ZorbSea {
 }
 
 export interface ZorbSample { t: number; z: number; y: number; vy: number; speed: number; base: number; skipping: number }
-export interface ZorbRun { v: Vehicle; clock: { t: number }; step(n?: number): void; trace: ZorbSample[]; dispose(): void; radius: number; bed: (z: number) => number }
+export interface ZorbRun { v: Vehicle; clock: { t: number }; step(n?: number): void; trace: ZorbSample[]; dispose(): void; radius: number; bed: (z: number) => number; /** Gravity, m/s², positive. */ g: number }
 
 const c = new THREE.Vector3()
 
@@ -52,7 +53,7 @@ export function zorbLaunch(sea: ZorbSea, speed: number, angle: number, clearance
   v.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
   const trace: ZorbSample[] = []
   const run: ZorbRun = {
-    v, clock, trace, radius: r, bed: g,
+    v, clock, trace, radius: r, bed: g, g: -gravity,
     step(n = 1) {
       for (let i = 0; i < n; i++) {
         h.step(v)
@@ -65,6 +66,15 @@ export function zorbLaunch(sea: ZorbSea, speed: number, angle: number, clearance
     dispose() { v.dispose(); h.world.free() },
   }
   return run
+}
+
+/**
+ * The zorbed buggy's planing speed, from its real mass and its grown ball (skip.ts), so
+ * scenarios set as multiples of it move with every retuning of the shared skip settings.
+ */
+export function ballPlaning(): number {
+  const run = zorbLaunch({ liquid: 'water', depth: 30 }, 0, 0, 20)
+  try { return zorbPlaningSpeed(run.v.body.mass(), run.radius, run.g) } finally { run.dispose() }
 }
 
 /** Step until `seconds` have passed. */

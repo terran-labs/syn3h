@@ -4,6 +4,8 @@ const notes:Record<Exclude<Cue,'beam'|'tagged'|'materialize'|GearCue>,readonly n
 /** Seconds the materialize swoosh builds for when the caller does not say. */
 export const MATERIALIZE_SECONDS = 1.4
 export interface CueOptions {
+  /** Loudness relative to the cue's own, default 1: a skip's splash scales with how hard it hit. */
+  level?: number
   /**
    * Materialize only: seconds the swoosh builds before the vehicle lands. Pass the length of
    * the spawn hold and the crackle and rise stretch to fill it (0.4 to 8 s).
@@ -19,7 +21,8 @@ export function synthCue(context:BaseAudioContext,output:AudioNode,cue:Cue,noise
   const gain=context.createGain();gain.gain.value=0;gain.connect(output);nodes.push(gain)
   // Lava is thick and sticky: a low gulp that ends in one rising bubble, not a sizzle.
   const duration=cue==='lava'?.75:cue==='splash'?.42:sequence.length*step+.15
-  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime(cue==='click'?.025:cue==='lava'?.34:cue==='splash'?.2:.12,now+.008);gain.gain.exponentialRampToValueAtTime(.0001,now+duration)
+  const level=Math.max(0,Math.min(2,options.level??1))
+  gain.gain.setValueAtTime(0,now);gain.gain.linearRampToValueAtTime((cue==='click'?.025:cue==='lava'?.34:cue==='splash'?.2:.12)*level+1e-4,now+.008);gain.gain.exponentialRampToValueAtTime(.0001,now+duration)
   const o=context.createOscillator();o.type='sine';o.frequency.value=sequence[0]
   sequence.forEach((frequency,i)=>o.frequency.exponentialRampToValueAtTime(frequency,now+.008+i*step));o.connect(gain);o.start(now);o.stop(now+duration+.02);nodes.push(o);sources.push(o)
   if(cue==='lava'||cue==='splash') {const n=context.createBufferSource(),f=context.createBiquadFilter();n.buffer=noise;f.type=cue==='lava'?'lowpass':'bandpass';f.frequency.value=cue==='lava'?240:1700;f.Q.value=cue==='lava'?1:.7;n.connect(f).connect(gain);n.start(now);n.stop(now+duration+.02);nodes.push(n,f);sources.push(n)}

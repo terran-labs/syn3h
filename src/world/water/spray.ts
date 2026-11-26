@@ -14,6 +14,16 @@ export const waterWakeStrength=defineParam({id:'water.wakeStrength',label:'Wake 
 /** A broad, low swell of disturbed water beside a hull. Off: beside-hull wakes read as drawn lines. */
 export const waterBowSwell=defineParam<boolean>({id:'water.bowSwell',label:'Bow swell beside hulls',group:'Water',scope:'client',default:false})
 export const waterWakeWidth=defineParam({id:'water.wakeWidth',label:'Wake width',group:'Water',scope:'client',default:1,min:.3,max:3,step:.05})
+/**
+ * The moving hull's trail in the ripple field (ripples.ts): how hard it disturbs the field, 1 being
+ * the wake before 25 November 2026 (0.004 per m/s, at most 0.15, a frame), and how wide, metres.
+ * Visual only: the field bends the sea's shading normals and never moves its mesh or physics.
+ */
+/** The foam trail behind a moving craft (spraySim.ts foamWidth, foamLife): width and how long it lasts, as multiples of the trail before 25 November 2026. Rings are water.wakeWidth's. */
+export const waterWakeFoamWidth=defineParam({id:'water.wakeFoamWidth',label:'Wake foam width',group:'Water',scope:'client',default:2,min:.5,max:4,step:.05})
+export const waterWakeFoamLife=defineParam({id:'water.wakeFoamLife',label:'Wake foam persistence',group:'Water',scope:'client',default:2,min:.5,max:4,step:.05})
+export const waterWakeRipple=defineParam({id:'water.wakeRipple',label:'Wake ripple strength',group:'Water',scope:'client',default:2.5,min:0,max:4,step:.05})
+export const waterWakeRippleWidth=defineParam({id:'water.wakeRippleWidth',label:'Wake ripple width',group:'Water',scope:'client',default:2.5,min:.5,max:6,step:.1})
 
 // TSL nodes are dynamically typed; sprites.ts uses the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -302,17 +312,17 @@ export class Spray {
     if (!this.sim || tier !== this.tier) this.allocate(tier)
   }
   /** One vehicle this frame; `shape` says what touches the liquid (spraySim.ts WakeShape). */
-  vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape) {
+  vehicle(id: string, position: T.Vector3, velocity: T.Vector3, submergedFraction: number, dt: number, shape?: WakeShape, touchdown = false) {
     if (!waterSpray.value) return
     if (!this.sim) this.allocate(Math.max(0, Math.min(2, Math.round(graphicsLevel.value))))
-    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value
-    const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1), shape)
+    this.sim!.wakeStrength = waterWakeStrength.value; this.sim!.wakeWidth = waterWakeWidth.value; this.sim!.bowSwell = waterBowSwell.value; this.sim!.foamWidth = waterWakeFoamWidth.value; this.sim!.foamLife = waterWakeFoamLife.value
+    const entering = this.sim!.vehicle(id, position.x, position.y, position.z, velocity.x, velocity.y, velocity.z, submergedFraction, dt, waterSprayScale.value * (this.liquid === 'lava' ? .7 : 1), shape, touchdown)
     if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)
-    if (sub > 0 && speed > 1) this.ripples.disturb(position.x, position.z, 1.5, Math.min(.15, speed * .004) * Math.min(.1, Math.max(0, dt)) * 60)
+    if (sub > 0 && speed > 1) this.ripples.disturb(position.x, position.z, waterWakeRippleWidth.value, waterWakeRipple.value * Math.min(.15, speed * .004) * Math.min(.1, Math.max(0, dt)) * 60)
     // Air pressing on the water (a cushion, a downwash) ruffles a wider patch of it, even at rest.
     const near = shape?.air && sub <= 0 ? Math.max(0, Math.min(1, shape.near ?? 0)) : 0
-    if (near > .02) this.ripples.disturb(position.x, position.z, (shape!.beam ?? 1.5) * 1.4, near * (shape!.air === 'cushion' ? .06 : .04) * Math.min(.1, Math.max(0, dt)) * 60)
+    if (near > .02) this.ripples.disturb(position.x, position.z, (shape!.beam ?? 1.5) * 1.4, waterWakeRipple.value * near * (shape!.air === 'cushion' ? .06 : .04) * Math.min(.1, Math.max(0, dt)) * 60)
     // Rings of ripples spreading from the hole, wider and stronger for a harder hit.
     if (entering) { const impact = this.sim!.lastSplash; this.ripples.disturb(position.x, position.z, 2 + Math.min(4, impact * .12), Math.min(.6, impact * .04 + .1)) }
     return entering

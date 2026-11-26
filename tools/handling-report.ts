@@ -6,6 +6,7 @@
  *   npx tsx tools/handling-report.ts          Markdown to stdout
  *   npx tsx tools/handling-report.ts --json   JSON to stdout
  *   npx tsx tools/handling-report.ts --tyres  only the buggy tyre size table
+ *   npx tsx tools/handling-report.ts --only 'water skipping'   one entry of `vehicles` alone
  *
  * Each vehicle is measured once per handling preset (shared/presets.ts), the default first, so
  * the tables have a column per preset. Every figure uses that preset over the parameter defaults
@@ -24,6 +25,8 @@ import * as buggy from '../tests/vehicles/miraScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
 import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
+import * as skip from '../tests/vehicles2/waterSkipScenarios'
+import { skipAngle } from '../src/vehicles/skip'
 import { harness } from '../tests/vehicles2/harness'
 import { MiraBuggy } from '../src/vehicles/MiraBuggy'
 
@@ -367,6 +370,57 @@ async function zorbLiquids(): Promise<Figure[]> {
   return out
 }
 
+// ---- Skipping on water -------------------------------------------------------------------
+
+/**
+ * Every vehicle launched across open water (tests/vehicles2/waterSkipScenarios.ts, src/vehicles/
+ * skip.ts), at multiples of its own derived planing speed, a third of the skip angle window down:
+ * coasting, and for the buggy at full throttle too. Then each at rest in sea waves for a minute.
+ */
+async function waterSkipping(): Promise<Figure[]> {
+  const out: Figure[] = []
+  const angle = skipAngle.value / 3
+  for (const kind of skip.SKIP_KINDS) {
+    for (const throttle of kind === 'buggy' ? [0, 1] : [0]) {
+      for (const k of [1.5, 2, 3, 4]) {
+        const r = await at(() => {
+          const run = skip.skipLaunch(kind, kind === 'tank' ? 30 * k / 4 : (p) => p * k, angle, { throttle })
+          try {
+            const bound = skip.planingEndsWithin(run.planing * k, run.planing)
+            skip.coastFor(run, Math.min(240, bound + 10))
+            const t0 = run.trace[0].t, z0 = run.trace[0].z
+            const from = run.trace.findIndex((s, i) => run.trace.slice(i).every((x) => x.speed < run.planing))
+            const s = skip.skipsOf(run.trace)
+            return { planing: run.planing, entry: run.trace[0].speed, skips: s.skips.length, out: s.skips.map((x) => x.speed), below: from < 0 ? null : run.trace[from].t - t0, distance: from < 0 ? null : Math.abs(run.trace[from].z - z0) }
+          } finally { run.dispose() }
+        })
+        const what = `${kind}${throttle ? ', full throttle' : ', coasting'}, ${r.entry.toFixed(1)} m/s (${kind === 'tank' ? 'fixed' : `${k}x planing ${r.planing.toFixed(1)}`}) at ${angle.toFixed(0)}°`
+        out.push(
+          fig(`${what}: skips`, '', r.skips),
+          fig(`${what}: speed leaving the first skip`, 'm/s', r.out.length ? r.out[0] : NaN),
+          fig(`${what}: speed leaving the last skip`, 'm/s', r.out.length ? r.out[r.out.length - 1] : NaN),
+          fig(`${what}: time until below its planing speed for good`, 's', r.below ?? Infinity),
+          fig(`${what}: distance until below its planing speed for good`, 'm', r.distance ?? Infinity),
+        )
+      }
+    }
+    const rest = await at(() => {
+      const run = skip.skipLaunch(kind, 0, 0, { waves: 'sea', clearance: 0 })
+      try {
+        skip.coastFor(run, 60)
+        const settled = run.trace.filter((s) => s.t > 5)
+        return { range: Math.max(...settled.map((s) => s.y)) - Math.min(...settled.map((s) => s.y)), speed: Math.max(...run.trace.filter((s) => s.gap > -1).map((s) => s.speed), 0), lift: Math.max(...run.trace.map((s) => s.skipping)) }
+      } finally { run.dispose() }
+    })
+    out.push(
+      fig(`${kind}: at rest in sea waves for 60 s, height range${kind === 'buggy' || kind === 'tank' ? ' (stopped, it sinks, as before)' : ''}`, 'm', rest.range),
+      fig(`${kind}: at rest in sea waves, fastest while on the water`, 'm/s', rest.speed),
+      fig(`${kind}: at rest in sea waves, most planing lift / weight`, '', rest.lift),
+    )
+  }
+  return out
+}
+
 // ---- Report ----------------------------------------------------------------------------
 
 /** Each vehicle, its presets (the default first), and how its summary columns were measured. */
@@ -385,7 +439,11 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
   },
   'zorb liquids': {
     run: async () => ({ summary: NO_SUMMARY, detail: await zorbLiquids() }), presets: [{ name: 'default', description: '', values: {} }],
-    how: 'A zorbed buggy launched across open water or lava, coasting (tests/vehicles2/zorbSkipScenarios.ts). Skips are the times its base rose 0.15 m clear of the surface. Tune with zorb.skipSpeed, zorb.skipAngle, zorb.skipFriction and zorb.skipKeep.',
+    how: 'A zorbed buggy launched across open water or lava, coasting (tests/vehicles2/zorbSkipScenarios.ts). Skips are the times its base rose 0.15 m clear of the surface. Tune with the shared water.skip.* settings and water.zorb.planing.',
+  },
+  'water skipping': {
+    run: async () => ({ summary: NO_SUMMARY, detail: await waterSkipping() }), presets: [{ name: 'default', description: '', values: {} }],
+    how: 'Each vehicle launched across open water at multiples of its derived planing speed (weight over footprint, src/vehicles/skip.ts), a third of the skip angle window down, coasting (and the buggy at full throttle); then at rest in sea waves for a minute (tests/vehicles2/waterSkipScenarios.ts). Skips are the times its lowest point rose 0.2 m clear of the water. Tune with water.skip.* and water.<kind>.planing.',
   },
   jet: {
     run: () => jetReport(), presets: JET_PRESETS,
@@ -404,13 +462,16 @@ await initPhysics()
 /** Per vehicle, per preset name. */
 const results: Record<string, Record<string, VehicleReport>> = {}
 const tyresOnly = process.argv.includes('--tyres')
+/** --only <name>: just that entry of `vehicles` (for example --only 'water skipping'). */
+const onlyAt = process.argv.indexOf('--only'), only = onlyAt >= 0 ? process.argv[onlyAt + 1] : null
 for (const [name, v] of Object.entries(vehicles)) {
   if (tyresOnly) break
+  if (only && name !== only) continue
   results[name] = {}
   for (const p of v.presets) { preset = p; results[name][p.name] = await v.run() }
   preset = undefined
 }
-const tyres = await buggyTyreSizes()
+const tyres = only ? {} : await buggyTyreSizes()
 
 if (process.argv.includes('--json')) {
   console.log(JSON.stringify({ ...results, buggyTyreSizes: tyres }, null, 2))
@@ -429,9 +490,9 @@ if (process.argv.includes('--json')) {
     out.push('', `## ${name}`, '', vehicles[name].how, '', `| Figure | Unit | ${names.join(' | ')} |`, `| --- | --- | ${names.map(() => '---:').join(' | ')} |`)
     first.detail.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${names.map((p) => num(byPreset[p].detail[i].value, 2)).join(' | ')} |`))
   }
-  const sizes = Object.keys(tyres), rows = tyres[sizes[0]]
-  out.push('', '## buggy, tyre size', '', 'Default preset at each tyre size (buggy.tyreSize). Least upright: 1 level, 0 on its side, below 0 rolled over.', '',
+  const sizes = Object.keys(tyres), rows = tyres[sizes[0]] ?? []
+  if (sizes.length) out.push('', '## buggy, tyre size', '', 'Default preset at each tyre size (buggy.tyreSize). Least upright: 1 level, 0 on its side, below 0 rolled over.', '',
     `| Figure | Unit | ${sizes.map((k) => `Size ${k}`).join(' | ')} |`, `| --- | --- | ${sizes.map(() => '---:').join(' | ')} |`)
-  rows.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${sizes.map((k) => num(tyres[k][i].value, 2)).join(' | ')} |`))
+  if (sizes.length) rows.forEach((f, i) => out.push(`| ${f.label} | ${f.unit} | ${sizes.map((k) => num(tyres[k][i].value, 2)).join(' | ')} |`))
   console.log(out.join('\n'))
 }

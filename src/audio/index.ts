@@ -3,6 +3,8 @@ import type { System } from '../core/Game'
 import { params, worldSeed } from '../../shared/params'
 import { Engine, SLIP_ALLOW, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue, type CueOptions } from './Cues'
+/** Seconds clear of the water before a skip's touchdown splashes again. */
+const SKIP_SPLASH_GAP=.15
 import { CrashWatcher, impactStrength, synthImpact, type ImpactKind } from './Impacts'
 import { synthMaterialize, synthZorbPulse, type MaterializeVoice } from './VehicleCues'
 import type { SurfaceKind } from '../world/terrain/surface'
@@ -72,7 +74,7 @@ export class GameAudio implements System {
   private vehicleSource: () => readonly Vehicle[] = () => []
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
   private readonly cueStops = new Set<() => void>()
-  private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null}>()
+  private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null;planingAt:number}>()
   private readonly materializing = new Map<object, MaterializeVoice>()
   private readonly crashes = new CrashWatcher()
   private impactSeed = 0
@@ -426,13 +428,13 @@ export class GameAudio implements System {
     const p=this.local.object.position,liquid=this.terrain?.liquidHeightAt?.(p.x,p.z)??-Infinity
     return Number.isFinite(liquid)?liquid-p.y:0
   }
-  cue(cue:Cue,position?:Position):void {
+  cue(cue:Cue,position?:Position,options?:CueOptions):void {
     if(this.context?.state!=='running'||this.cueStops.size>=16)return
     if(cue==='tag')this.score?.combat(.5)
     else if(cue==='capture'||cue==='win')this.score?.accent(cue==='win'?1:.6)
     const out=position?this.output(position,this.cueBus!):{node:this.cueBus!,dispose(){}}
     let stop:()=>void
-    stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()})
+    stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()},options)
     this.cueStops.add(stop)
   }
   /** The music line of Copy diagnostics. */
@@ -449,6 +451,7 @@ export class GameAudio implements System {
     return {zorbed:v.zorbed,kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip,slide,surface,altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
   }
   private vehicleEvents(v:Vehicle):void {
+    const now=this.context?.currentTime??0,planing=(v.liquidState?.skipping??0)>0
     const p=v.object.position,liquid=this.terrain?.liquidHeightAt?.(p.x,p.z)??-Infinity
     // A thick gloop going into lava, a splash going into a sea, lake or river.
     const liquidKind=p.y<liquid+1?this.terrain?.liquidKindAt?.(p.x,p.z)??null:null
@@ -456,9 +459,13 @@ export class GameAudio implements System {
     if(this.enabled&&!v.zorbed&&previous){
       if(previous.wings!==v.wingsOpen)this.cue(v.wingsOpen?'deploy':'retract',p)
       if(v.landedThisStep&&!previous.landed)this.impact(v.landingImpact,p,this.groundImpact(p),v.kind)
-      if(liquidKind&&!previous.liquid)this.cue(liquidKind==='lava'?'lava':'splash',p)
+      const entered=liquidKind&&!previous.liquid
+      if(entered)this.cue(liquidKind==='lava'?'lava':'splash',p)
+      // A skip touching down (src/vehicles/skip.ts): planing again after a moment clear of the
+      // water, which the entry above misses when the hop never rose a metre. As loud as the hit.
+      else if(planing&&now-previous.planingAt>SKIP_SPLASH_GAP)this.cue('splash',p,{level:THREE.MathUtils.clamp(Math.abs(v.body.linvel().y)/4,.25,1.2)})
     }
-    this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind})
+    this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind,planingAt:planing?now:previous?.planingAt??-Infinity})
   }
   fixedUpdate(): void {
     // A landing flag may clear before the next rendered frame on a slow device.

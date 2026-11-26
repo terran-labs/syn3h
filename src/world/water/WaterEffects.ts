@@ -8,7 +8,7 @@ import type { PlayerSlot } from '../../vehicles/PlayerSlot'
 import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
 import { Ripples, rippleField, waterRipples } from './ripples'
-import { Spray, waterSpray } from './spray'
+import { Spray, waterSpray, waterWakeRipple, waterWakeRippleWidth } from './spray'
 import { setSplash } from './splash'
 import { Underwater, cameraMedium, waterUnderwater } from './underwater'
 import { Motes } from './motes'
@@ -53,7 +53,13 @@ function localBox(c:{shape:unknown}):LocalBox|null{
 }
 
 /** Register after Environment and ChaseCamera. The live net binding includes later joins. */
+/** Seconds clear of the water before a skip's touchdown splashes again (src/vehicles/skip.ts). */
+const SKIP_TOUCHDOWN_GAP=.15
+
 export class WaterEffects implements System {
+  /** When each vehicle last planed on the water, by this system's clock. */
+  private readonly planingAt=new WeakMap<object,number>()
+  private time=0
   readonly ripples:Ripples
   readonly spray:Spray
   /** Molten spray and glowing wakes for vehicles in lava. */
@@ -85,6 +91,7 @@ export class WaterEffects implements System {
   /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
   private queryApplied=false
   update(dt:number){
+    this.time+=Math.max(0,dt)
     if(!this.queryApplied&&this.game.time>2){this.queryApplied=true;applyWaterQuery()}
     const {game,terrain}=this,size=terrain.wrapSize??terrain.size
     if(size!==this.size){this.size=size;this.ripples.configure(size)}
@@ -146,8 +153,12 @@ export class WaterEffects implements System {
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)
         // Send dry intervals too, so re-entry splashes detect the transition.
-        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt,this.shape)
-        if(kind==='water'&&!waterSpray.value&&fraction>0&&Math.hypot(velocity.x,velocity.z)>1)this.ripples.disturb(x,z,1.5,Math.min(.15,Math.hypot(velocity.x,velocity.z)*.004)*Math.min(.1,Math.max(0,dt))*60)
+        // A skip touching down again (src/vehicles/skip.ts): planing after a moment clear of the water.
+        const planing=(v.liquidState?.skipping??0)>0,last=this.planingAt.get(v)??-Infinity
+        const touchdown=kind==='water'&&planing&&this.time-last>SKIP_TOUCHDOWN_GAP
+        if(planing)this.planingAt.set(v,this.time)
+        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt,this.shape,touchdown)
+        if(kind==='water'&&!waterSpray.value&&fraction>0&&Math.hypot(velocity.x,velocity.z)>1)this.ripples.disturb(x,z,waterWakeRippleWidth.value,waterWakeRipple.value*Math.min(.15,Math.hypot(velocity.x,velocity.z)*.004)*Math.min(.1,Math.max(0,dt))*60)
       }
     }
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)

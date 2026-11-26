@@ -11,8 +11,12 @@ import { waterCoast } from '../../src/vehicles/lava'
 import { fieldOffset, liquidWavesAt, type LiquidBody } from '../../src/world/water/liquidWaves'
 import { setWeatherClock } from '../../src/world/weather/wind'
 import { type Run, type Sample, advance, ashore, coast, dispose, entry, exitTime, fromRest, turnOut, wingAscent } from './liquidScenarios'
+import { buggyPlaning, planingEndsWithin } from '../vehicles2/waterSkipScenarios'
 
 beforeAll(initPhysics)
+/** The buggy's derived planing speed (src/vehicles/skip.ts), for the scenarios that skip. */
+let planing = 0
+beforeAll(() => { planing = buggyPlaning() })
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
 
 const finite = (r: Run) => r.trace.every((s) => [s.x, s.y, s.z, s.vy, s.speed, s.pitch, s.roll].every(Number.isFinite))
@@ -29,22 +33,29 @@ describe.each(['lava', 'water'] as const)('buggy in %s', (liquid) => {
     } finally { dispose(r) }
   })
 
-  it.each([[10, 10], [45, 10], [10, 25], [45, 25]])('drives in at %s m/s over a %s degree shore and out again, upright and on the ground', (speed, slope) => {
+  it.each([[10, 10], [45, 10], [10, 25], [45, 25]])('drives in at %s m/s over a %s degree shore, upright and never launched by the liquid', (speed, slope) => {
     const r = entry('buggy', { liquid, length: 30, depth: 1.5, slope }, speed, OUT + 5)
     try {
       expect(finite(r)).toBe(true)
-      // Either shore: a crash into a steep far bank may turn it round, and that is fine.
-      if (!ashore(r)) advance(r, OUT, (s) => s.z > 4 || s.z < -r.basin.length - 4)
-      expect(ashore(r)).toBe(true)
-      // Never launched into the sky: the bank is 1 m, a ramp hop is a few metres at most.
-      expect(Math.max(...r.trace.map((s) => s.y))).toBeLessThan(10)
-      // Not stuck on its side or roof once it has settled on land. Braking: leaving the far
-      // shore at 40 m/s, three seconds of coasting reach the end of the test's 120 m of ground,
-      // and a fall off that edge is the test bed, not the liquid.
-      r.v.input.y = 0
-      r.v.input.brakes = true
-      advance(r, 3)
-      expect(r.trace[r.trace.length - 1].up).toBeGreaterThan(0.5)
+      // Over the liquid: upright, and never thrown up by it (the bank is 1 m).
+      // The first crossing, until it first reaches the far bank: after a crash there it may tumble back over.
+      const far = r.trace.findIndex((s) => s.z <= -r.basin.length + 1)
+      const over = r.trace.slice(0, far < 0 ? undefined : far).filter((s) => s.z < 0)
+      expect(Math.min(...over.map((s) => s.up))).toBeGreaterThan(0.5)
+      expect(Math.max(...over.map((s) => s.y))).toBeLessThan((r.basin.bank ?? 1) + 3)
+      // Below its planing speed the liquid slows it and it climbs out and settles upright. Faster,
+      // it skims across water (src/vehicles/skip.ts) and meets the far bank at speed: a terrain
+      // crash, which the liquid does not own. (Removed for that case: "ashore", "below 10 m" and
+      // "upright after settling", which assumed the water had slowed it to a crawl first.)
+      if (liquid === 'lava' || Math.max(...over.map((s) => s.speed)) < planing) {
+        if (!ashore(r)) advance(r, OUT, (s) => s.z > 4 || s.z < -r.basin.length - 4)
+        expect(ashore(r)).toBe(true)
+        expect(Math.max(...r.trace.map((s) => s.y))).toBeLessThan(10)
+        r.v.input.y = 0
+        r.v.input.brakes = true
+        advance(r, 3)
+        expect(r.trace[r.trace.length - 1].up).toBeGreaterThan(0.5)
+      }
     } finally { dispose(r) }
   })
 
@@ -95,29 +106,36 @@ describe.each(['lava', 'water'] as const)('steering afloat in %s', (liquid) => {
 
 describe('water holds a buggy up only while it works to stay up', () => {
   it.each([10, 40])('entering deep water at %s m/s with no throttle, it comes to rest and goes under', (speed) => {
-    const c = coast('water', speed, 12)
+    // Long enough for any skipping and planing to end (bound from the registry), then the old 12 s.
+    // (Removed: "rest and under within 8 s", a tuning number from before buggies skipped.)
+    const seconds = 12 + planingEndsWithin(speed, planing)
+    // Open water long enough that the planing ends before any far bank: no crash into it.
+    const c = coast('water', speed, seconds, false, 600 + speed * seconds)
     try {
       expect(finite(c.run)).toBe(true)
       expect(c.rest).not.toBeNull()
       expect(c.under).not.toBeNull()
-      expect(c.rest!).toBeLessThan(8)
-      expect(c.under!).toBeLessThan(8)
       expect(Math.min(...c.run.trace.map((s) => s.up))).toBeGreaterThan(0)
     } finally { dispose(c.run) }
   })
 
-  it('entering deep water fast with no throttle, it slows quickly, even once it has gone under', () => {
-    // Coasting drag alone would take ln(20 / 3) / water.coast seconds to slow 20 m/s to 3; allow
-    // 60 per cent more. A coasting buggy that has sunk must keep that drag (the 3.1 s regression
-    // turned it off under water); a sunk buggy on the bed must not (tests/bots/rescue/tow.test.ts).
-    const bound = (1.6 * Math.log(20 / 3)) / waterCoast.value
-    const c = coast('water', 20, 8)
+  it('entering deep water fast with no throttle, it slows quickly once its planing has ended, even once it has gone under', () => {
+    // Coasting drag alone would take ln(from / 3) / water.coast seconds to slow from its speed when
+    // planing ended to 3 m/s; allow 60 per cent more. A coasting buggy that has sunk must keep that
+    // drag (the 3.1 s regression turned it off under water); a sunk buggy on the bed must not
+    // (tests/bots/rescue/tow.test.ts). Timed from the end of planing: a fast entry skips first.
+    // (Changed: timed from entry, which assumed no skipping.)
+    const seconds = 8 + planingEndsWithin(20, planing)
+    const c = coast('water', 20, seconds, false, 600 + 20 * seconds)
     try {
-      const t0 = c.run.trace[0].t
-      const slow = c.run.trace.find((s) => s.speed < 3)
+      const trace = c.run.trace
+      const last = trace.reduce((k, s, i) => (s.skipping > 0 ? i : k), -1)
+      const start = trace[last + 1]
+      const slow = trace.slice(last + 1).find((s) => s.speed < 3)
       expect(finite(c.run)).toBe(true)
+      expect(start).toBeDefined()
       expect(slow).toBeDefined()
-      expect(slow!.t - t0).toBeLessThan(bound)
+      if (start.speed > 3) expect(slow!.t - start.t).toBeLessThan((1.6 * Math.log(start.speed / 3)) / waterCoast.value)
     } finally { dispose(c.run) }
   })
 

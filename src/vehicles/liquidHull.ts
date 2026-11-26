@@ -132,6 +132,23 @@ export interface HullInput {
   steer?: number
   /** Brakes held: the coasting drag bites harder. */
   brakes?: boolean
+  /**
+   * 0..1, default 1: how much of the hull's drag, plough, heave damping, bow lift and tyre skim
+   * act. Planing on the
+   * water (skip.ts) carries the hull on its lift, wetting little of it: they give way by the
+   * lift's share of the support, as the zorb's bulk drag does.
+   */
+  bulk?: number
+  /**
+   * 0..1, default `bulk`: how much of the coasting plough acts. It is the drag of a hull that has
+   * stopped trying, so it stays off while the planing lift still carries the hull (skip.ts
+   * `ploughGiveWay`): without that, a coasting skip dug in on its second touchdown.
+   */
+  plough?: number
+}
+/** Body-frame height of the buggy hull's lowest point in a liquid: its tyres, reaching down with their size (as the columns do). */
+export function hullBottom(wheel?: { radius: number }): number {
+  return HULL.bottom - 1.2 * Math.max(0, (wheel?.radius ?? STANDARD_WHEEL.radius) - STANDARD_WHEEL.radius)
 }
 /** The standard tyre the HULL columns were drawn around. */
 const STANDARD_WHEEL = { x: 1.1, z: 1.3, radius: 0.5 }
@@ -218,13 +235,14 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     const vx = v.x - flow.x, vz = v.z - flow.z, vh = Math.hypot(vx, vz)
     // Planing wets less hull, but only under power: coasting, the bow ploughs in.
     const skim = 1 - (1 - p.skim) * Math.min(1, Math.abs(plane)) * (p.sink !== undefined ? Math.max(effort, 0.7) : 1)
-    const drag = Math.min(0.9 / dt, p.thickness * (p.linear + p.quadratic * vh) * sub * skim)
+    const bulk = THREE.MathUtils.clamp(input.bulk ?? 1, 0, 1)
+    const drag = Math.min(0.9 / dt, p.thickness * (p.linear + p.quadratic * vh) * sub * skim * bulk)
     // Coasting drag acts low on the hull, so letting go pitches the nose down into it.
-    const plough = Math.min(0.9 / dt - drag, coasting * (1 + vh / 16) * Math.min(1, sub * 2))
+    const plough = Math.min(0.9 / dt - drag, coasting * (1 + vh / 16) * Math.min(1, sub * 2) * THREE.MathUtils.clamp(input.plough ?? bulk, 0, 1))
     // Wholly under, a column falls or rises through the liquid with `sunkHeave` instead of the
     // surface's `heave`; the two blend over the last tenth of its height.
     const under = p.sunkHeave === undefined ? 0 : THREE.MathUtils.smoothstep(sub, 0.9, 1)
-    const heave = Math.min(0.9 / dt, (p.heave * (1 - under) + (p.sunkHeave ?? 0) * under) * sub + p.deep * Math.max(0, sub - 0.9) / 0.1)
+    const heave = Math.min(0.9 / dt, ((p.heave * (1 - under) + (p.sunkHeave ?? 0) * under) * sub + p.deep * Math.max(0, sub - 0.9) / 0.1) * bulk)
     f.x = -vx * drag * share
     f.z = -vz * drag * share
     const rise = terrain.liquidVerticalSpeedAt?.(cx, cz) ?? 0
@@ -236,7 +254,9 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
       f.z += side.z * rudder
     }
     // Bow dynamic lift on the front columns only, carried by their lagged wetness.
-    if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2) * lifted
+    // Like the drag, it gives way to the planing contact (`bulk`): a hull up on its planing lift
+    // has little bow in the water, and kept at full it pitched a skimming buggy nose up.
+    if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2) * lifted * bulk
     // Planing: the whole hull rides up on its speed, wetting less and so lifting less: a skip.
     if (forward > 0) f.y += p.planeLift * g * share * plane * Math.min(1, sub * 3) * lifted
     // Tyres skimming: a fast-spinning tyre at the surface planes on it and throws water back,
@@ -247,7 +267,11 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
       const band = THREE.MathUtils.smoothstep(sub, 0.02, 0.15) * (1 - THREE.MathUtils.smoothstep(sub, 0.5, 0.8))
       const from = p.tyreSpeed ?? 12
       const fast = THREE.MathUtils.smoothstep(forward, from, from + 8) * THREE.MathUtils.smoothstep(input.wheelSpeed, from, from + 8)
-      const k = throttle * band * fast
+      // Drive on the water cannot hold a hull up past its planing speed: skipping must end. The
+      // pull fades out from 0.8 of the hull's planing speed (`planing`, derived in skip.ts) to all
+      // of it, as the tyres find less and less to push against.
+      const below = 1 - THREE.MathUtils.smoothstep(forward, 0.8 * p.planing, p.planing)
+      const k = throttle * band * fast * bulk * below
       if (k > 0) {
         f.y += (p.tyreLift ?? 0) * g * share * k
         f.x += fwd.x * (p.tyrePull ?? 0) * share * k

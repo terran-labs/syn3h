@@ -159,6 +159,13 @@ export class SpraySim {
   /** Multiplies every soft trail's and ring's strength and width (water.wakeStrength, water.wakeWidth). */
   wakeStrength = 1
   wakeWidth = 1
+  /**
+   * The foam trail behind a moving craft (not its rings): width and how long it lasts, each a
+   * multiple of the trail before 25 November 2026 (water.wakeFoamWidth, water.wakeFoamLife).
+   * Lasting longer spaces its points further apart over the same fixed pool.
+   */
+  foamWidth = 1
+  foamLife = 1
   /** A broad low swell beside a hull (water.bowSwell); off by default. */
   bowSwell = false
   private vehicles = new Map<string, VehicleState>()
@@ -298,7 +305,7 @@ export class SpraySim {
    * the share of its bottom metre under water). `shape` says what touches the water. Returns
    * true when this call detected an entry splash.
    */
-  vehicle(id: string, x: number, y: number, z: number, vx: number, vy: number, vz: number, submerged: number, dt: number, scale = 1, shape: WakeShape = HULL_SHAPE): boolean {
+  vehicle(id: string, x: number, y: number, z: number, vx: number, vy: number, vz: number, submerged: number, dt: number, scale = 1, shape: WakeShape = HULL_SHAPE, touchdown = false): boolean {
     if (![x, y, z, vx, vy, vz].every(Number.isFinite)) return false
     dt = Math.max(0, Math.min(.1, Number.isFinite(dt) ? dt : 0))
     scale = Math.max(.25, Math.min(3, scale))
@@ -310,7 +317,9 @@ export class SpraySim {
     const fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx
     // From dry or nearly dry only, so a hull bobbing back down after a landing does not splash again.
     // A fast hull touching down flat (a jet skimming, a Zorb skipping) splashes too: a skip.
-    const entering = s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15))
+    // `touchdown`: a skip landing again (src/vehicles/skip.ts), which may not have dried the hull's
+    // whole envelope in a low hop but is an entry all the same.
+    const entering = touchdown || (s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15)))
     s.seen = this.time; s.speed = speed
     // A trail joins points laid while the ball stayed on the water; a skimming ball that lifts
     // for a moment (under SKIM_GAP) is still on it, a skip is not.
@@ -497,10 +506,10 @@ export class SpraySim {
     this.off(s, CENTRE)
     if (speed < .3) { this.off(s); return }
     // A skimming ball throws water wider than the chord it dips: never narrower than a 15 cm dip.
-    const half = ballPatch(s.ball, Math.max(sub, .15)) * .85 * scale * this.wakeWidth
+    const half = ballPatch(s.ball, Math.max(sub, .15)) * .85 * scale * this.wakeWidth * this.foamWidth
     // Faint at a drift, full by a brisk roll; a ball barely touching leaves a little less.
     const strength = Math.min(1, .5 + speed / 8) * Math.min(1, .7 + sub * 2) * this.wakeStrength
-    this.point(s.slot * ARMS + CENTRE, x, y, z, half, strength, Math.max(1.5, Math.min(4, 40 / Math.max(1, speed))), .3 + Math.min(.6, speed * .03), Math.max(.5, speed * 2.4 / (this.cap.points - 2)), fresh)
+    this.point(s.slot * ARMS + CENTRE, x, y, z, half, strength, Math.max(1.5, Math.min(4, 40 / Math.max(1, speed))) * this.foamLife, .3 + Math.min(.6, speed * .03), Math.max(.5, speed * 2.4 * this.foamLife / (this.cap.points - 2)), fresh)
   }
 
   /**
@@ -513,12 +522,13 @@ export class SpraySim {
     if (speed < .8) { this.off(s); return }
     const fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx, P = this.cap.points, wet = Math.min(1, .5 + sub)
     const spacing = Math.max(.6, speed * 2.4 / (P - 2)), k = this.wakeStrength * wet, w = scale * this.wakeWidth
+    const trailSpacing = Math.max(.6, speed * 2.4 * this.foamLife / (P - 2))
     if (this.bowSwell) for (const side of [-1, 1]) {
       const ax = x + fx * .4 + sx * side * HULL * 1.6, az = z + fz * .4 + sz * side * HULL * 1.6
       this.point(s.slot * ARMS + (side < 0 ? 0 : 1), ax, y, az, (1 + speed * .03) * w, Math.min(1, speed / 8) * .3 * k, .7, 1, spacing, fresh, sx * side, sz * side, speed * .12)
     } else { this.armHeadActive[s.slot * ARMS] = 0; this.armHeadActive[s.slot * ARMS + 1] = 0 }
     const strength = Math.min(1, .3 + speed / 8) * k
-    this.point(s.slot * ARMS + CENTRE, x - fx * 1.4, y, z - fz * 1.4, HULL * (1.1 + Math.min(.6, speed * .03)) * w, strength, Math.max(1, Math.min(3, 30 / Math.max(1, speed))), .5 + Math.min(.6, speed * .03), spacing, fresh)
+    this.point(s.slot * ARMS + CENTRE, x - fx * 1.4, y, z - fz * 1.4, HULL * (1.1 + Math.min(.6, speed * .03)) * w * this.foamWidth, strength, Math.max(1, Math.min(3, 30 / Math.max(1, speed))) * this.foamLife, .5 + Math.min(.6, speed * .03), trailSpacing, fresh)
   }
 
   /**
@@ -546,9 +556,9 @@ export class SpraySim {
       this.drop(x + Math.cos(a) * r - fx * (cushion ? 0 : 1.5), y + .2, z + Math.sin(a) * r - fz * (cushion ? 0 : 1.5), vx * .3 + Math.cos(a) * 1.2, .3 + this.random() * .6, vz * .3 + Math.sin(a) * 1.2, .5 + this.random() * .4, y, 1, scale)
     }
     if (speed < .5 && !cushion) { this.off(s); return }
-    const w = scale * this.wakeWidth, spacing = Math.max(.6, speed * 2.4 / (this.cap.points - 2))
-    if (cushion) this.point(s.slot * ARMS + CENTRE, x, y, z, beam * 1.1 * Math.sqrt(near) * w, near * Math.min(1, .45 + speed / 10) * k, Math.max(1.5, Math.min(4, 30 / Math.max(1, speed))), .4 + Math.min(.5, speed * .02), spacing, fresh)
-    else this.point(s.slot * ARMS + CENTRE, x - fx * 2, y, z - fz * 2, (.8 + speed * .02) * w, near ** 1.5 * Math.min(1, speed / 15) * k, Math.max(1, Math.min(2.5, 20 / Math.max(1, speed))), .6, spacing, fresh)
+    const w = scale * this.wakeWidth * this.foamWidth, spacing = Math.max(.6, speed * 2.4 * this.foamLife / (this.cap.points - 2)), life = this.foamLife
+    if (cushion) this.point(s.slot * ARMS + CENTRE, x, y, z, beam * 1.1 * Math.sqrt(near) * w, near * Math.min(1, .45 + speed / 10) * k, Math.max(1.5, Math.min(4, 30 / Math.max(1, speed))) * life, .4 + Math.min(.5, speed * .02), spacing, fresh)
+    else this.point(s.slot * ARMS + CENTRE, x - fx * 2, y, z - fz * 2, (.8 + speed * .02) * w, near ** 1.5 * Math.min(1, speed / 15) * k, Math.max(1, Math.min(2.5, 20 / Math.max(1, speed))) * life, .6, spacing, fresh)
   }
 
   /** The world moved by a whole tile under the player: move everything with it. */
