@@ -93,7 +93,7 @@ export function onRefused(arrived: RoomMove | null, room: string, now = Date.now
 /** The line shown on arriving, or null. */
 export function arrivalLine(arrived: RoomMove | null): string | null {
   switch (arrived?.reason) {
-    case 'full': return "This world is full, so you're in a parallel universe of it. Invite friends with your link."
+    case 'full': return "This world is full, so you're in a parallel universe. Your invite link is in Players."
     case 'still-full': return isDefaultRoom(arrived.asked) ? "The main world is still full, so you're back in your parallel universe." : "That world is still full, so you're back in your parallel universe."
     case 'chosen': return "You're in a parallel universe of this planet. Only people with your link can join."
     default: return null

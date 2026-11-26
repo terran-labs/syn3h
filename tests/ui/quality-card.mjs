@@ -34,11 +34,11 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- A sixth card, after World, and no floating panel or header button. ----
     const sections = await page.locator('.wi-card').evaluateAll(cards => cards.map(card => card.dataset.section))
-    assert.equal(sections[sections.indexOf('world') + 1], 'performance', `Performance follows World: ${sections}`)
+    assert.equal(sections[sections.indexOf('world') + 1], 'performance', `Settings follows World: ${sections}`)
     assert.equal(await page.locator('.performance-toggle, .performance-panel').count(), 0, 'the old panel and its button are gone')
     const card = page.locator('.wi-card[data-section=performance]')
     await press(card.locator('.wi-head')); await settled(page)
-    assert.equal(await card.locator('.wi-head h3').innerText().then(t => t.trim().toLowerCase()), 'performance')
+    assert.equal(await card.locator('.wi-head h3').innerText().then(t => t.trim().toLowerCase()), 'settings')
     const select = card.getByRole('combobox', { name: 'Quality level' })
     const down = card.getByRole('button', { name: 'Lower quality level' }), up = card.getByRole('button', { name: 'Raise quality level' })
     const auto = card.locator('.wi-auto input')

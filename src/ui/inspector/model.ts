@@ -14,6 +14,8 @@ import { isVehicleAvailable } from '../../vehicles/available'
 /** The part of a parameter definition the inspector reads. Matches shared/params.ts. */
 export interface PropertyDef {
   id: string; label: string; group: string; scope: 'world' | 'client'
+  /** Set on settings that shape only the lobby (ui/lobby-scene-settings); never shown in play. */
+  lobbyGroup?: string
   default: number | boolean; min?: number; max?: number; step?: number; deferred?: boolean
   /** Synced and saved, but no panel shows it (shared/params.ts). */
   hidden?: boolean
@@ -48,33 +50,144 @@ export function shownDef<T extends PropertyDef>(def: T): T {
   const step = def.display.step ?? (def.step === undefined ? undefined : Math.abs(def.step * def.display.scale))
   return { ...def, default: shownValue(def, def.default), min: lo, max: hi, step, display: undefined }
 }
-export interface SectionSpec { id: string; title: string; blurb: string; groups: readonly string[]; scope: 'world' | 'client' }
-/** Logical sections, in the order they are shown. Personal settings first; stable ids preserve saved section copies. */
-export const SECTIONS: readonly SectionSpec[] = [
-  { id: 'you', title: 'Me', blurb: 'Yours only: camera, sound, graphics and this display.', groups: ['Interface', 'Camera', 'Input', 'Daydream', 'Audio', 'Adaptive score', 'Graphics', 'Network'], scope: 'client' },
-  // Every gear setting lives here, shared with the room (the owner, 22 November 2026).
-  { id: 'game', title: 'Game', blurb: 'What is being played, and who else is driving.', groups: ['Game', 'Tag', 'Tag beams', 'Zorb', 'Plasma Tag', 'Gear: Yoink', 'Gear: Chaser', 'Gear: Grapple', 'Gear: Plasma Thunder', 'Gear: Impact push', 'Gear effects', 'Vehicle looks', 'Bots'], scope: 'world' },
-  { id: 'vehicles', title: 'Vehicles', blurb: 'How each vehicle drives, flies and looks.', groups: ['Buggy', 'Jet', 'Hovercraft', 'Tank', 'Wheels', 'Canopy', 'Vehicle paint'], scope: 'world' },
-  { id: 'world', title: 'World', blurb: 'The planet itself: its seed, land and seas.', groups: ['World', 'Terrain', 'Lava', 'Sun', 'Sky', 'Weather'], scope: 'world' },
-]
-export interface GroupNode { name: string; properties: PropertyDef[] }
-export interface SectionNode extends SectionSpec { groups: readonly string[]; tree: GroupNode[]; count: number }
+/**
+ * One collapsible section inside a card: the groups it holds (definition groups), and any
+ * single properties placed here whatever their group. With more than one group, each group is
+ * a fold of its own inside the section.
+ */
+export interface PartSpec {
+  title: string
+  groups?: readonly string[]
+  ids?: readonly string[]
+  /** Open for a player who has never touched it. */
+  open?: boolean
+  /** Old names it went by, so a search for them still finds its rows. */
+  aliases?: string
+  /** One list of rows, with no fold per group (a short section, or one made of single rows). */
+  flat?: boolean
+  /** Shown names for groups inside this section; groups given the same name share one fold. */
+  titles?: Readonly<Record<string, string>>
+}
+export interface SectionSpec {
+  id: string; title: string; blurb: string; scope: 'world' | 'client'
+  parts: readonly PartSpec[]
+  /** Every group its parts hold, in order. */
+  groups: readonly string[]
+  /** Old card names, for search. */
+  aliases?: string
+}
+const card = (spec: Omit<SectionSpec, 'groups'>): SectionSpec => ({ ...spec, groups: spec.parts.flatMap(part => part.groups ?? []) })
 
-/** Arrange definitions into sections and groups. Order within a group is definition order. */
+/**
+ * The in-play sidebar's cards, top to bottom (the owner, 25 November 2026): Game, Players,
+ * World, Settings, Chat. Players and Chat are built elsewhere (Shell.ts, chat/ChatCard.ts);
+ * Settings' own top half is PerformancePanel.ts, which keeps the stable id 'performance'.
+ * Game is what you are doing now; World holds nearly every tweakable setting; Settings is
+ * this device: how the game is drawn, heard and controlled. Ids are stable: other code opens cards by them.
+ */
+/** The in-play card for this device (stable id 'performance'; was Performance, then Rendering). The owner, 25 November 2026. */
+export const SETTINGS_TITLE = 'Settings'
+export const CARD_ORDER = ['game', 'players', 'world', 'performance', 'chat'] as const
+/** Card ids that no longer exist, and the card that took over each (stored open cards, deep links). */
+export const RETIRED_CARDS: Readonly<Record<string, string>> = { you: 'game', vehicles: 'world' }
+
+/** Logical sections (cards) built from the registry, in the order shown. */
+export const SECTIONS: readonly SectionSpec[] = [
+  card({ id: 'game', title: 'Game', blurb: 'You, and the game being played.', scope: 'world', aliases: 'me', parts: [
+    // The vehicle, colours and name are drawn at the top of Me by the inspector itself.
+    { title: 'Me', groups: ['Me', 'Privacy'], ids: ['bots.playWithMe', 'audio.muted'], open: true, flat: true },
+    { title: 'Game', ids: ['game.mode', 'race.auto'], open: true, flat: true },
+  ] }),
+  card({ id: 'world', title: 'World', blurb: 'The world and everything in it. Most of it is shared with the room.', scope: 'world', aliases: 'vehicles game', parts: [
+    { title: 'This world', groups: ['World'], open: true },
+    { title: 'Time and weather', groups: ['Sun', 'Sky', 'Weather'] },
+    { title: 'Water', groups: ['Water', 'Liquid'], titles: { Water: 'Water and floating', Liquid: 'Wings in water' } },
+    { title: 'Terrain', groups: ['Terrain', 'Lava'] },
+    { title: 'Vehicles', groups: ['Buggy', 'Jet', 'Hovercraft', 'Tank', 'Zorb', 'Wheels', 'Canopy', 'Surfaces', 'Vehicle looks', 'Vehicle paint'], aliases: 'vehicles handling paint looks', titles: { 'Vehicle looks': 'Paint and looks', 'Vehicle paint': 'Paint and looks' } },
+    { title: 'Gear', groups: ['Tag beams', 'Plasma Tag', 'Gear: Yoink', 'Gear: Chaser', 'Gear: Grapple', 'Gear: Plasma Thunder', 'Gear: Impact push', 'Gear effects'], aliases: 'game', titles: { 'Gear: Yoink': 'Yoink', 'Gear: Chaser': 'Chaser', 'Gear: Grapple': 'Grapple', 'Gear: Plasma Thunder': 'Plasma Thunder', 'Gear: Impact push': 'Impact push', 'Gear effects': 'Effects' } },
+    { title: 'Bots', groups: ['Bots'], aliases: 'game' },
+    { title: 'Modes and rules', groups: ['Game', 'Tag'], aliases: 'game', titles: { Game: 'Hill and room' } },
+  ] }),
+  // Below PerformancePanel's level, Auto and fine rows, above its Diagnostics.
+  card({ id: 'performance', title: SETTINGS_TITLE, blurb: 'This device: how the game is drawn, heard and controlled. Yours only.', scope: 'client', aliases: 'performance rendering me', parts: [
+    { title: 'Graphics', groups: ['Graphics'] },
+    { title: 'Post effects', groups: ['Post'] },
+    { title: 'Light', groups: ['Light'] },
+    { title: 'Interface', groups: ['Interface', 'Chat', 'Glass', 'Clear lens'], flat: true },
+    // Sound, Camera and Controls live here, in the renamed card (the owner, 25 November 2026).
+    { title: 'Sound', groups: ['Audio', 'Adaptive score'] },
+    { title: 'Camera', groups: ['Camera'] },
+    { title: 'Controls', groups: ['Input', 'Daydream'], flat: true },
+    { title: 'Network', groups: ['Network'] },
+  ] }),
+]
+/**
+ * Shown by a custom control elsewhere, so never as a generic row too: the Players card's bot
+ * count and Connection diagnostics switch (the Players card claims bots.count with its own
+ * row; until it does, the count stays in World > Bots).
+ */
+export const SHOWN_ELSEWHERE: readonly string[] = ['hud.diagnostics']
+
+/**
+ * Settings that shape only the lobby (the galaxy, the Mira name, the opening and the lobby's
+ * music). They belong in the lobby's Settings and never appear in a card in a world. Tagged
+ * with lobbyGroup by their lanes; the id rules catch any not yet tagged.
+ */
+export function isLobbyOnly(def: Pick<PropertyDef, 'id'> & { lobbyGroup?: string }): boolean {
+  return !!def.lobbyGroup || def.id.startsWith('lobby.') || def.id.startsWith('audio.score.lobby') || def.id === 'audio.leadLobby'
+}
+
+/**
+ * Open cards stored by an earlier version: retired ids become the card that took them over,
+ * anything else that is not a string is dropped, and each id appears once (the newest place).
+ */
+export function migrateOpenCards(saved: unknown): string[] {
+  if (!Array.isArray(saved)) return []
+  const ids = saved.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length < 64).map(id => RETIRED_CARDS[id] ?? id)
+  return ids.filter((id, i) => ids.lastIndexOf(id) === i)
+}
+
+export interface GroupNode { name: string; properties: PropertyDef[] }
+export interface PartNode { title: string; open: boolean; aliases: string; flat: boolean; titles: Readonly<Record<string, string>>; groups: GroupNode[]; count: number }
+export interface SectionNode extends Omit<SectionSpec, 'parts'> { groups: readonly string[]; tree: GroupNode[]; parts: PartNode[]; count: number }
+
+/**
+ * Arrange definitions into cards, sections and groups. Order within a group is definition
+ * order. A property listed by id goes there; otherwise its group decides; a group nobody
+ * listed becomes a section of its own at the end of World (shared) or Settings (yours only).
+ * Lobby-only settings are left out: this tree is the in-play sidebar's.
+ */
 export function buildTree(defs: readonly PropertyDef[]): SectionNode[] {
-  const sections = SECTIONS.map(spec => ({ ...spec, tree: [] as GroupNode[], count: 0 }))
-  const home = (def: PropertyDef) => sections.find(s => s.groups.includes(def.group)) ?? sections.find(s => s.scope === def.scope && (s.id === 'world' || s.id === 'you'))!
+  const sections = SECTIONS.map(spec => ({ ...spec, tree: [] as GroupNode[], parts: spec.parts.map(part => ({ title: part.title, open: !!part.open, aliases: part.aliases ?? '', flat: !!part.flat, titles: part.titles ?? {}, groups: [] as GroupNode[], count: 0 })), count: 0 }))
+  const byId = new Map<string, [number, number]>(), byGroup = new Map<string, [number, number]>()
+  SECTIONS.forEach((spec, s) => spec.parts.forEach((part, p) => {
+    for (const id of part.ids ?? []) byId.set(id, [s, p])
+    for (const group of part.groups ?? []) if (!byGroup.has(group)) byGroup.set(group, [s, p])
+  }))
   for (const def of defs) {
+    if (isLobbyOnly(def) || SHOWN_ELSEWHERE.includes(def.id)) continue
     // A hidden vehicle's handling is hidden with it (src/vehicles/available.ts).
     if (def.group === 'Tank' && !isVehicleAvailable('tank')) continue
-    const section = home(def)
-    let group = section.tree.find(g => g.name === def.group)
-    if (!group) { group = { name: def.group, properties: [] }; section.tree.push(group) }
-    group.properties.push(def); section.count++
+    let at = byId.get(def.id) ?? byGroup.get(def.group)
+    if (!at) {
+      const s = sections.findIndex(section => section.id === (def.scope === 'world' ? 'world' : 'performance'))
+      let p = sections[s].parts.findIndex(part => part.title === def.group)
+      if (p < 0) { p = sections[s].parts.push({ title: def.group, open: false, aliases: '', flat: false, titles: {}, groups: [], count: 0 }) - 1 }
+      at = [s, p]
+    }
+    const section = sections[at[0]], part = section.parts[at[1]]
+    let group = part.groups.find(g => g.name === def.group)
+    if (!group) { group = { name: def.group, properties: [] }; part.groups.push(group) }
+    group.properties.push(def); part.count++; section.count++
   }
-  // Listed groups first, in their listed order; anything unlisted after them.
-  for (const section of sections) section.tree.sort((a, b) => rank(section.groups, a.name) - rank(section.groups, b.name))
-  return sections.filter(section => section.count > 0)
+  for (const section of sections) {
+    // Listed groups first, in their listed order; anything unlisted after them.
+    for (const part of section.parts) part.groups.sort((a, b) => rank(section.groups, a.name) - rank(section.groups, b.name))
+    // Game's Me section holds the vehicle and name even with no registry rows in it.
+    section.parts = section.parts.filter(part => part.count > 0 || section.id === 'game' && part.title === 'Me')
+    section.tree = section.parts.flatMap(part => part.groups)
+  }
+  return sections.filter(section => section.count > 0 || section.id === 'game')
 }
 const rank = (order: readonly string[], name: string) => { const i = order.indexOf(name); return i < 0 ? order.length : i }
 

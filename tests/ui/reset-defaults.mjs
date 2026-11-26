@@ -39,6 +39,17 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     const page = await browser.newPage(touch ? { ...devices['iPhone 14'] } : { viewport: { width: 1280, height: 800 } })
     const errors = []
     page.on('pageerror', error => errors.push(error.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
+    // The lobby first: settings that shape only the lobby live in its Settings, in the Lobby scene
+    // card (ui/lobby-scene-settings), and never in a world's panels (the sidebar consolidation).
+    // They count as homed there, and must carry the shared reset there too.
+    await page.goto(`${base}?intro=0`)
+    await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const scene = page.locator('#lobby-settings [data-section=lobby-scene]')
+    await scene.getByRole('button', { name: 'Lobby scene' }).click()
+    await scene.locator('.wi-row[data-id]').first().waitFor({ state: 'attached', timeout: 20000 })
+    const lobbyRows = await scene.locator('.wi-row[data-id]').evaluateAll(rows => rows.map(row => ({ id: row.dataset.id, reset: !!row.querySelector(':scope > button.reset-control') })))
+    assert.ok(lobbyRows.length > 0, `${mode}: the lobby's Settings shows its scene settings`)
     await page.goto(`${base}?autoplay=1&room=reset-defaults-${mode}-${Date.now()}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
@@ -48,18 +59,19 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.locator('.world-inspector').waitFor({ state: 'visible', timeout: 30000 })
 
     // ---- 1. Every setting row has a reset, and every setting has a row. ----
-    const coverage = await page.evaluate(notRows => {
+    const coverage = await page.evaluate(([notRows, lobbyRows]) => {
       // Rows from the row builder (in play and in the lobby's Settings), and controls built by
       // hand that declare the setting they set with data-setting-id. Both must carry the reset.
       const rows = [...document.querySelectorAll('.wi-row[data-id]')], built = [...document.querySelectorAll('[data-setting-id]')]
       const bare = [...rows.filter(row => !row.querySelector(':scope > button.reset-control')).map(row => row.dataset.id),
-        ...built.filter(el => !el.querySelector('button.reset-control')).map(el => el.dataset.settingId)]
-      const shown = new Set([...rows.map(row => row.dataset.id), ...built.map(el => el.dataset.settingId)])
+        ...built.filter(el => !el.querySelector('button.reset-control')).map(el => el.dataset.settingId),
+        ...lobbyRows.filter(row => !row.reset).map(row => row.id)]
+      const shown = new Set([...rows.map(row => row.dataset.id), ...built.map(el => el.dataset.settingId), ...lobbyRows.map(row => row.id)])
       const missing = mira.params.all().map(p => p.def).filter(def => !def.hidden && !notRows.includes(def.id) && !shown.has(def.id))
         // A hidden vehicle's handling is hidden with it (src/vehicles/available.ts).
         .filter(def => !(def.group === 'Tank' && !document.querySelector('[data-group="Tank"]'))).map(def => def.id)
       return { rows: rows.length, bare, missing }
-    }, [...NOT_ROWS])
+    }, [[...NOT_ROWS], lobbyRows])
     assert.ok(coverage.rows > 100, `the panels hold the settings (${coverage.rows} rows)`)
     assert.deepEqual(coverage.bare, [], 'every setting row has a reset')
     assert.deepEqual(coverage.missing, [], 'every registered setting has a row')
@@ -105,7 +117,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
 
     // ---- 6. A row does not move when its reset appears. ----
     const row = page.locator('.wi-row[data-id="paint.gloss"]')
-    await row.evaluate(r => { r.closest('.wi-card').querySelector('.wi-head').click(); r.closest('details').open = true })
+    // Paint and looks sits inside World > Vehicles (the sidebar consolidation): open the card if it
+    // is closed, then every section round the row.
+    await row.evaluate(r => { const card = r.closest('.wi-card'); if (!card.classList.contains('is-open')) card.querySelector('.wi-head').click(); for (let d = r.closest('details'); d; d = d.parentElement.closest('details')) d.open = true })
     await page.waitForTimeout(600); await row.scrollIntoViewIfNeeded()
     const boxes = () => row.evaluate(r => [r, ...r.children].map(el => { const b = el.getBoundingClientRect(); return [el.tagName, Math.round(b.x * 2) / 2, Math.round(b.y * 2) / 2, Math.round(b.width * 2) / 2, Math.round(b.height * 2) / 2] }))
     const atDefault = await boxes()
@@ -139,8 +153,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await (touch ? reset.tap() : reset.click())
     assert.equal(await page.evaluate(() => mira.params.get('paint.gloss').value), 0.42)
 
-    // ---- 5. "Reset M changes" restores its own section and nothing else. ----
-    const fold = page.locator('details.wi-group[data-group="Vehicle paint"]')
+    // ---- 5. "Reset M changes" restores its own section and nothing else. Vehicle paint shares
+    //      World > Vehicles > "Paint and looks" with Vehicle looks (the sidebar consolidation). ----
+    const fold = page.locator('details.wi-group[data-group="Paint and looks"]')
     await page.evaluate(() => { mira.params.set('paint.flakes', 1.2, 'local'); mira.params.set('paint.seams', 0.8, 'local'); mira.params.set('hud.mapNorthUp', true, 'local') })
     await page.waitForTimeout(100)
     assert.match(await fold.locator(':scope > summary > small').innerText(), /· 2 changed$/)

@@ -22,6 +22,8 @@ import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
+import type { NetClient } from '../net'
+import { botCount } from '../bots/params'
 import { vehicleDetail, type Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { params, worldNameSeed, worldSeed } from '../../shared/params'
@@ -46,7 +48,7 @@ import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
-import { MAX_NAME_LENGTH, type RaceState } from '../../shared/protocol'
+import { MAX_NAME_LENGTH, MODE_KOTH, type RaceState } from '../../shared/protocol'
 import { diagnostics, interfaceMode, mapNorthUp } from './inspector/params'
 import { resetButton } from './resetControl'
 import { InterfaceVeil, INTERFACE_KEY, nextInterfaceMode, setInterfaceMode } from './interfaceMode'
@@ -61,7 +63,7 @@ import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, p
 import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayCycle'
 import { InviteView, inviteUrl } from './InviteView'
-import { Scoreboard, parseScoreRow, type PlayerRoster } from './Scoreboard'
+import { Scoreboard, parseScoreRow, type PlayerRoster, type SessionPlayer } from './Scoreboard'
 import { markedText } from './playerMarks'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
@@ -95,6 +97,10 @@ import './pause-screen.css'
 import './card-chrome.css'
 import './bottom-stack.css'
 import './room-notice.css'
+import { PlayerPanel, type PlayerPanelActions } from './players/PlayerPanel'
+import { BanishedList, type Banish } from './players/BanishedList'
+import './players/shareLocation'
+import { shareLocation } from './players/shareLocation'
 import { DRIVE_KEYS, deliverShot, encodeShot, pausedKeyAction, shareShot, shotFileName } from './screenshot'
 import { ReportSheet, chatOnPage } from './report/ReportSheet'
 import { REPORT_ICON } from './report/sheetHtml'
@@ -221,6 +227,20 @@ export class Shell implements System {
   private inviteOpen = false
   private inviteFromGame = false
   private playerCount = 0
+  private sessionBotCount = 0
+  private sessionLines: readonly string[] = []
+  private sessionRosterKey = ''
+  private sessionPeers?: NetClient['players']
+  private sessionPlayers?: readonly SessionPlayer[]
+  private sessionBotsKey = ''
+  private readonly sessionCard: HTMLElement
+  private sessionChatUnsubscribe?: () => void
+  private readonly sessionBots: {
+    input: HTMLInputElement
+    output: HTMLOutputElement
+    minus: HTMLButtonElement
+    plus: HTMLButtonElement
+  }
   /** What had focus when the invite view opened, to return to when it closes. */
   private joinOpener?: HTMLElement
   private readonly matchHud: MatchHud
@@ -230,6 +250,14 @@ export class Shell implements System {
   private readonly panels: SlidingPanels
   private readonly board: Scoreboard
   private readonly hudBoard: Scoreboard
+  /** The player panel the Players card's rows open (src/ui/players). */
+  private playerPanel!: PlayerPanel
+  private banished!: BanishedList
+  /**
+   * What the panel does that needs the room's server (main.ts fills these in once joined);
+   * until then the moderation controls show as unavailable.
+   */
+  private playerHooks: Partial<Pick<PlayerPanelActions, 'muteForAll' | 'moderation' | 'eject' | 'botTraits' | 'setBotTrait' | 'resetBotTraits'>> = {}
   private paramPanel?: ParamPanel
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
@@ -315,9 +343,14 @@ export class Shell implements System {
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
     // The lobby's Multiplayer panel, which drew this board, is gone (the in-play board is the
-    // Players & session card's). The board stays, detached, for its join and leave messages.
+    // Players card's). The board stays, detached, for its join and leave messages.
     this.board = new Scoreboard(document.createElement('div'), text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
-    this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
+    this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {}, {
+      pick: (id, button, keyboard) => this.playerPanel.pick(id, button, keyboard),
+      hoverRow: (id, button) => this.playerPanel.hoverRow(id, button),
+      leave: () => this.playerPanel.leave(),
+      openId: () => this.playerPanel?.openId ?? null,
+    })
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
     // TAG reads the gear in hand: Plasma Tag streams while held, other gear sends on the lift,
     // and Cancel drops a charge or carry the way the in-play guide does (src/ui/tagStick.ts).
@@ -376,16 +409,59 @@ export class Shell implements System {
     this.inspector.open = false
     clipSearchResults(this.inspector.element, signal)
     const railTop = this.inspector.element.querySelector('.wi-top')!
-    // Players & session is a card like the others: same header, chevron, easing and memory.
     const players = document.createElement('div')
-    players.innerHTML = `<div class="rail-player-body" data-search="players session room invite welcome about how to play help connection diagnostics mute"><div class="card-actions rail-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div><div class="rail-universe" hidden></div>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
+    players.innerHTML = `<div class="rail-player-body" data-search="players roster room invite welcome about how to play help connection diagnostics mute bots bot count">
+      <div class="rail-universe" hidden></div>
+      <div class="rail-session-bots">
+        <div class="rail-bot-heading"><label for="session-bot-count">Bots</label><output for="session-bot-count"></output></div>
+        <div class="rail-bot-controls">
+          <button type="button" class="rail-bot-step" data-step="-1" aria-label="Fewer bots">−</button>
+          <input id="session-bot-count" type="range" aria-label="Requested bot count">
+          <button type="button" class="rail-bot-step" data-step="1" aria-label="More bots">+</button>
+        </div>
+      </div>
+      ${switchHtml('rail-diagnostics', 'Connection diagnostics')}
+      <div class="rail-banished" hidden></div>
+      <div class="card-actions rail-actions rail-session-actions"><button type="button" class="panel-action rail-invite">Invite players</button><button type="button" class="panel-action rail-about" aria-haspopup="dialog">Welcome &amp; how to play</button></div>
+    </div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
-    // The summary is read every frame while the panels show: a live collection, not a query.
-    const scoreRows = players.querySelector('.hud-scoreboard')!.getElementsByClassName('score-row')
-    this.inspector.addCard('players', 'Players & session', players, () => {
-      const count = scoreRows.length
-      return count > 1 ? `${count} players` : count ? 'Just you' : ''
-    }, { after: 'game' })
+    // Players-card rows open the player panel, beside the sidebar (src/ui/players).
+    this.playerPanel = new PlayerPanel(this.element, () => this.inspector.element, {
+      muteForMe: (id, muted) => this.sessionNet()?.chat.mute(id, muted),
+      muteForAll: (id, muted) => this.playerHooks.muteForAll?.(id, muted),
+      moderation: id => this.playerHooks.moderation?.(id) ?? { ok: false, reason: 'unknown' },
+      eject: (id, stop) => this.playerHooks.eject?.(id, stop),
+      botTraits: id => this.playerHooks.botTraits?.(id) ?? null,
+      setBotTrait: (id, trait, value) => this.playerHooks.setBotTrait?.(id, trait, value),
+      resetBotTraits: (id, traits) => this.playerHooks.resetBotTraits?.(id, traits),
+      sharesLocation: () => shareLocation.value,
+      phone: () => matchMedia(PHONE_SIDEBAR).matches,
+      changed: () => this.hudBoard.syncExpanded(),
+    })
+    this.playerPanel.setRoster(() => this.sessionPlayers)
+    this.banished = new BanishedList(players.querySelector<HTMLElement>('.rail-banished')!)
+    const botControls = players.querySelector<HTMLElement>('.rail-session-bots')!
+    const botInput = botControls.querySelector('input')!
+    const [minus, plus] = botControls.querySelectorAll('button')
+    // The bot count's only control in play, so it carries the shared reset (resetControl.ts), as
+    // Connection diagnostics does; a room setting, so the host's lock applies to it too.
+    this.sessionBotsReset = resetButton(() => { if (canEditWorld()) this.setRequestedBots(String(botCount.def.default)) })
+    botControls.dataset.settingId = botCount.def.id; botControls.classList.add('has-reset'); botControls.append(this.sessionBotsReset.element)
+    this.sessionBots = { input: botInput, output: botControls.querySelector('output')!, minus, plus }
+    botInput.min = String(botCount.def.min)
+    botInput.max = String(botCount.def.max)
+    botInput.step = String(botCount.def.step)
+    botInput.addEventListener('input', () => this.setRequestedBots(botInput.value), { signal })
+    for (const button of [minus, plus]) {
+      button.addEventListener('click', () => this.setRequestedBots(botCount.value + Number(button.dataset.step) * Number(botInput.step)), { signal })
+    }
+    const unsubscribeBots = params.onChange(id => { if (id === botCount.def.id) this.syncSessionBots() })
+    signal.addEventListener('abort', unsubscribeBots)
+    this.syncSessionBots()
+    this.sessionCard = this.inspector.addCard('players', 'Players', players, () => {
+      const people = this.playerCount, bots = this.sessionBotCount
+      return people || bots ? `${people} ${people === 1 ? 'player' : 'players'}, ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''
+    }, { after: 'game', owns: () => [botCount.def.id, diagnostics.def.id] })
     // Performance follows World; its controls remain part of the searchable card stack.
     if (game.quality) game.quality.manualChange = (level, apply) => {
       if (!this.playing || this.transitioning) { apply(); return }
@@ -415,6 +491,8 @@ export class Shell implements System {
       quality: this.game.quality, host: this.hostControls, build,
       // The card and a sheet never show together: the card takes over from an open sheet.
       opening: () => { for (const sheet of this.lobbySheets) sheet.close(false) },
+      canReplayOpening: () => !!this.galaxy && !this.playing && !this.dropping && this.panels.active === 'index' && levelNumber(graphicsLevel.value) > 0,
+      replayOpening: mode => this.galaxy?.replayOpening(mode),
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock, this.lobbySettings.versionDock)
@@ -585,7 +663,7 @@ export class Shell implements System {
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
-    this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
+    this.element.querySelector('#bots-count')!.addEventListener('input', event => this.setRequestedBots((event.target as HTMLInputElement).value), { signal })
     this.element.querySelector('#bots-keep')!.addEventListener('change', event => { if (canEditWorld()) params.set('bots.keepCount', (event.target as HTMLInputElement).checked) }, { signal })
     // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
     const reset = this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!
@@ -846,9 +924,9 @@ export class Shell implements System {
       const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
       return `${currentWorldName()} · ${currentPlanet().label} · ${time}`
     }
-    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${modeName(playing)}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
-    if (id === 'you') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return `${this.playerName} · ${PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? ''}` }
-    return id === 'vehicles' ? 'Handling and tuning' : ''
+    // Game: who you are and what is being played, "Ada · Buggy · Explore".
+    if (id === 'game') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; const playing = Number(params.get('game.mode')?.value ?? 2); return [this.playerName, PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? '', modeName(playing)].filter(Boolean).join(' · ') }
+    return ''
   }
   /**
    * Change vehicle in play. The game builds its vehicle once at start, so this saves the
@@ -1339,7 +1417,7 @@ export class Shell implements System {
   /**
    * One calm line about where the player is, with round pills, in the bottom stack (bottom-stack.css,
    * order 0: the top of the column, so nothing already there moves). It fades in, stays 20 seconds
-   * and goes; the Players & session card keeps the same actions (setUniverse).
+   * and goes; the Players card keeps the same actions (setUniverse).
    */
   showRoomNotice(text: string, actions: { label: string; run(): void }[]): void {
     const notice = this.roomNotice ??= document.createElement('aside')
@@ -1361,7 +1439,7 @@ export class Shell implements System {
     this.roomNoticeTimer = setTimeout(() => { notice.hidden = true }, 20000)
   }
   /**
-   * The Players & session card's room block. In the public room: Enter a parallel universe and
+   * The Players card's room block. In the public room: Enter a parallel universe and
    * what that is. In a parallel universe: that it is one, Copy link and Return to the main world.
    */
   setUniverse(state: { kind: 'public'; enter(): void } | { kind: 'parallel'; copy(): void; back(): void } | null): void {
@@ -1480,6 +1558,7 @@ export class Shell implements System {
     const wanted = this.panelsWanted
     if (this.inspector.open !== wanted) {
       this.inspector.hideTooltip(); this.inspector.open = wanted
+      if (!wanted) this.playerPanel?.close(false)
       // Phones fade Show panels out as the panels grow from it (phone-panels.css).
       this.element.classList.toggle('is-panels', wanted)
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
@@ -1548,8 +1627,10 @@ export class Shell implements System {
   private applyPause(paused: boolean, reason: 'user' | 'hidden' | null): void {
     if (paused) this.audio.pause(0.5); else this.audio.resume(0.3)
     const user = paused && reason === 'user'
-    if (user === this.userPaused) return
+    const changed = user !== this.userPaused
     this.userPaused = user
+    this.syncSessionRoster(true)
+    if (!changed) return
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
     // The sidebar's Pause shows play while paused, and resumes.
@@ -1683,10 +1764,12 @@ export class Shell implements System {
     // Space and Enter, and focus rests on one after any click on the panels.
     const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || element.closest('[role=listbox]') !== null)
     // The vehicle picker owns the arrow keys while it has focus (a radiogroup), as a list does.
-    const typing = field(event.target) || field(document.activeElement) || (event.target instanceof Element && event.target.closest('[role=radiogroup]') !== null)
+    const typing = field(event.target) || field(document.activeElement) || (event.target instanceof Element && event.target.closest('[role=radiogroup], [role=slider]') !== null)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
+      // The eject dialog, then the player panel, close before Escape frees the cursor or pauses.
+      if (this.playerPanel?.escape()) { event.preventDefault(); event.stopImmediatePropagation(); return }
       // Escape in a text field only leaves the field (chat closes itself): it takes another to
       // pause, and the interface mode stays as it was.
       const target = event.target
@@ -2402,12 +2485,125 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
-  /** Who is in the room, as names are shown (main.ts): the rows, the match board and toasts mark bots from it. */
-  setPlayerRoster(roster: PlayerRoster): void { this.roster = roster; this.hudBoard.setRoster(roster); this.matchHud.setRoster(roster) }
+  /**
+   * The room's side of the player panel (main.ts, once joined): mute for everyone, who may
+   * moderate whom, eject with a banish, bot traits. Call again with {} on leaving.
+   */
+  setPlayerHooks(hooks: Shell['playerHooks']): void {
+    this.playerHooks = hooks
+    this.syncSessionRoster(true)
+  }
+  /** The room's active banishes, for moderators (an empty list hides the Banished fold). */
+  setBanishes(list: readonly Banish[], lift: ((id: string) => void) | null): void { this.banished.set(list, lift) }
+  /**
+   * The room's host changed (the server's 'game' host event): one clear line in the bottom
+   * stack. `moderates` is whether the new host may mute and eject in this kind of world.
+   */
+  announceHost(name: string, self: boolean, moderates: boolean): void {
+    this.showRoomNotice(self
+      ? `You are now the host of this world.${moderates ? ' You can mute and eject players.' : ''}`
+      : `${name} is now the host.`, [])
+  }
+  /**
+   * This player was ejected (the server closed the socket): back to the lobby, with one clear
+   * line saying who did it and when they may return.
+   */
+  ejected(by: string, banish: string, seconds: number | null): void {
+    const when = banish === 'none' ? 'You can go back in any time.'
+      : seconds === null ? 'You cannot return to it.'
+      : `You can return in ${seconds >= 3600 ? `${Math.round(seconds / 3600)} hours` : `${Math.max(1, Math.round(seconds / 60))} minutes`}.`
+    this.playerPanel?.close(false)
+    this.showRoomNotice(`You were ejected from this world by ${by}. ${when}`, [])
+    if (this.started) void this.ascent()
+  }
+  /** Who is in the room, as names are shown (main.ts). */
+  setPlayerRoster(roster: PlayerRoster): void {
+    this.roster = roster
+    this.matchHud.setRoster(roster)
+    this.sessionChatUnsubscribe?.()
+    this.sessionChatUnsubscribe = this.sessionNet()?.chat.onChange(() => this.syncSessionRoster(true))
+    this.syncSessionRoster(true)
+  }
   private roster: PlayerRoster = () => []
-  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {miraNet?:{players?:Map<number,{bot?:boolean}>}}).miraNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
-    // The status arrives every frame; the invite only depends on it through the player count.
-    if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
+
+  private sessionNet(): NetClient | undefined {
+    return (window as unknown as { miraNet?: NetClient }).miraNet
+  }
+
+  private setRequestedBots(value: number | string): void {
+    // The Game card's world parameter uses the same host lock and registry path.
+    if (canEditWorld()) params.set(botCount.def.id, value)
+    this.syncSessionBots()
+  }
+
+  private sessionBotsReset?: ReturnType<typeof resetButton>
+  private syncSessionBots(): void {
+    const { input, output, minus, plus } = this.sessionBots
+    const count = botCount.value, editable = canEditWorld()
+    const key = `${count}:${this.sessionBotCount}:${editable}`
+    if (input.value !== String(count)) input.value = String(count)
+    if (key === this.sessionBotsKey) return
+    this.sessionBotsKey = key
+    const label = count === this.sessionBotCount ? String(count) : `${count} requested · ${this.sessionBotCount} in room`
+    if (output.textContent !== label) output.textContent = label
+    input.disabled = !editable
+    output.classList.toggle('is-disabled', !editable)
+    this.sessionBotsReset?.set({ changed: editable && count !== botCount.def.default, defaultText: String(botCount.def.default), name: 'Bots' })
+    minus.disabled = !editable || count <= Number(input.min)
+    plus.disabled = !editable || count >= Number(input.max)
+  }
+
+  private syncSessionRoster(force = false): void {
+    const net = this.sessionNet()
+    // Ping and delay move independently of the roster. Keep stable identities and marks until
+    // its row text or membership changes; pause and chat settings can refresh it independently.
+    const rows = this.sessionLines.filter(line => /^([ >]) /.test(line)).join('\n')
+    const peers = net?.connected ? net.players : undefined
+    const key = `${peers ? net?.id : ''}\n${rows}`
+    let membershipChanged = peers?.size !== this.sessionPeers?.size
+    if (!membershipChanged && peers) {
+      for (const [id, peer] of peers) {
+        if (this.sessionPeers?.get(id) !== peer) { membershipChanged = true; break }
+      }
+    }
+    if (membershipChanged) this.sessionPeers = peers && new Map(peers)
+    if (force || membershipChanged || key !== this.sessionRosterKey) {
+      this.sessionRosterKey = key
+      this.refreshSessionPlayers(net)
+    }
+    this.hudBoard.setStatus(this.sessionLines, this.sessionPlayers,
+      diagnostics.value && this.inspector.open && this.sessionCard.classList.contains('is-open'))
+    this.syncSessionBots()
+  }
+
+  private refreshSessionPlayers(net: NetClient | undefined): void {
+    let players: SessionPlayer[] | undefined
+    if (net?.connected) {
+      players = this.roster().map(player => {
+        const self = player.id === net.id
+        const king = net.mode === MODE_KOTH && player.id === net.game.koth.holder
+        return {
+          ...player, self, king, host: player.id === net.game.host,
+          score: net.game.scores[player.id] ?? 0,
+          it: king || (net.mode !== MODE_KOTH && player.id === net.game.it),
+          paused: !player.bot && (self ? (this.pauseControl?.paused ?? this.userPaused) : net.pausedOf(player.id)),
+          muted: !self && net.chat.muted.has(player.id),
+        }
+      }).sort((a, b) => Number(a.bot) - Number(b.bot) ||
+        (net.players.get(a.id)?.slot ?? 0) - (net.players.get(b.id)?.slot ?? 0) || a.id - b.id)
+    }
+    this.sessionPlayers = players
+    this.playerPanel?.update(players, id => this.hudBoard.nameButton(id))
+    this.sessionBotCount = players?.filter(player => player.bot).length ?? 0
+    const people = players ? players.length - this.sessionBotCount : this.sessionLines.filter(line => parseScoreRow(line)).length
+    if (people !== this.playerCount) { this.playerCount = people; this.updateInvite() }
+  }
+
+  setStatus(lines: readonly string[]): void {
+    this.sessionLines = lines
+    this.board.setStatus(lines)
+    this.syncSessionRoster()
+  }
   /**
    * The bearing the compass readout shows, the same as the minimap's top: the camera's
    * heading when the map is heading up, your vehicle's when it is north up.
@@ -2494,6 +2690,7 @@ export class Shell implements System {
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }
   }
   dispose(): void {
+    this.sessionChatUnsubscribe?.()
     this.abort.abort(); this.chipSizes.disconnect(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.aboutSheet.dispose(); this.updatesSheet.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }

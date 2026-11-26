@@ -10,7 +10,7 @@ import '../../tools/lib/legacy-env.mjs' // legacy environment names, see docs/NA
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 
-const SECTIONS = ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat']
+const SECTIONS = ['game', 'players', 'world', 'performance', 'chat']
 const openSections = page => page.evaluate(() => [...document.querySelectorAll('.world-inspector .wi-card.is-open')].map(c => c.dataset.section))
 const settled = page => page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations().some(a => a.playState === 'running'))
 
@@ -53,7 +53,8 @@ for (const mode of ['desktop', 'phone']) {
     // Search finds each section, and the vehicle controls by what a player would type.
     const header = rail.locator('.rail-command'), search = header.locator('.wi-search')
     for (const section of SECTIONS) {
-      await search.fill(section === 'players' ? 'Players' : section === 'you' ? 'Me' : section)
+      // Old card names still find the card that took them over.
+      await search.fill(section === 'players' ? 'Players' : section)
       assert.ok(await page.locator(`.wi-cards > [data-section=${section}]`).isVisible(), `${mode}: ${section} is found by search`)
     }
     await search.fill('vehicle')
@@ -74,16 +75,17 @@ for (const mode of ['desktop', 'phone']) {
     // A card opens from its header. On a desktop it is still open after the panels close and
     // reopen; on a phone Show panels always opens the list (the owner, 19 November 2026,
     // Inspector.open), so there the check is that the player's own controls close and reopen them.
-    await press(page.locator('.wi-cards > [data-section=you] > .wi-head')); await settled(page)
+    // World starts closed; Game starts open for a new desktop player.
+    await press(page.locator('.wi-cards > [data-section=world] > .wi-head')); await settled(page)
     const open = await openSections(page)
-    assert.ok(open.includes('you'), `${mode}: a card opens from its header (${JSON.stringify(open)})`)
+    assert.ok(open.includes('world'), `${mode}: a card opens from its header (${JSON.stringify(open)})`)
     if (touch) { await closePanels(); await openPanels() }
     else {
       await page.evaluate(() => { const i = mira.shell.inspector; i.open = false; i.open = true }); await settled(page)
       assert.deepEqual(await openSections(page), open, `${mode}: open cards survive closing the panels`)
     }
 
-    // A bot's row in Players & session carries the bot mark, and no row spells out "bot".
+    // A bot's row in Players carries the bot mark, and no row spells out "bot".
     if (!touch) {
       await page.waitForFunction(() => [...(window.miraNet?.players?.values() ?? [])].some(p => p.bot), null, { timeout: 60000 })
       await page.evaluate(() => mira.shell.inspector.revealCard('players')); await settled(page)
@@ -91,7 +93,7 @@ for (const mode of ['desktop', 'phone']) {
         const bots = new Set([...miraNet.players.values()].filter(p => p.bot).map(p => miraNet.displayName(p.id)))
         return [...document.querySelectorAll('.wi-card[data-section=players] .score-row')].map(r => { const n = r.querySelector('.score-name'); return { bot: bots.has(n.dataset.name ?? n.title), mark: !!n.querySelector('svg.bot-mark[aria-label=Bot]'), text: r.textContent } })
       })
-      assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players & session (${JSON.stringify(rows)})`)
+      assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players (${JSON.stringify(rows)})`)
       for (const r of rows) assert.equal(r.mark, r.bot, `${mode}: the bot mark is on bots' rows only (${JSON.stringify(r)})`)
       assert.ok(rows.every(r => !/\bbot\b/i.test(r.text)), `${mode}: no row spells out "bot"`)
     }
@@ -101,15 +103,15 @@ for (const mode of ['desktop', 'phone']) {
     // and every open group closed (the Game card's Bots, for one).
     // Desktop: a phone shows one card alone, and the rebuild that closed the groups is the same code there.
     if (!touch) {
-    await page.evaluate(() => mira.shell.inspector.revealCard('game')); await settled(page)
-    const bots = () => page.evaluate(() => { const g = document.querySelector('.wi-card[data-section=game]'); return { card: g.classList.contains('is-open'), group: g.querySelector('.wi-group[data-group=Bots]')?.open } })
-    await page.evaluate(() => { document.querySelector('.wi-card[data-section=game] .wi-group[data-group=Bots]').open = true })
+    await page.evaluate(() => mira.shell.inspector.revealCard('world')); await settled(page)
+    const bots = () => page.evaluate(() => { const g = document.querySelector('.wi-card[data-section=world]'); return { card: g.classList.contains('is-open'), group: g.querySelector('.wi-group[data-group=Bots]')?.open } })
+    await page.evaluate(() => { document.querySelector('.wi-card[data-section=world] .wi-group[data-group=Bots]').open = true })
     const style = await page.evaluate(() => mira.params.get('hud.glass').value)
     for (const value of [0, 1, 2, style]) {
       await page.evaluate((v) => mira.params.set('hud.glass', v, 'local'), value)
       await page.waitForFunction(() => mira.params.get('glass.thickness') !== undefined || mira.params.get('hud.glass').value !== 0, null, { timeout: 20000 })
       await page.waitForTimeout(400)
-      assert.deepEqual(await bots(), { card: true, group: true }, `${mode}: the Game card and its Bots group stay open when Style becomes ${value}`)
+      assert.deepEqual(await bots(), { card: true, group: true }, `${mode}: the World card and its Bots section stay open when Style becomes ${value}`)
     }
     }
 

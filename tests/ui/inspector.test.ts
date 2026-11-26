@@ -12,20 +12,21 @@ const values = new Map<string, number | boolean>(DEFS.map(d => [d.id, d.default]
 describe('the inspector tree', () => {
   const tree = buildTree(DEFS)
   it('puts every property in exactly one logical section', () => {
-    expect(tree.map(s => s.id)).toEqual(['you', 'game', 'vehicles', 'world'])
-    expect(tree[0].title).toBe('Me')
+    expect(tree.map(s => s.id)).toEqual(['game', 'world', 'performance'])
+    expect(tree[0].title).toBe('Game')
     expect(tree.reduce((n, s) => n + s.count, 0)).toBe(DEFS.length)
     expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toContain('Sky')
   })
   it('finds a home for groups nobody listed, by who they affect', () => {
-    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toEqual(['World', 'Sun', 'Sky', 'Brand new group'])
-    expect(tree.find(s => s.id === 'you')!.tree.map(g => g.name)).toEqual(['Camera', 'Another new group'])
+    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toEqual(['World', 'Sun', 'Sky', 'Buggy', 'Bots', 'Brand new group'])
+    expect(tree.find(s => s.id === 'performance')!.tree.map(g => g.name)).toEqual(['Camera', 'Another new group'])
+    expect(tree.find(s => s.id === 'world')!.parts.at(-1)!.title).toBe('Brand new group')
   })
   it('nests game and sky groups without duplicating or changing their scopes', () => {
     const groups = ['Game', 'Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather']
     const tree = buildTree(groups.map((group, i) => def(`nested.${i}`, group, 'world', 1)))
-    expect(tree.find(s => s.id === 'game')!.tree.map(g => g.name)).toEqual(groups.slice(0, 4))
-    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toEqual(groups.slice(4))
+    const world = tree.find(s => s.id === 'world')!
+    expect(world.parts.map(p => [p.title, p.groups.map(g => g.name)])).toEqual([['Time and weather', ['Sun', 'Sky', 'Weather']], ['Vehicles', ['Zorb']], ['Gear', ['Tag beams']], ['Modes and rules', ['Game', 'Tag']]])
     expect(tree.flatMap(s => s.tree.flatMap(g => g.properties)).every(p => p.scope === 'world')).toBe(true)
     expect(tree.reduce((n, s) => n + s.count, 0)).toBe(groups.length)
   })
@@ -61,7 +62,7 @@ describe('a world as JSON', () => {
   })
   it('accepts a bare object of values, and a personal section only when allowed', () => {
     expect(parseWorld('{"bots.count":3}', DEFS).ok).toBe(true)
-    const you = buildTree(DEFS).find(s => s.id === 'you')!, json = JSON.stringify(exportSection(you, id => values.get(id)))
+    const you = buildTree(DEFS).find(s => s.id === 'performance')!, json = JSON.stringify(exportSection(you, id => values.get(id)))
     const refused = parseWorld(json, DEFS); expect(refused.ok).toBe(false)
     const allowed = parseWorld(json, DEFS, { personal: true }); expect(allowed.ok && allowed.entries.map(e => e.id)).toEqual(['camera.sensitivity', 'novel.mine'])
   })

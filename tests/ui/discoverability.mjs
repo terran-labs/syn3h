@@ -42,12 +42,13 @@ for(const mode of ['desktop','phone']){
   assert.ok(sockets.some(url=>url.endsWith(`/ws?room=${room}`)),'connected to its own room')
   if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
   assert.equal(await page.locator('.wi-quick, .gear-select, [data-wi=show-gi]').count(),0,'the redundant quick row and its controls are gone')
-  const card=page.locator('.wi-card[data-section=you]')
-  await card.locator('.wi-head').click()
+  const card=page.locator('.wi-card[data-section=game]')
+  // Game starts open for a new desktop player.
+  if(!(await card.evaluate(c=>c.classList.contains('is-open'))))await card.locator('.wi-head').click()
   // The vehicle choice is a segmented picker (a radio group); the checked segment is its tab stop.
   const vehicle=card.getByRole('radiogroup',{name:'Vehicle',exact:true})
   await vehicle.scrollIntoViewIfNeeded()
-  assert.equal(await card.locator('.wi-body > :first-child').evaluate(el=>el.classList.contains('wi-vehicle')),true,'vehicle controls lead their panel')
+  assert.equal(await card.locator('.wi-group[data-group=Me] > summary + *').evaluate(el=>el.classList.contains('wi-vehicle')),true,'vehicle controls lead the Me section')
   // Each vehicle choice can be tapped: at least 44 px in both directions (the touch-target floor).
   for(const box of await vehicle.getByRole('radio').evaluateAll(es=>es.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height}})))assert.ok(box.w>=44&&box.h>=44,`each vehicle choice is a full touch target (${box.w}x${box.h})`)
   assert.equal(await page.getByRole('combobox',{name:'Gear',exact:true}).count(),0)
@@ -108,9 +109,9 @@ for(const mode of ['desktop','phone']){
   assert.equal(await page.locator('.wi-vehicle-picker').count(),1)
   assert.equal(await page.locator('.wi-swatch input').count(),2)
   await card.locator('.wi-head .wi-sum').evaluate(el=>el.scrollIntoView({block:'nearest'}))
-  await page.waitForFunction(()=>document.querySelector('.wi-card[data-section=you] .wi-sum').textContent.endsWith(' · Buggy'))
+  await page.waitForFunction(()=>document.querySelector('.wi-card[data-section=game] .wi-sum').textContent.includes(' · Buggy'))
   const gi=page.locator('.wi-card[data-section=performance] .wi-row[data-id="post.gi"]')
-  assert.equal(await gi.count(),1,'GI already belongs to Performance')
+  assert.equal(await gi.count(),1,'GI already belongs to Settings')
   await vehicle.scrollIntoViewIfNeeded()
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-vehicles.png`})
   assert.deepEqual(errors,[])

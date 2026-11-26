@@ -25,7 +25,7 @@ for (const mode of ['desktop', 'phone']) {
   const surfaces = '.wi-cards > [data-section]'
   const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', open: el.classList.contains('is-open'), background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
   const checkSurfaces = (rows, off = false) => {
-   assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'chat'])
+   assert.deepEqual(rows.map(r => r.card), ['game', 'players', 'world', 'performance', 'chat'])
    for (const row of rows) assert.equal(row.blur, off || !row.open ? 'none' : 'blur(4px)', row.card)
   }
   const results = []
@@ -54,25 +54,25 @@ for (const mode of ['desktop', 'phone']) {
     const cards = await readSurfaces(); console.log(JSON.stringify({ mode, planet, cards })); checkSurfaces(cards)
     assert.equal(await rail.locator('[data-section=sky]').count(), 0)
     for (const group of ['Tag', 'Tag beams', 'Zorb']) {
-     const fold = game.locator(`[data-group="${group}"]`)
+     const fold = rail.locator(`[data-section=world] [data-group="${group}"]`)
      assert.equal(await fold.count(), 1); assert.equal(await fold.evaluate(el => el.open), false)
     }
-    await page.evaluate(() => mira.shell.inspector.revealCard('you'))
-    const me = rail.locator('[data-section=you]'); await me.locator('.wi-head').scrollIntoViewIfNeeded()
-    assert.equal(await me.locator('h3').textContent(), 'Me')
+    await page.evaluate(() => mira.shell.inspector.revealCard('game'))
+    const me = rail.locator('[data-section=game]'); await me.locator('.wi-head').scrollIntoViewIfNeeded()
+    assert.equal(await me.locator('h3').textContent(), 'Game')
     assert.equal(await me.locator('.wi-swatch').count(), 2)
     for (const swatch of await me.locator('.wi-swatch').all()) { const r = await swatch.boundingBox(); assert.ok(r.width >= 44 && r.height >= 44) }
     await page.screenshot({ path: `${out}/${mode}-${planet}-me.png` })
    }
    if (baseline) {
-    await page.evaluate(() => mira.shell.inspector.revealCard('vehicles'))
-    await rail.locator('[data-section=vehicles] .wi-head').scrollIntoViewIfNeeded()
+    await page.evaluate(() => mira.shell.inspector.revealCard('world'))
+    await rail.locator('[data-section=world] .wi-head').scrollIntoViewIfNeeded()
     await page.screenshot({ path: `${out}/${mode}-${planet}-vehicle.png` })
    }
    results.push({ planet, hour, bounds, frost })
   }
   if (!baseline) {
-   const gameTint = (await readSurfaces()).find(row => row.card === 'you').background
+   const gameTint = (await readSurfaces()).find(row => row.card === 'game').background
    const filters = await page.evaluate(() => {
     const root = document.documentElement, shell = document.querySelector('.mira-shell')
     const card = shell.querySelector('.wi-card.is-open')
@@ -97,7 +97,7 @@ for (const mode of ['desktop', 'phone']) {
    assert.deepEqual([filters.shed, filters.driveShed], ['none', 'none'])
    await page.evaluate(() => mira.game.quality.setLevel(0))
    await page.waitForFunction(() => document.documentElement.dataset.gfx === '0' && document.querySelector('.mira-shell').dataset.uiFrost === 'off')
-   const minimal = await rail.locator('[data-section=you]').evaluate(el => { const s = getComputedStyle(el); return { background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } })
+   const minimal = await rail.locator('[data-section=game]').evaluate(el => { const s = getComputedStyle(el); return { background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } })
    assert.equal(minimal.blur, 'none'); assert.equal(minimal.background, gameTint)
    const cards = await readSurfaces(); console.log(JSON.stringify({ mode, minimalCards: cards })); checkSurfaces(cards, true)
    await page.screenshot({ path: `${out}/${mode}-minimal.png` })

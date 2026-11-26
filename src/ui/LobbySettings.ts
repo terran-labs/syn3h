@@ -12,6 +12,7 @@
  *             other audio settings (engines, wind, ground, other vehicles) act only in a world.
  *   Play      "Bots may play with me": personal, and sent to a room as you join it.
  *   Room      the host's lock and reset, only while there is a room to act on.
+ *   Scene     advanced groups for the galaxy, the Mira name, the opening and lobby music.
  *
  * Left out, because they act only in a world and the in-game panel has them: touch hand, look
  * sensitivity, daydream, units, presentation mode, the advanced audio mix, name and colours.
@@ -26,7 +27,7 @@ import { CREATOR_KEY_EVENT, creatorKey } from '../core/creatorKey'
 import { creatorKeyRowVisible } from './creatorReveal'
 import { PORTAL_TITLE, creatorKeyRow } from './creatorKeyRow'
 import { ACCORDION_ARROW } from './accordionArrow'
-import { params } from '../../shared/params'
+import { params, type LobbySettingsGroup } from '../../shared/params'
 import type { QualitySource } from '../core/quality'
 import { createFrozenResourceResolver } from '../core/frozenResources'
 import { Inspector } from './inspector/Inspector'
@@ -38,6 +39,10 @@ import './lobby-settings.css'
 import { CARD_CLOSE } from './cardClose'
 import { channel, type Channel } from '../core/channel'
 import { communityNav } from './communityLinks'
+import { PLACEMENTS, placementOf } from './brand/wordmarkScene'
+import { introMode } from './galaxy/opening'
+
+const SCENE_GROUPS = ['Sun', 'Planets', 'Orbits', 'Camera', 'Mira name', 'Opening', 'Lobby music'] as const satisfies readonly LobbySettingsGroup[]
 
 /** Sound settings shown before the Advanced fold, in this order. */
 export const SOUND_MAIN = ['audio.music', 'audio.master', 'audio.muted'] as const
@@ -113,6 +118,8 @@ export interface LobbySettingsOptions {
   cue?(): void
   /** Called as the card opens: the shell closes any lobby sheet. */
   opening?(): void
+  canReplayOpening?(): boolean
+  replayOpening?(mode: number): void
 }
 
 
@@ -144,6 +151,8 @@ export class LobbySettings {
   private shown = false
   private closing?: Animation
   private roomCard?: HTMLElement
+  private readonly replay = document.createElement('button')
+  private readonly reducedMotion = matchMedia('(prefers-reduced-motion: reduce)')
 
   constructor(private readonly parent: HTMLElement, private readonly options: LobbySettingsOptions = {}) {
     const signal = this.abort.signal
@@ -239,6 +248,38 @@ export class LobbySettings {
       const room = document.createElement('div'); room.append(options.host)
       this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
+    const replayActions = document.createElement('div')
+    replayActions.className = 'wi-actions'
+    this.replay.type = 'button'
+    this.replay.textContent = 'Replay opening'
+    this.replay.addEventListener('click', () => {
+      if (this.replay.disabled) return
+      this.close()
+      this.options.replayOpening?.(Math.round(introMode.value))
+    }, { signal })
+    replayActions.append(this.replay)
+    const replayNote = document.createElement('p')
+    replayNote.className = 'wi-blurb'
+    replayNote.textContent = 'Replay the opening visuals for this visit.'
+    const scene = document.createElement('div')
+    this.inspector.addCard('lobby-scene', 'Lobby scene', scene, () => '', {
+      fill: () => {
+        const defs = params.all().map(param => param.def).filter(def => def.scope === 'client' && !def.hidden)
+        const groups = SCENE_GROUPS.map(group => {
+          const rows = defs.filter(def => def.lobbyGroup === group)
+          const fold = this.inspector.fold(group, rows.length, false)
+          fold.classList.add('lobby-scene-group')
+          fold.append(...rows.map(def => this.sceneRow(def)))
+          if (group === 'Opening') fold.append(replayNote, replayActions)
+          return fold
+        })
+        scene.replaceChildren(...groups)
+      },
+    })
+    const syncReplay = () => this.syncReplay()
+    signal.addEventListener('abort', params.onChange(id => { if (id === introMode.def.id) syncReplay() }), { once: true })
+    this.reducedMotion.addEventListener('change', syncReplay, { signal })
+
     // Creator key, last and collapsed: the creator's way to sign in by pasting the key
     // (creatorKeyRow.ts). Not there at all for anyone else: only with a key stored on this
     // device, or after the hidden gesture on the version label (creatorReveal.ts).
@@ -274,6 +315,23 @@ export class LobbySettings {
         event.preventDefault(); event.stopImmediatePropagation(); next?.focus()
       }
     }, { capture: true, signal })
+  }
+
+  private sceneRow(def: PropertyDef): HTMLElement {
+    const choices = def.id === 'lobby.wordmark' ? {
+      name: 'Name placement',
+      options: PLACEMENTS.map(([value, label]) => ({ value, label: value === 4 ? 'Distant rays' : label })),
+      selected: placementOf,
+    } : def.id === introMode.def.id ? {
+      name: 'Opening preview',
+      options: [{ value: 0, label: 'Off' }, { value: 2, label: 'On' }],
+      selected: (value: number) => Math.round(value) > 0 ? 2 : 0,
+    } : undefined
+    return this.inspector.row(def, { choices })
+  }
+
+  private syncReplay(): void {
+    this.replay.disabled = this.reducedMotion.matches || introMode.value < 0.5 || !this.options.canReplayOpening?.()
   }
 
   get isOpen(): boolean { return this.shown }
@@ -372,6 +430,7 @@ export class LobbySettings {
     if (!this.shown) return
     // Card styles set display, so the attribute alone would not hide it.
     if (this.roomCard) { const hide = !(this.options.inRoom?.() ?? true); if (this.roomCard.hidden !== hide) { this.roomCard.hidden = hide; this.roomCard.style.display = hide ? 'none' : '' } }
+    this.syncReplay()
     this.inspector.update()
   }
 

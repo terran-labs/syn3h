@@ -11,12 +11,12 @@ import { defineParam } from '../../../shared/params'
 
 const P = { group: 'Graphics', scope: 'client' } as const
 /** Seconds without input before the planets start to breathe. */
-export const idleAfter = defineParam({ ...P, id: 'lobby.idleAfter', label: 'Lobby at rest: seconds before planets pulse (0 never)', default: 8, min: 0, max: 60, step: 1 })
+export const idleAfter = defineParam({ ...P, id: 'lobby.idleAfter', lobbyGroup: 'Planets', label: 'Lobby at rest: seconds before planets pulse (0 never)', default: 8, min: 0, max: 60, step: 1 })
 /** The range each planet's period is drawn from, in seconds. */
-export const idlePeriodMin = defineParam({ ...P, id: 'lobby.idlePeriodMin', label: 'Lobby at rest: shortest pulse period (s)', default: 6, min: 2, max: 30, step: 0.5 })
-export const idlePeriodMax = defineParam({ ...P, id: 'lobby.idlePeriodMax', label: 'Lobby at rest: longest pulse period (s)', default: 14, min: 2, max: 40, step: 0.5 })
+export const idlePeriodMin = defineParam({ ...P, id: 'lobby.idlePeriodMin', lobbyGroup: 'Planets', label: 'Lobby at rest: shortest pulse period (s)', default: 6, min: 2, max: 30, step: 0.5 })
+export const idlePeriodMax = defineParam({ ...P, id: 'lobby.idlePeriodMax', lobbyGroup: 'Planets', label: 'Lobby at rest: longest pulse period (s)', default: 14, min: 2, max: 40, step: 0.5 })
 /** A pulse's peak against a real hover's full glow: a little under, so hovering still reads stronger. */
-export const idlePeak = defineParam({ ...P, id: 'lobby.idlePeak', label: 'Lobby at rest: pulse peak (share of hover)', default: 0.8, min: 0, max: 1, step: 0.05 })
+export const idlePeak = defineParam({ ...P, id: 'lobby.idlePeak', lobbyGroup: 'Planets', label: 'Lobby at rest: pulse peak (share of hover)', default: 0.8, min: 0, max: 1, step: 0.05 })
 
 /** Share of each period the swell lasts; the rest is quiet. */
 export const SWELL = 0.36
@@ -41,22 +41,20 @@ export function swell(u: number): number {
   return s * s
 }
 
-interface Breath { start: number; period: number }
+interface Breath { start: number; period: number; variation: number }
 
 export class IdlePulse {
   /** 0 to 1: how far the whole rest state is in. */
   envelope = 0
   private readonly breaths: Breath[] = []
   private readonly random: () => number
-  private base: number[] = []
   constructor(seed: number, private readonly count: number) {
     this.random = seeded(seed)
     const low = idlePeriodMin.value, high = Math.max(low, idlePeriodMax.value)
     for (let i = 0; i < count; i++) {
       // Its own period, and a random phase: it may start anywhere in its first breath.
-      const period = low + (high - low) * this.random()
-      this.base.push(period)
-      this.breaths.push({ start: -this.random() * period, period })
+      const variation = this.random(), period = low + (high - low) * variation
+      this.breaths.push({ start: -this.random() * period, period, variation })
     }
   }
   /** Fade the whole state toward `on` over `dt` seconds. Returns true while it is changing. */
@@ -68,11 +66,16 @@ export class IdlePulse {
   /** Each world's pulse at time `t` seconds (rest clock), 0 to 1, before the envelope and peak. */
   at(t: number): number[] {
     const out: number[] = []
+    const low = idlePeriodMin.value, high = Math.max(low, idlePeriodMax.value)
     for (let i = 0; i < this.count; i++) {
       const b = this.breaths[i]
       // A new breath each period, its length wandering 20% either way round the planet's own,
       // so no two planets fall into step and no pattern repeats.
-      while (t >= b.start + b.period) { b.start += b.period; b.period = this.base[i] * (0.8 + 0.4 * this.random()) }
+      while (t >= b.start + b.period) {
+        b.start += b.period
+        const base = low + (high - low) * b.variation
+        b.period = base * (0.8 + 0.4 * this.random())
+      }
       out.push(swell((t - b.start) / b.period))
     }
     return out

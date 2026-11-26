@@ -22,12 +22,12 @@ try {
       await page.keyboard.press('Escape')
       await page.evaluate(() => { mira.params.set('bots.count', 0); mira.shell.play(true) })
       await page.waitForFunction(() => mira.shell.playing && !mira.shell.transitioning, null, { timeout: 150000 })
-      await page.evaluate(() => { mira.shell.showPanels(); mira.shell.showCard('you') })
+      await page.evaluate(() => { mira.shell.showPanels(); mira.shell.showCard('performance') })  // Glass tuning is in Settings > Interface
     }
     const card = view === 'lobby' ? '#lobby-settings' : '.mira-shell > .world-inspector:not(.lobby-settings) .wi-card.is-open'
     for (const id of ['glass.frostWidth']) {
       const slider = page.locator(card).locator(`[data-id="${id}"] input[type=range]`)
-      await slider.evaluate(el => { const group = el.closest('details'); if (group) group.open = true })
+      await slider.evaluate(el => { for (let group = el.closest('details'); group; group = group.parentElement.closest('details')) group.open = true })
       await slider.scrollIntoViewIfNeeded()
       await page.waitForFunction(sel => ['shader', 'scroll'].includes(document.querySelector(sel)?.dataset.glassSurface), card)
       // The card's opening motion and the stack's reveal move the slider for a few hundred ms after

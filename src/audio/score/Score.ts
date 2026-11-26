@@ -32,13 +32,13 @@
  *  - submersion              is exposed as `depth` for the master lowpass
  *  - the match               holding the hill is triumph, a contested hill is tension
  */
-import { defineParam, params } from '../../../shared/params'
+import { defineParam, params, type LobbySettingsGroup } from '../../../shared/params'
 import { Composer, levels, seeded, unit, type Mood, type Role } from './Composer'
 import { ScoreSynth } from './ScoreSynth'
 import { OPENS, intensityCeiling, leadPresence, roleOpen, worldHour } from './arc'
 import { leadDaylight, leadLobby, leadVolume, scoreBuildTime } from '../params'
 
-const tune = (id: string, label: string, value: number, min: number, max: number, step = 0.01) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: value, min, max, step })
+const tune = (id: string, label: string, value: number, min: number, max: number, step = 0.01, lobbyGroup?: LobbySettingsGroup) => defineParam({ id: `audio.score.${id}`, label, lobbyGroup, group: 'Adaptive score', scope: 'client', default: value, min, max, step })
 /** How strongly play drives the score. 0 keeps it ambient, 2 makes a slow roll feel like a chase. */
 export const scoreEnergy = tune('energy', 'Score intensity', 1, 0, 2)
 export const scoreTempo = tune('tempo', 'Tempo scale', 1, 0.6, 1.4)
@@ -48,12 +48,12 @@ export const scoreReverb = tune('reverb', 'Hall size', 0.9, 0, 1.5)
  * strings). In the lobby the plucked string, the bell and the telemetry beeps give way to glass
  * tones that swell in slowly, and the shimmer and the hall come forward.
  */
-export const lobbyGlass = tune('lobbyGlass', 'Lobby: glass tones', 1, 0, 2)
-export const lobbyShimmer = tune('lobbyShimmer', 'Lobby: high shimmer', 0.45, 0, 1)
-export const lobbyHall = tune('lobbyHall', 'Lobby: hall send (times the hall size)', 1.35, 0.5, 2)
-export const lobbyPad = tune('lobbyPad', 'Lobby: pads and drone', 1, 0, 1.5)
+export const lobbyGlass = tune('lobbyGlass', 'Lobby: glass tones', 1, 0, 2, 0.01, 'Lobby music')
+export const lobbyShimmer = tune('lobbyShimmer', 'Lobby: high shimmer', 0.45, 0, 1, 0.01, 'Lobby music')
+export const lobbyHall = tune('lobbyHall', 'Lobby: hall send (times the hall size)', 1.35, 0.5, 2, 0.01, 'Lobby music')
+export const lobbyPad = tune('lobbyPad', 'Lobby: pads and drone', 1, 0, 1.5, 0.01, 'Lobby music')
 /** The plucked string, the bell and the telemetry beeps in the lobby: 0 since 17 November 2026. */
-export const lobbyPluck = tune('lobbyPluck', 'Lobby: plucked string, bell and beeps (the old lobby)', 0, 0, 1)
+export const lobbyPluck = tune('lobbyPluck', 'Lobby: plucked string, bell and beeps (the old lobby)', 0, 0, 1, 0.01, 'Lobby music')
 /**
  * The cheaper instrument set, for phones. The quality system may set it; the score also sets
  * it itself when the browser reports the audio thread falling behind.

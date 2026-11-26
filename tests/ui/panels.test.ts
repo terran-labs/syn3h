@@ -12,6 +12,7 @@ describe('network text score rows', () => {
   it('extracts names with spaces, scores, self and tag flags', () => {
     expect(parseScoreRow('> Red Explorer    12  [IT] (you) (host)')).toEqual({ name: 'Red Explorer', score: 12, self: true, it: true, flags: '[IT] (you) (host)' })
     expect(parseScoreRow('  Alice            0  ')).toMatchObject({ name: 'Alice', score: 0, it: false, self: false })
+    expect(parseScoreRow('  Alice            0  (stuck) (paused)')).toMatchObject({ name: 'Alice', flags: '(stuck) (paused)' })
   })
   it('does not treat connection details or events as scores', () => {
     expect(parseScoreRow('net: room demo   ping 12 ms   delay 0 ms')).toBeNull()

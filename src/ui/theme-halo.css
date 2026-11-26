@@ -295,7 +295,7 @@ html[data-glass-material] .mira-shell.exploration-ui[data-ui-frost="off"] > .wor
 .mira-shell.exploration-ui .world-inspector [data-section="world"] .wi-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Personal identity stays compact beside its two vehicle colour samples. */
-.mira-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.mira-shell .wi-card[data-section="game"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .mira-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
 .mira-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(242 242 242 / .65); }
 
@@ -417,6 +417,8 @@ body:has(> .mira-shell > .in-play-about[open]) > :is(.touch-controls, .mira-name
 }
 .mira-shell.exploration-ui .world-inspector .wi-world-actions::after { content: ''; grid-column: 3; grid-row: 1; justify-self: center; width: 1px; height: 22px; background: var(--s3-line-quiet); }
 .mira-shell.exploration-ui .world-inspector .wi-world-actions .wi-reset { grid-column: 4; grid-row: 1; }
+/* Settings has Copy and Paste in World's places and no Reset, so no divider before it. */
+.mira-shell.exploration-ui .world-inspector .wi-settings-actions::after { content: none; }
 :root .mira-shell.exploration-ui .world-inspector .wi-world-actions button {
   display: flex; align-items: center; justify-content: center; gap: 7px; min-width: 0; min-height: 36px; margin: 0; padding: 0 8px;
   border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; box-shadow: none;

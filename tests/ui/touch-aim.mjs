@@ -136,7 +136,7 @@ try {
     // It is a Me card setting in the sidebar.
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     if (!(await page.locator('.world-inspector').isVisible())) await page.locator('.inspector-toggle').tap()
-    assert.ok(await page.locator('.wi-cards > [data-section=you]').getByText('Left-handed touch', { exact: false }).count() > 0, 'setting listed in the Me card')
+    assert.ok(await page.locator('.wi-cards > [data-section=performance]').getByText('Left-handed touch', { exact: false }).count() > 0, 'setting listed in the Settings card')
     await page.evaluate(() => window.mira.params.set('touch.leftHanded', false))
 
     assert.deepEqual(errors, [], `${name}: no page errors`)

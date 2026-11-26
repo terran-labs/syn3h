@@ -13,7 +13,7 @@ import { modeChoices } from '../modeAvailability'
 import { params, type ParamValue } from '../../../shared/params'
 import { applyPreset, matchPreset, presetsFor } from '../../../shared/presets'
 import { canEditWorld, resetWorld } from '../worldPermissions'
-import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
+import { buildTree, migrateOpenCards, CARD_ORDER, RETIRED_CARDS, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type GroupNode, type PropertyDef, type SectionNode } from './model'
 import './params'
 import { dayToPosition, fillDayLengthRow, showDay } from './dayLength'
 import { effectiveDayLength } from '../../world/sky/dayCycle'
@@ -27,7 +27,7 @@ import { bindSwitch } from './switch'
 import { cardsToClose, shareHeights, type FitCard } from './cardFit'
 import './me-card.css'
 import { creatorKeyRow } from '../creatorKeyRow'
-import { savePlayerName } from '../playerName'
+import { restorePlayerName, savedPlayerName, savePlayerName } from '../playerName'
 
 /** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
 const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="currentColor" d="M5 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM8 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-3 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>'
@@ -50,6 +50,15 @@ const WORLD_ACTIONS = `<div class="wi-world-actions" role="group" aria-label="Wo
   + `<button type="button" class="panel-action" data-wi="copy-world" aria-label="Copy world">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
   + `<button type="button" class="panel-action" data-wi="paste-world" aria-label="Paste world">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button>`
   + `<button type="button" data-wi="reset" class="wi-reset" aria-label="Reset world to defaults">${GLYPH('M3 8a5 5 0 1 0 1.5-3.6M3 2.5V5h2.5')}<span>Reset</span></button></div>`
+
+/**
+ * Settings' own copy and paste, at the top of its registry sections like World's: your
+ * settings on this device as JSON, to carry to another browser. No reset here; each row and
+ * section has its own (resetControl).
+ */
+const SETTINGS_ACTIONS = `<div class="wi-world-actions wi-settings-actions" role="group" aria-label="Settings actions">`
+  + `<button type="button" class="panel-action" data-wi="copy-section" aria-label="Copy these settings as JSON">${GLYPH('M5.5 5.5V3a1 1 0 0 1 1-1H13a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5M3 5.5h6.5a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V6.5a1 1 0 0 1 1-1Z')}<span>Copy</span></button>`
+  + `<button type="button" class="panel-action" data-wi="paste-section" aria-label="Paste settings from JSON">${GLYPH('M5.5 3H4a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1.5M6 2h4v2H6ZM8 6.5v5M5.8 9.4 8 11.6l2.2-2.2')}<span>Paste</span></button></div>`
 
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
@@ -97,6 +106,8 @@ export interface InspectorOptions {
   closePanels?(): void
   /** A localStorage key: which cards are open is kept there and restored on the next visit. */
   rememberOpen?: string
+  /** Controls a group ends with, built by the caller (Input's Show tips again). Null for none. */
+  groupActions?(group: string): HTMLElement | null
 }
 /** One row's reset, as the inspector keeps it. */
 interface RowReset {
@@ -112,6 +123,12 @@ interface RowReset {
   /** Has been in the page; a row that leaves after that is dropped. */
   seen: boolean
 }
+interface RowChoices {
+  name: string
+  options: readonly { value: number; label: string }[]
+  selected?(value: number): number
+}
+
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
   if (def.id === 'game.mode') return { name: 'Mode', options: modeChoices }
@@ -249,7 +266,9 @@ export class Inspector {
     this.nameControl = this.nameEditor()
     // Escape in the name field cancels the edit. This runs before the shell's own Escape,
     // which only blurs a text field (and the blur would otherwise save).
-    window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) this.nameInput.value = this.options.playerName?.() ?? '' }, { capture: true, signal: this.abort.signal })
+    // The name is saved as it is typed (feat/creator-badge), so cancelling also puts back the name
+    // saved before the edit began; otherwise the next visit opens with the abandoned text.
+    window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) { this.nameInput.value = this.options.playerName?.() ?? ''; if (this.nameBefore) restorePlayerName(this.nameBefore) } }, { capture: true, signal: this.abort.signal })
     this.restoring = this.recall()
     this.build()
     this.unsubscribe = params.onChange((id, value) => {
@@ -327,7 +346,10 @@ export class Inspector {
   private recall(): string[] {
     const key = this.options.rememberOpen; if (!key) return []
     let ids: string[] = []
-    try { const saved: unknown = JSON.parse(localStorage.getItem(key) ?? '[]'); if (Array.isArray(saved)) ids = saved.filter((id): id is string => typeof id === 'string') } catch { /* Storage is optional. */ }
+    // A player who has never opened or closed a card starts with Game open, except where one
+    // panel shows at a time (phones), which start from the list. Older versions' card ids
+    // ('you', 'vehicles') become the cards that took them over (model.ts RETIRED_CARDS).
+    try { const raw = localStorage.getItem(key); ids = raw === null ? (this.options.phonePanels?.() ? [] : ['game']) : migrateOpenCards(JSON.parse(raw)) } catch { /* Storage is optional; a broken value starts closed. */ }
     return this.options.oneOpen?.() ? ids.slice(-1) : ids
   }
   private remember(): void {
@@ -372,36 +394,27 @@ export class Inspector {
     this.rows.clear(); this.presetSyncs.length = 0; this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
+      // A card built elsewhere with this id (Settings is PerformancePanel's) takes the
+      // registry's sections into its .wi-registry slot instead of a card of their own.
+      const extra = this.extras.get(section.id)
+      if (extra) { if (section.aliases) extra.card.dataset.aliases = section.aliases; const slot = extra.card.querySelector('.wi-registry') ?? extra.card.querySelector(':scope > .wi-body'); slot?.querySelector(':scope > .wi-parts')?.remove(); const parts = document.createElement('div'); parts.className = 'wi-parts'; this.fillParts(section, parts); if (section.id === 'performance') parts.querySelector(':scope > .wi-blurb')?.insertAdjacentHTML('afterend', SETTINGS_ACTIONS); slot?.append(parts); continue }
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
+      if (section.aliases) card.dataset.aliases = section.aliases
       const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
       head.innerHTML = CARD_HEAD; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
-      if (section.id === 'you') {
-        body.append(this.vehicleControl, this.nameControl, creatorKeyRow(this.abort.signal))
+      if (section.id === 'game') {
         const dots = document.createElement('span'); dots.className = 'wi-colour-dots'; dots.setAttribute('aria-label', 'Vehicle colours')
         dots.innerHTML = '<i data-colour="body"></i><i data-colour="accent"></i>'; head.querySelector('.wi-sum')!.after(dots)
       }
-      const blurb = document.createElement('p'); blurb.className = 'wi-blurb'; blurb.textContent = section.blurb; body.append(blurb)
       // The whole world's actions live in its own card, at the top: copy, paste, and (set
       // apart, and asked twice) reset.
       if (section.id === 'world') body.insertAdjacentHTML('beforeend', WORLD_ACTIONS)
-
-      // The Liquid style's own tuning (the Glass and Clear lens groups) is not a section of its
-      // own: it folds into Interface under Style and Tint, and only while Liquid is the style.
-      const liquid = section.tree.filter(group => LIQUID_TUNING_GROUPS.includes(group.name)).flatMap(group => group.properties)
-      section.tree.filter(group => !LIQUID_TUNING_GROUPS.includes(group.name)).forEach((group, index) => {
-        const fold = this.fold(group.name, group.properties.length, index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name))
-        const handling = this.presetRow(group.name); if (handling) fold.append(handling)
-        for (const def of group.properties) {
-          fold.append(this.row(def))
-          if (def.id === 'hud.surfaceCoverage' && liquid.length) fold.append(this.liquidFold(liquid))
-        }
-        body.append(fold)
-      })
+      this.fillParts(section, body)
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot card-actions'
-      // The World card copies and pastes the whole world from its action row above; a second,
-      // section-only pair here would only be the same thing smaller.
-      if (section.id !== 'world') foot.innerHTML = '<button type="button" class="panel-action" data-wi="copy-section">Copy JSON</button><button type="button" class="panel-action" data-wi="paste-section">Paste</button>'
+      // No section copy in a card footer: World copies the whole world from its action row,
+      // Settings copies your own settings from its row, and Game's few rows (the mode, your
+      // switches) are set by hand (the Foreman, 25 November 2026).
       if (section.id === 'world' && this.options.onSaveWorld) {
         const save = document.createElement('button'); save.type = 'button'; save.className = 'panel-action'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
         // Saving a local copy does not edit the shared world, even for a locked guest.
@@ -426,6 +439,51 @@ export class Inspector {
     this.restoreView(view)
     this.editable = !canEditWorld(); this.update()
     this.refreshResets()
+  }
+  /**
+   * A card's sections, each a fold (open for a new player only where the spec says so). A
+   * section of several groups holds one closed fold per group. Game's Me section starts with
+   * the vehicle, its colours and the name. Each row knows its scope (data-scope) and where it
+   * now lives, including the card names it had before, so a search for those still finds it.
+   */
+  private fillParts(section: SectionNode, body: HTMLElement): void {
+    const blurb = document.createElement('p'); blurb.className = 'wi-blurb'; blurb.textContent = section.blurb; body.append(blurb)
+    // The Liquid style's own tuning (the Glass and Clear lens groups) is not a section of its
+    // own: it folds into Interface under Style and Tint, and only while Liquid is the style.
+    const liquid = section.parts.flatMap(part => part.groups).filter(group => LIQUID_TUNING_GROUPS.includes(group.name)).flatMap(group => group.properties)
+    const place = (def: PropertyDef, where: string): HTMLElement => {
+      const row = this.row(def); row.dataset.scope = def.scope; row.dataset.where = `${section.title} ${section.aliases ?? ''} ${where}`
+      return row
+    }
+    for (const part of section.parts) {
+      const groups = part.groups.filter(group => !LIQUID_TUNING_GROUPS.includes(group.name))
+      const fold = this.fold(part.title, part.count, part.open)
+      if (section.id === 'game' && part.title === 'Me') fold.append(this.vehicleControl, this.nameControl)
+      const where = `${part.title} ${part.aliases}`
+      const fill = (into: HTMLElement, group: GroupNode) => {
+        const handling = this.presetRow(group.name); if (handling) into.append(handling)
+        for (const def of group.properties) {
+          into.append(place(def, `${where} ${group.name}`))
+          if (def.id === 'hud.surfaceCoverage' && liquid.length) into.append(this.liquidFold(liquid))
+        }
+        const actions = this.options.groupActions?.(group.name); if (actions) into.append(actions)
+      }
+      if (part.flat || groups.length === 1) for (const group of groups) fill(fold, group)
+      else {
+        // Groups given one shown name (Vehicle looks and Vehicle paint) share a fold.
+        const subs = new Map<string, HTMLDetailsElement>()
+        for (const group of groups) {
+          const title = part.titles[group.name] ?? group.name
+          let sub = subs.get(title)
+          if (!sub) { sub = this.fold(title, 0, false); sub.classList.add('wi-subgroup'); subs.set(title, sub); fold.append(sub) }
+          fill(sub, group)
+          const small = sub.querySelector(':scope > summary > small')!; small.textContent = String(Number(small.textContent) + group.properties.length)
+        }
+      }
+      // The creator's sign-in (the hidden Dimensional portal, feat/creator-badge) closes Me.
+      if (section.id === 'game' && part.title === 'Me') fold.append(creatorKeyRow(this.abort.signal))
+      body.append(fold)
+    }
   }
   /** Which groups are open, where the stack and each card are scrolled, and what has focus. */
   private captureView() {
@@ -456,7 +514,7 @@ export class Inspector {
     }
   }
   /** A collapsible group: the shared accordion summary (name and count) over its rows. */
-  private fold(name: string, count: number, open: boolean): HTMLDetailsElement {
+  fold(name: string, count: number, open: boolean): HTMLDetailsElement {
     const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = name; fold.open = open
     const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
     summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(count)
@@ -473,14 +531,18 @@ export class Inspector {
   private liquidFold(defs: readonly PropertyDef[]): HTMLDetailsElement {
     const fold = this.fold('Liquid glass', defs.length, false)
     fold.classList.add('wi-subgroup', 'wi-liquid-group')
-    for (const def of defs) fold.append(this.row(def))
+    for (const def of defs) { const row = this.row(def); row.dataset.scope = def.scope; row.dataset.where = 'Settings Rendering Performance Interface Liquid glass me'; fold.append(row) }
     const sync = () => fold.classList.toggle('is-absent', Number(params.get('hud.glass')?.value) !== 0)
     sync(); this.presetSyncs.push(sync)
     return fold
   }
   private place(extra: ExtraCard): void {
-    const cards = this.element.querySelector('.wi-cards')!, after = extra.after ? cards.querySelector(`:scope > [data-section="${extra.after}"]`) : null
-    if (after) after.after(extra.card); else cards.append(extra.card)
+    const cards = this.element.querySelector('.wi-cards')!
+    // The sidebar's cards keep one order (model.ts CARD_ORDER) whatever order they arrive in.
+    const order = CARD_ORDER as readonly string[], at = order.indexOf(extra.id)
+    const next = at < 0 ? null : [...cards.children].find(el => order.indexOf((el as HTMLElement).dataset.section ?? '') > at)
+    const after = at < 0 && extra.after ? cards.querySelector(`:scope > [data-section="${extra.after}"]`) : null
+    if (next) next.before(extra.card); else if (after) after.after(extra.card); else cards.append(extra.card)
     this.watchContent(extra.card)
   }
   /**
@@ -505,10 +567,26 @@ export class Inspector {
     this.moving.get(extra.card)?.cancel(); this.moving.delete(extra.card)
     this.extras.delete(id); extra.card.remove(); this.build()
   }
+  /**
+   * The fold that shows a definition group in a card's registry sections: the section itself,
+   * or its fold for that group where a section holds several. Null where the card has none.
+   * Settings puts the quality level's own rows for a group there (PerformancePanel.fill), so
+   * no heading shows twice in one card.
+   */
+  sectionFold(cardId: string, group: string): HTMLDetailsElement | null {
+    const part = this.tree.find(section => section.id === cardId)?.parts.find(p => p.groups.some(g => g.name === group))
+    const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${CSS.escape(cardId)}"]`)
+    if (!part || !card) return null
+    const fold = [...card.querySelectorAll<HTMLDetailsElement>('details.wi-group:not(.wi-subgroup)')].find(d => d.dataset.group === part.title)
+    if (!fold) return null
+    const title = part.titles[group] ?? group
+    return [...fold.querySelectorAll<HTMLDetailsElement>(':scope > details.wi-subgroup')].find(d => d.dataset.group === title) ?? fold
+  }
   /** Rebuild now, for an extra card whose owned properties changed. */
   rebuild(): void { this.build() }
   /** Open one card (leaving the others as they are), easing as a header click does. */
   revealCard(id: string): void {
+    id = RETIRED_CARDS[id] ?? id
     const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
     if (!card || card.classList.contains('is-open')) return
     // The panels are still growing into view: land on the card without a second motion.
@@ -587,8 +665,8 @@ export class Inspector {
    * saves, Escape cancels. The dice beside it rolls a new generated name.
    */
   private nameEditor(): HTMLElement {
-    const row = document.createElement('div'); row.className = 'wi-person-name'; row.dataset.search = 'player name identity rename'
-    const label = document.createElement('label'); label.className = 'wi-name-label'; label.textContent = 'Player name'
+    const row = document.createElement('div'); row.className = 'wi-person-name'; row.dataset.search = 'name player name identity rename me'
+    const label = document.createElement('label'); label.className = 'wi-name-label'; label.textContent = 'Name'
     const input = document.createElement('input'); input.className = 'wi-name-input'; input.type = 'text'; input.maxLength = 24; input.spellcheck = false
     input.setAttribute('autocomplete', 'nickname'); input.enterKeyHint = 'done'; input.id = 'wi-player-name'; label.htmlFor = input.id
     input.value = this.options.playerName?.() ?? ''
@@ -604,7 +682,7 @@ export class Inspector {
     // Saved on this device as it is typed, so closing the page mid-edit keeps it; the room is
     // told only on Enter or blur (a rename per keystroke would hit its rate limit).
     if (this.options.onRename) input.addEventListener('input', () => savePlayerName(input.value, 'typed'), { signal: this.abort.signal })
-    input.addEventListener('focus', () => input.select(), { signal: this.abort.signal })
+    input.addEventListener('focus', () => { this.nameBefore = savedPlayerName(); input.select() }, { signal: this.abort.signal })
     row.append(label, input)
     if (this.options.rollName && this.options.onRename) {
       const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
@@ -615,6 +693,8 @@ export class Inspector {
     return row
   }
   private nameControl!: HTMLElement
+  /** The saved name and its source when the name field took focus, for Escape. */
+  private nameBefore: ReturnType<typeof savedPlayerName> = null
   private nameInput!: HTMLInputElement
   private vehicleControl!: HTMLElement
   private liveSets?: { cards: HTMLCollectionOf<HTMLElement>; colourDots: HTMLCollectionOf<HTMLElement>; vehicleOptions: HTMLCollectionOf<HTMLElement>; vehicleNotes: HTMLCollectionOf<HTMLElement> }
@@ -695,13 +775,14 @@ export class Inspector {
     }
   }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
-  row(def: PropertyDef, options: { reset?: ResetTarget } = {}): HTMLElement {
+  row(def: PropertyDef, options: { reset?: ResetTarget; choices?: RowChoices } = {}): HTMLElement {
+    const explicitChoices = options.choices
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
     if (def.id === 'post.giRadius') def = { ...def, label: 'GI light reach (m)' }
     const row = document.createElement('div'); row.className = 'wi-row'; row.dataset.id = def.id
     const label = document.createElement('span'); label.className = 'wi-label'
     const output = document.createElement('output')
-    const param = params.get(def.id)!, choices = choicesOf(def)
+    const param = params.get(def.id)!, choices = explicitChoices ?? choicesOf(def)
     let sync: (value: ParamValue) => void
     /** The default written as this row writes values, for the reset's label. */
     let format: (value: ParamValue) => string = value => show(value, def)
@@ -760,7 +841,14 @@ export class Inspector {
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }
       format = value => choices.options.find(option => option.value === Math.round(Number(value)))?.label ?? show(value, def)
       row.classList.add('is-choice'); row.append(label, seg)
-      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) { const on = Number(button.dataset.value) === Math.round(Number(value)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } }
+      sync = value => {
+        const selected = explicitChoices?.selected?.(Number(value)) ?? Math.round(Number(value))
+        for (const button of seg.querySelectorAll<HTMLElement>('button')) {
+          const on = Number(button.dataset.value) === selected
+          button.classList.toggle('is-on', on)
+          button.setAttribute('aria-pressed', String(on))
+        }
+      }
     } else if (typeof def.default === 'boolean') {
       label.textContent = def.label
       // The standard switch (switch.ts): role switch, aria-checked, Space and Enter toggle.
@@ -820,9 +908,9 @@ export class Inspector {
     this.resets.set(row, { def, target, control, name, format, notch, track, run, seen: false })
     this.queueResets()
     sync(param.value)
-    row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
-    row.addEventListener('focusin', () => this.detail(def))
-    row.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.detail(def) })
+    row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def, explicitChoices) })
+    row.addEventListener('focusin', () => this.detail(def, explicitChoices))
+    row.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.detail(def, explicitChoices) })
     row.addEventListener('pointerleave', () => { this.tooltipTimer = setTimeout(() => this.hideTooltip(), 160) })
     row.addEventListener('focusout', event => { if (!row.contains(event.relatedTarget as Node)) this.hideTooltip() })
     for (const control of row.querySelectorAll('input, button')) control.setAttribute('aria-describedby', 'setting-tooltip')
@@ -954,13 +1042,13 @@ export class Inspector {
     for (const { row } of this.rows.values()) row.classList.remove('is-selected')
   }
   /** A contextual tooltip beside the control, or above it when the viewport is narrow. */
-  private detail(def: PropertyDef): void {
+  private detail(def: PropertyDef, explicitChoices?: RowChoices): void {
     clearTimeout(this.tooltipTimer)
     if (this.selected === def.id && !this.tooltip.hidden) return
     this.selected = def.id
     for (const { row } of this.rows.values()) row.classList.toggle('is-selected', row.dataset.id === def.id)
     const pane = this.tooltip, value = params.get(def.id)?.value ?? def.default, at = fraction(def, value), home = fraction(def, def.default)
-    const choices = choicesOf(def)
+    const choices = explicitChoices ?? choicesOf(def)
     pane.replaceChildren()
     const head = document.createElement('div'); head.className = 'wi-detail-head'
     const name = document.createElement('strong'); name.textContent = choices?.name ?? def.label
@@ -975,7 +1063,10 @@ export class Inspector {
       if (home !== null) bar.querySelector<HTMLElement>('u')!.style.left = `${home * 100}%`
       pane.append(bar)
     }
-    const small = document.createElement('small'); small.textContent = limits(def); pane.append(small)
+    const small = document.createElement('small')
+    const defaultChoice = explicitChoices?.options.find(option => option.value === def.default)
+    small.textContent = defaultChoice ? `Default: ${defaultChoice.label} · yours only` : limits(def)
+    pane.append(small)
     pane.hidden = false
     const row = this.rows.get(def.id)!.row.getBoundingClientRect()
     const width = Math.min(280, innerWidth - 24)
@@ -1322,7 +1413,8 @@ export class Inspector {
     if (words.length && !this.beforeSearch) this.beforeSearch = { cards: cards.map(card => card.classList.contains('is-open')), folds: folds.map(fold => fold.open) }
     this.element.classList.toggle('is-searching', words.length > 0)
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
-      const headingHit = words.length > 0 && words.every(word => (card.querySelector('h3')?.textContent ?? '').toLowerCase().includes(word))
+      const heading = `${card.querySelector('h3')?.textContent ?? ''} ${card.dataset.aliases ?? ''}`.toLowerCase()
+      const headingHit = words.length > 0 && words.every(word => heading.includes(word))
       let cardHits = headingHit ? 1 : 0
       for (const control of card.querySelectorAll<HTMLElement>('[data-search]')) {
         const hit = headingHit || words.every(word => `${control.dataset.search} ${control.textContent}`.toLowerCase().includes(word))
@@ -1335,9 +1427,12 @@ export class Inspector {
         // not searched while the group is absent.
         for (const row of fold.querySelectorAll<HTMLElement>('.wi-row')) {
           if (row.closest('.wi-group.is-absent')) continue
-          const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${describe(def)}`.toLowerCase()
+          const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${row.dataset.where ?? ''} ${describe(def)}`.toLowerCase()
           const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
         }
+        // Controls built by hand in a section (the vehicle picker and Name in Game > Me) match by
+        // their data-search words, set above: a match keeps their section showing and open.
+        if (words.length) for (const control of fold.querySelectorAll<HTMLElement>(':scope > [data-search]')) if (!control.hidden) hits++
         fold.hidden = words.length > 0 && hits === 0; if (words.length) fold.open = hits > 0
         if (!fold.parentElement?.closest('.wi-group')) cardHits += hits
       }
@@ -1399,7 +1494,7 @@ export class Inspector {
   /** Check pasted JSON and apply what is allowed. Returns the line shown to the player. */
   apply(text: string): string {
     const defs = params.all().map(p => p.def as PropertyDef)
-    const result = parseWorld(text, defs, { personal: this.pasteTarget === 'you' })
+    const result = parseWorld(text, defs, { personal: !!this.tree.find(s => s.id === this.pasteTarget)?.tree.some(g => g.properties.some(def => def.scope === 'client')) })
     if (!result.ok) { this.say(result.why); return result.why }
     const world = result.entries.filter(entry => params.get(entry.id)?.def.scope === 'world')
     if (world.length && !canEditWorld()) { const why = 'The host has locked this world, so nothing was pasted.'; this.say(why); return why }

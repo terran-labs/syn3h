@@ -3,7 +3,7 @@ import { params } from '../../shared/params'
 import { presetFor, QUALITY, type QualitySource, type QualityState } from '../core/quality'
 import type { PerformanceSnapshot, PerformanceSource } from '../core/performance'
 import type { Inspector } from './inspector/Inspector'
-import type { PropertyDef } from './inspector/model'
+import { SETTINGS_TITLE, type PropertyDef } from './inspector/model'
 import { createSwitch, type Switch } from './inspector/switch'
 import { resetButton, type ResetButton } from './resetControl'
 import { recordBlankFrames } from '../core/blankFrames'
@@ -93,6 +93,7 @@ export class PerformancePanel {
         <small class="wi-res-size"></small></div>
       <p class="performance-quality wi-blurb" aria-live="polite"></p><p class="performance-quality-detail"></p>
       <div class="wi-fine"></div>
+      <div class="wi-registry"></div>
       <details class="wi-group performance-diagnostics"><summary><span>Diagnostics</span><small></small></summary>
       <div class="performance-body">
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
@@ -195,7 +196,7 @@ export class PerformancePanel {
       finally { check.disabled = false }
     }, { signal })
     if (quality) this.configureQuality(quality)
-    inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
+    inspector?.addCard(PerformancePanel.CARD, SETTINGS_TITLE, this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
       { after: 'world', owns: () => this.owned(), fill: () => this.fill() })
   }
 
@@ -243,10 +244,23 @@ export class PerformancePanel {
     for (const id of this.fineIds()) { const def = params.get(id)!.def as PropertyDef; groups.set(def.group, [...groups.get(def.group) ?? [], def]) }
     let first = true
     for (const [name, defs] of groups) {
-      const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = name; fold.open = this.foldOpen.get(name) ?? first; first = false
-      const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
-      summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(defs.length)
-      fold.append(summary)
+      // A group Settings already has a section for (Graphics, Post, Light) takes the level's rows
+      // at its top, so its heading shows once; the rest (the level's Water, Terrain and Lava
+      // detail, whose sections are World's) keep a fold of their own here.
+      const shared = inspector.sectionFold(PerformancePanel.CARD, name)
+      const fold = shared ?? document.createElement('details')
+      let at: Element | null = null
+      if (shared) {
+        const small = shared.querySelector(':scope > summary > small'); if (small) small.textContent = String(Number(small.textContent) + defs.length)
+        at = shared.querySelector(':scope > summary')
+        if (first && !this.foldOpen.has(name)) { shared.open = true; this.foldOpen.set(name, true) }
+      } else {
+        fold.className = 'wi-group'; fold.dataset.group = name; fold.open = this.foldOpen.get(name) ?? first
+        const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
+        summary.querySelector('span')!.textContent = name; summary.querySelector('small')!.textContent = String(defs.length)
+        fold.append(summary)
+      }
+      first = false
       for (const def of defs) {
         // The row's shared reset (resetControl.ts) shows once the player sets this by hand, and
         // puts the level's own value back, not the registry's.
@@ -254,9 +268,10 @@ export class PerformancePanel {
           value: () => this.state && def.id in this.state.overrides ? presetFor(this.state.level)[def.id] ?? def.default : undefined,
           apply: () => this.quality?.clearOverride(def.id),
         } })
-        row.classList.add('is-fine'); fold.append(row)
+        row.classList.add('is-fine')
+        if (at) { at.after(row); at = row } else fold.append(row)
       }
-      host.append(fold)
+      if (!shared) host.append(fold)
     }
     inspector.refreshResets()
   }

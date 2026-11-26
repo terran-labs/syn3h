@@ -1,6 +1,6 @@
 import { defineParam } from '../../../shared/params'
 
-const P = { group: 'Graphics', scope: 'client' } as const
+const P = { group: 'Graphics', scope: 'client', lobbyGroup: 'Orbits' } as const
 
 /** Requested inner lane radius, capped by the physical space available inside the outer orbit. */
 export const orbitInnerRadius = defineParam({
