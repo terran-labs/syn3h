@@ -61,7 +61,7 @@ describe('a parallel universe', () => {
     const there = page(to.href)
     there.u.onWelcome()
     expect(there.notices).toHaveLength(1)
-    expect(there.notices[0].text).toBe("This world is full, so you're in a parallel universe of it. Invite friends with your link.")
+    expect(there.notices[0].text).toBe("This world is full, so you're in a parallel universe. Your invite link is in Players.")
     expect(there.notices[0].actions.map(a => a.label)).toEqual(['Copy link', 'Try the main world again'])
     expect(there.universe()?.kind).toBe('parallel')
     // A rejoin after a dropout is not an arrival: nothing is said again.

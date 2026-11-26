@@ -138,7 +138,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
       <li><span>${k('click', 'Mouse click')}</span>capture the mouse to look round</li>
       <li><span>${k('C')}</span>camera views</li>
       <li><span>${k('H')}</span>this vehicle’s controls</li>
-      <li><span>${k('J')}</span>invite</li>
+      <li><span>${k('J')}</span>invite players</li>
       <li><span>${k('Y')}</span>chat</li>
       <li><span>${k('I')}</span>interface: full, driving, hidden</li>
       <li><span>${k('Esc')}</span>free the mouse, open the panels</li>
@@ -159,7 +159,7 @@ ${ringHtml(RING_SHOTS.map(pic => figure(pic.id, pic.caption, RING)), RING_SHOTS)
   </section>
 </div>
 <h3>Share a room</h3>
-<p>Every room has its own link. ${k('J')} or <em>Invite players</em> shows it with a QR code a phone can scan from across the sofa. Everyone in a room shares one world: the same terrain, the same weather, the same waves.</p>
+<p>Every room has its own link. ${k('J')} or <em>Invite players</em> in <em>Players</em> shows it with a QR code a phone can scan from across the sofa. Everyone in a room shares one world: the same terrain, the same weather, the same waves.</p>
 <h3>Settings worth knowing</h3>
 <ul class="welcome-settings">
   <li><strong>Units.</strong> Metric or imperial, for speed, height and distance. In a world: Panels, then Me, then Interface.</li>

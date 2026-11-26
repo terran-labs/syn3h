@@ -83,7 +83,7 @@ for (const mode of ['desktop', 'phone']) {
       assert.deepEqual(await openSections(page), open, `${mode}: open cards survive closing the panels`)
     }
 
-    // A bot's row in Players & session carries the bot mark, and no row spells out "bot".
+    // A bot's row in Players carries the bot mark, and no row spells out "bot".
     if (!touch) {
       await page.waitForFunction(() => [...(window.miraNet?.players?.values() ?? [])].some(p => p.bot), null, { timeout: 60000 })
       await page.evaluate(() => mira.shell.inspector.revealCard('players')); await settled(page)
@@ -91,7 +91,7 @@ for (const mode of ['desktop', 'phone']) {
         const bots = new Set([...miraNet.players.values()].filter(p => p.bot).map(p => miraNet.displayName(p.id)))
         return [...document.querySelectorAll('.wi-card[data-section=players] .score-row')].map(r => { const n = r.querySelector('.score-name'); return { bot: bots.has(n.dataset.name ?? n.title), mark: !!n.querySelector('svg.bot-mark[aria-label=Bot]'), text: r.textContent } })
       })
-      assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players & session (${JSON.stringify(rows)})`)
+      assert.ok(rows.some(r => r.bot), `${mode}: a bot is listed in Players (${JSON.stringify(rows)})`)
       for (const r of rows) assert.equal(r.mark, r.bot, `${mode}: the bot mark is on bots' rows only (${JSON.stringify(r)})`)
       assert.ok(rows.every(r => !/\bbot\b/i.test(r.text)), `${mode}: no row spells out "bot"`)
     }

@@ -90,19 +90,50 @@ html[data-cutout-side="right"] { --safe-left: 0px; }
 .mira-shell.exploration-ui .rail-players { flex: 0 1 auto; min-height: 32px; max-height: 30%; border-bottom: 1px solid var(--s3-line-quiet); background: rgb(18 18 18 / .7); overflow: auto; scrollbar-width: thin; }
 .mira-shell.exploration-ui .rail-players > summary { padding: 7px 11px; font-size: 12px; letter-spacing: .1em; cursor: pointer; list-style: none; }
 .mira-shell.exploration-ui .rail-players summary span { float: right; color: var(--s3-dim); }
-/* Players & session, top to bottom (the owner, 22 November 2026): the player rows, the centred
-   actions, the Connection diagnostics switch, then its lines while it is on. The scoreboard
-   writes its rows and its diagnostic lines in one list, so the board steps aside
-   (display: contents) and each kind takes its place by order: switching diagnostics on adds
-   lines at the bottom and moves nothing above them. */
+/* The scoreboard contributes roster rows at the top and diagnostics below their switch. */
 .mira-shell.exploration-ui .rail-player-body { display: flex; flex-direction: column; padding: 5px 10px 10px; }
 .mira-shell.exploration-ui .rail-player-body .hud-scoreboard { display: contents; }
-.mira-shell.exploration-ui .rail-player-body .score-row { order: 0; }
-.mira-shell.exploration-ui .rail-player-body .rail-actions { order: 1; margin: 10px 0 4px; }
-.mira-shell.exploration-ui .rail-player-body .rail-diagnostics { order: 2; }
-.mira-shell.exploration-ui .rail-player-body .score-detail { order: 3; display: none; }
+.mira-shell.exploration-ui .rail-player-body .score-row { order: 0; grid-template-columns: minmax(0, 1fr) auto auto; font-size: 12px; min-height: 27px; padding: 4px 0; background: none; border-bottom: 0; }
+.mira-shell.exploration-ui.is-explore .rail-player-body .score-row { grid-template-columns: minmax(0, 1fr) auto; }
+.mira-shell.exploration-ui .rail-player-body .score-row small { font-size: 10px; font-weight: 500; letter-spacing: .05em; white-space: nowrap; text-align: right; }
+.mira-shell.exploration-ui .rail-player-body .rail-universe { order: 1; }
+.mira-shell.exploration-ui .rail-player-body .rail-actions { margin: 10px 0 4px; }
+.mira-shell.exploration-ui .rail-session-bots { order: 2; display: grid; gap: 3px; border-top: 1px solid var(--s3-line-quiet); margin-top: 8px; padding-top: 8px; }
+.mira-shell.exploration-ui .rail-bot-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; }
+.mira-shell.exploration-ui .rail-bot-heading output { white-space: nowrap; text-align: right; }
+.mira-shell.exploration-ui .rail-bot-heading output.is-disabled { color: var(--s3-dim); }
+.mira-shell.exploration-ui .rail-bot-controls {
+  --bot-target: 32px;
+  display: grid; grid-template-columns: var(--bot-target) minmax(0, 1fr) var(--bot-target);
+  gap: 8px; align-items: center; width: 100%;
+}
+.mira-shell.exploration-ui.has-touch .rail-bot-controls { --bot-target: 44px; }
+.mira-shell.exploration-ui .rail-player-body .rail-bot-controls > input[type=range] {
+  box-sizing: border-box; min-width: 0; width: 100%; height: var(--bot-target);
+  margin: 0; touch-action: pan-y; accent-color: var(--s3-ink);
+}
+/* These buttons paint the full target. The compact panel actions use a separate hit area. */
+.mira-shell.exploration-ui .rail-player-body .rail-bot-controls > .rail-bot-step {
+  appearance: none; display: inline-grid; place-items: center; box-sizing: border-box;
+  width: var(--bot-target); height: var(--bot-target);
+  min-width: var(--bot-target); min-height: var(--bot-target);
+  padding: 0; border: 1px solid var(--s3-line); border-radius: 999px;
+  background: rgb(255 255 255 / .10); color: white; font-size: 18px; line-height: 1;
+  box-shadow: none; text-shadow: none;
+}
+.mira-shell.exploration-ui .rail-bot-controls > .rail-bot-step:hover:not(:disabled) {
+  background: rgb(255 255 255 / .18);
+}
+.mira-shell.exploration-ui .rail-bot-controls > .rail-bot-step:focus-visible {
+  outline: 2px solid white; outline-offset: 1px;
+}
+.mira-shell.exploration-ui .rail-bot-controls > .rail-bot-step:disabled {
+  opacity: .55; cursor: default;
+}
+.mira-shell.exploration-ui .rail-player-body .rail-diagnostics { order: 3; }
+.mira-shell.exploration-ui .rail-player-body .score-detail { order: 4; display: none; }
 .mira-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; padding: 1px 0; font: 400 11px/1.5 ui-monospace, Menlo, 'SF Mono', monospace; color: var(--s3-soft, #cfcfcf); overflow-wrap: anywhere; }
-.mira-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid transparent; border-image: var(--rule) 1; }
+.mira-shell.exploration-ui .rail-player-body .rail-session-actions { order: 5; }
 .mira-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 0; }
 /* Another player's name in a row is a plain-text button: it opens Mute or Unmute (chatLink). */
 .mira-shell.exploration-ui .rail-player-body .score-row button.score-name { display: block; min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; color: inherit; font: inherit; letter-spacing: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }

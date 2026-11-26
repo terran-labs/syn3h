@@ -1,6 +1,6 @@
 /**
  * Parallel universes in play (net/parallel.ts): a full room sends the player to a fresh universe
- * of the world they were entering; the Players & session card offers one to anyone in the public
+ * of the world they were entering; the Players card offers one to anyone in the public
  * room, and from a universe the way back. Every move is the existing exit and entry flow: a
  * navigation to the room's entry address with autoplay, as a vehicle change by reload does.
  */
