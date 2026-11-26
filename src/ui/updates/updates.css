@@ -136,7 +136,8 @@
 body.has-game-shell:has(.mira-shell:not(.is-playing)) #mira-build-notice { display: none; }
 
 /* The in-play chip: a line in the sidebar header, never over the world. */
-.mira-shell.exploration-ui .rail-update { display: block; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 6px 12px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(205 205 205 / .08); color: var(--s3-accent-2); font: 500 12.5px/1.2 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
+/* A house glass button (glass.css .liquid-glass), as the update bar's own, not an outlined pill. */
+.mira-shell.exploration-ui .rail-update.liquid-glass { display: block; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 6px 12px; color: var(--s3-accent-2); font: 500 12.5px/1.2 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
 .mira-shell.exploration-ui .rail-update[hidden] { display: none; }
 
 /* A phone in landscape: the in-play guide's tabs sit closer to its header. */

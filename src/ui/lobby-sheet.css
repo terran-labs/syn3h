@@ -32,11 +32,20 @@
 
 /* Updates wears the display face the Welcome guide's headings use (Barlow Condensed 600, capitals,
    light tracking, the heading accent), with All releases on GitHub level with it, left of the X. */
-.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 190px; font: 600 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: var(--s3-accent-2); }
-.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { position: absolute; top: 32px; right: 56px; }
+/* Updates keeps its header still: the title, All releases and the X stand on one row and only the
+   list below scrolls, so the X never drifts over a release (the owner, 26 November 2026). The X
+   comes inside the column, at its right edge, centred on the title row (48 px tall, the body's top
+   padding down); All releases stands just left of it. */
+.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body { display: flex; flex-direction: column; overflow: hidden; padding-bottom: 0; -webkit-mask-image: none; mask-image: none; }
+.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { flex: none; padding-right: 200px; font: 600 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: var(--s3-accent-2); }
+.mira-shell.exploration-ui .lobby-sheet.lobby-sheet-updates .lobby-sheet-close { top: 32px; right: 48px; }
+.mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { position: absolute; top: 32px; right: 96px; }
+.mira-shell.exploration-ui .lobby-sheet-updates .about-updates { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent; padding: 14px 4px 40px 0;
+  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 14px, #000 calc(100% - 44px), transparent); }
 @media (max-width: 600px), (max-height: 500px) {
-  .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 64px; font-size: 28px; }
-  .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { top: 24px; right: 60px; padding: 0 14px; }
+  .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 96px; font-size: 28px; }
+  .mira-shell.exploration-ui .lobby-sheet.lobby-sheet-updates .lobby-sheet-close { top: 24px; right: 60px; }
+  .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { top: 24px; right: 104px; padding: 0 14px; }
   .mira-shell.exploration-ui .lobby-sheet-updates .updates-github-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 

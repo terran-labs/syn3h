@@ -28,7 +28,7 @@ export class UpdateNotice {
     this.banner.querySelector('.update-reload')!.addEventListener('click', () => location.reload(), { signal })
     this.banner.querySelector('.update-whatsnew')!.addEventListener('click', () => this.whatsNew(), { signal })
     this.banner.querySelector('.update-dismiss')!.addEventListener('click', () => this.dismiss(), { signal })
-    this.chip.type = 'button'; this.chip.className = 'rail-update'; this.chip.hidden = true
+    this.chip.type = 'button'; this.chip.className = 'rail-update liquid-glass'; this.chip.hidden = true
     this.chip.addEventListener('click', () => this.whatsNew(), { signal })
     watchForUpdates(version => { void this.show(version) }, signal)
     window.addEventListener('mira:new-build', () => { if (!this.version) void this.show('') }, { signal })

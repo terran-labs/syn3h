@@ -92,6 +92,24 @@ for (const mode of ['desktop', 'phone']) {
     assert.equal(await github.getAttribute('target'), '_blank')
     assert.match(await github.getAttribute('rel') ?? '', /noopener/)
 
+    // The X stands on the header row (its centre within 2 px of the title's), inside the column,
+    // clear of All releases, and stays there while the list scrolls: only the list moves.
+    const header = () => page.locator('dialog.lobby-sheet-updates').evaluate(root => {
+      const box = el => el.getBoundingClientRect(), x = box(root.querySelector('.lobby-sheet-close')), title = box(root.querySelector('.lobby-sheet-title'))
+      const gh = box(root.querySelector('.updates-github')), body = root.querySelector('.lobby-sheet-body'), b = box(body), cs = getComputedStyle(body)
+      return { dy: Math.abs((x.top + x.bottom) / 2 - (title.top + title.bottom) / 2), inside: x.left >= b.left + parseFloat(cs.paddingLeft) - 1 && x.right <= b.right - parseFloat(cs.paddingRight) + 1,
+        clear: gh.right <= x.left, x: Math.round(x.top), title: Math.round(title.top) }
+    })
+    const atRest = await header()
+    assert.ok(atRest.dy <= 2, `${mode}: the X is ${atRest.dy.toFixed(1)} px off the header row`)
+    assert.ok(atRest.inside, `${mode}: the X is inside the sheet's column`)
+    assert.ok(atRest.clear, `${mode}: the X is clear of All releases`)
+    await page.locator('dialog.lobby-sheet-updates .about-updates').evaluate(list => { list.scrollTop = 600 })
+    await page.waitForTimeout(200)
+    const scrolled = await header()
+    assert.ok(scrolled.dy <= 2 && scrolled.x === atRest.x && scrolled.title === atRest.title, `${mode}: the header and its X stay put while the list scrolls`)
+    await page.locator('dialog.lobby-sheet-updates .about-updates').evaluate(list => { list.scrollTop = 0 })
+
     // The owner's polish (26 November 2026). No borders anywhere in the sheet: spacing and the
     // rail part the days, not boxes (focus rings are outlines, not borders).
     const sheet = page.locator('dialog.lobby-sheet-updates')
@@ -189,6 +207,8 @@ for (const mode of ['desktop', 'phone']) {
     const chip = page.locator('.rail-update')
     await chip.waitFor({ state: 'visible', timeout: 20000 })
     assert.ok(await page.locator('.update-banner').isHidden(), 'no banner over the world')
+    // The chip is a house glass button, not an outlined pill.
+    assert.deepEqual(await chip.evaluate(el => [el.classList.contains('liquid-glass'), getComputedStyle(el).borderTopWidth]), [true, '0px'], 'the in-play chip is a house button')
     await chip.click()
     const guide = page.locator('.in-play-about')
     // A fresh page fetches the feed here, which the dev server builds from git (see the lobby above).
