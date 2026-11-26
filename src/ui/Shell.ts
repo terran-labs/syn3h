@@ -38,7 +38,7 @@ import { SlidingPanels } from './SlidingPanels'
 import { activePlayersLabel, populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, pickLobbyTarget, type GalaxyWorld } from './galaxy/Galaxy'
-import { captionLayout, captionOptions, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
+import { CAPTION_INSET, captionClearance, captionKey, captionLayout, captionOptions, preferPrevious, type CaptionOption, type CaptionSpace, type LabelPlace, type ScreenBox } from './galaxy/labels'
 import { captionScale } from './galaxy/captionScale'
 import { glowColour } from './galaxy/hoverGlow'
 import { lobbyLook } from '../world/lobbyLook'
@@ -118,6 +118,17 @@ import './help/help.css'
  * galaxy, so turning this on brings it back. Worlds are shaped in play, in the World card.
  */
 const OFFER_CUSTOM_PLANET: boolean = false
+/** A hidden planet name returns only after its place has stayed free this long, ms. */
+const CAPTION_SHOW_HOLD_MS = 450
+/** A name's fade is .35 s (shell.css); reduced motion moves a name only once it has faded, with a frame to spare. */
+const CAPTION_FADE_MS = 400
+/** Time constant of a name's glide to a new place, s: about 95 percent there in .35 s. */
+const CAPTION_GLIDE_SECONDS = 0.117
+/** The fastest a gliding name moves, px/s: about 4 px a frame at 60 fps, so a long move never leaps. */
+export const CAPTION_GLIDE_SPEED = 240
+/** A planet that moves further than this in one layout has leapt, px: orbits move a few px a frame. */
+const CAPTION_TELEPORT_PX = 40
+const clampTo = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 /** How bright the galaxy stays behind a lobby sheet: faintly there, and held still. */
 const SHEET_BACKDROP = 0.7
 /** Point the licence disclosures in `root` at the captured entry version's copies. Only those links, never invite or networking links. */
@@ -2196,6 +2207,12 @@ export class Shell implements System {
       },
       // A hovered or pressed world gets first claim on caption space.
       onPoint: id => { for (const [key, chip] of chips) chip.classList.toggle('is-pointed', key === id) },
+      // The lobby at rest: a planet breathing its glow lifts its caption the same way a hover does,
+      // by the same amount at its peak share (shell.css --caption-pulse), as in v26.11.2504.
+      onRest: pulses => worlds.forEach((world, i) => {
+        const chip = chips.get(world.id), value = (Math.round((pulses[i] ?? 0) * 50) / 50).toFixed(2)
+        if (chip && chip.style.getPropertyValue('--caption-pulse') !== value) chip.style.setProperty('--caption-pulse', value)
+      }),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
@@ -2222,14 +2239,29 @@ export class Shell implements System {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         if (!space) return
         const current = currentPlanet().id, short = Math.min(innerWidth, innerHeight)
+        // Quieter with distance, a step brighter for the world in play (v26.11.2504's strength).
+        const depths = places.filter(p => p.visible).map(p => p.depth), near = Math.min(...depths), far = Math.max(...depths)
         const sun = this.galaxy?.sunScreen
         const candidates = []
         const visible = new Set<string>()
+        const now = performance.now(), still = matchMedia('(prefers-reduced-motion: reduce)').matches
+        this.drawnReservations(now)
+        // A planet that leapt (the clock set, a resize, the galaxy reframed) is a teleport, not an
+        // orbit: its name goes straight to its new place, with no glide, hold or wait to return.
+        const leapt = new Set<string>()
+        for (const place of places) {
+          const last = this.planetDrawn.get(place.id)
+          if (last && Math.hypot(place.x - last.x, place.y - last.y) > CAPTION_TELEPORT_PX) leapt.add(place.id)
+          this.planetDrawn.set(place.id, { x: place.x, y: place.y })
+        }
         for (const place of places) {
           const chip = chips.get(place.id)!
           if (place.visible) visible.add(place.id)
           chip.classList.toggle('is-chosen', place.id === chosen)
           if (!place.visible || (chosen && place.id !== chosen) || place.labelled === false) continue
+          const depth = far > near ? (place.depth - near) / (far - near) : 0
+          const strength = (1 - 0.25 * depth + (place.id === current ? 0.2 : 0)).toFixed(2)
+          if (chip.style.getPropertyValue('--caption-strength') !== strength) chip.style.setProperty('--caption-strength', strength)
           const scale = captionScale(place.radius, short)
           const cssScale = scale.toFixed(2)
           if (chip.style.getPropertyValue('--caption-scale') !== cssScale) chip.style.setProperty('--caption-scale', cssScale)
@@ -2242,10 +2274,27 @@ export class Shell implements System {
           const priority = place.id === chosen ? 4 : chip.classList.contains('is-pointed') ? 3 : chip === document.activeElement ? 2 : place.id === current ? 1 : 0
           candidates.push({ id: place.id, options, priority, moon: row.moon })
         }
-        const layout = captionLayout(candidates)
+        // A name keeps its side and lines while they still work (labels.ts preferPrevious).
+        const layout = captionLayout(preferPrevious(candidates, this.captionKeys))
+        const dt = Math.min(0.1, Math.max(0, (now - this.captionClock) / 1000)); this.captionClock = now
         const canChoose = !chosen && !this.dropping && !this.overlay.inert && this.element.classList.contains('galaxy-open')
         for (const [id, chip] of chips) {
-          const placement = layout.get(id), suppressed = !placement
+          let placement = layout.get(id)
+          // A hidden name comes back only once its place has stayed free a moment, so a name at
+          // the edge of a rule does not blink as the planets orbit (the owner: "graceful motion only").
+          if (placement && chip.classList.contains('is-suppressed')) {
+            const since = this.captionFree.get(id) ?? now
+            this.captionFree.set(id, since)
+            if (now - since < CAPTION_SHOW_HOLD_MS && !leapt.has(id)) placement = undefined
+            // And only where no name is drawn now: a neighbour may still be gliding through its place.
+            else if (this.pathCrosses(id, placement.box, placement.box)) placement = undefined
+          } else if (!placement) this.captionFree.delete(id)
+          const suppressed = !placement
+          // Leaving: its drawn box stays reserved while it fades, so nothing lands on it.
+          if (suppressed && !chip.classList.contains('is-suppressed') && !chip.hidden) {
+            const box = this.drawnBox(id, chip)
+            if (box) this.captionReserve.set(id, { box, until: now + CAPTION_FADE_MS })
+          }
           const key = keys.get(id)!
           // Move focus before hiding its current button. If the caption returns while the
           // fallback has focus, keep that focus until the player leaves the world choice.
@@ -2260,11 +2309,20 @@ export class Shell implements System {
           const tabIndex = suppressed || useKey ? -1 : 0
           if (chip.tabIndex !== tabIndex) chip.tabIndex = tabIndex
           if (!placement) continue
+          // Never over a nearer globe or the sun, the rework's rule: a held or gliding name that would be goes straight to its place.
+          const own = places.find(p => p.id === id)
+          const clear = (box: ScreenBox) => !own || captionClearance(box, own, places, sun) >= 0
+          placement = this.captionMotion(id, chip, placement, now, dt, still, leapt.has(id), clear)
           if (chip.dataset.captionContent !== placement.content) chip.dataset.captionContent = placement.content
           const inline = placement.inline ?? 'center'
           if (chip.dataset.captionInline !== inline) chip.dataset.captionInline = inline
           chip.classList.toggle('is-caption-bottom-aligned', placement.blockEnd === true)
-          this.placeChip(chip, (placement.box.left + placement.box.right) / 2, placement.box.top)
+          const glide = this.captionGlide.get(id)!
+          // Drawn at its place plus whatever is left of a glide from its last one, never past the edge inset.
+          const halfWidth = (placement.box.right - placement.box.left) / 2, boxHeight = placement.box.bottom - placement.box.top
+          const x = clampTo((placement.box.left + placement.box.right) / 2 + glide.x, CAPTION_INSET + halfWidth, innerWidth - CAPTION_INSET - halfWidth)
+          const y = clampTo(placement.box.top + glide.y, CAPTION_INSET, innerHeight - CAPTION_INSET - boxHeight)
+          this.placeChip(chip, x, y)
         }
         if (focusedKey) updateRing()
       },
@@ -2297,6 +2355,109 @@ export class Shell implements System {
     if (rowsChanged) this.galaxy?.refreshCaptions()
   })
   private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number }>()
+  /** Each name's last placement decision, so the next frame prefers it (labels.ts preferPrevious). */
+  private readonly captionKeys = new Map<string, string>()
+  /** When a hidden name's place first came free, ms. */
+  private readonly captionFree = new Map<string, number>()
+  /** What is left of a name's glide from its last place to its new one, px, and the box it was drawn at. */
+  private readonly captionGlide = new Map<string, { x: number; y: number; key: string; left: number; top: number; until: number; held?: CaptionOption }>()
+  private captionClock = performance.now()
+  /**
+   * A name that changes side or lines glides there: its offset from the new place starts at the
+   * old one and eases away (about 95 percent in .35 s), so the text never jumps. With reduced
+   * motion it does not move: it fades out where it was, takes its new place, and fades back in.
+   */
+  private captionMotion(id: string, chip: HTMLButtonElement, placement: CaptionOption, now: number, dt: number, still: boolean, leapt = false, clear: (box: ScreenBox) => boolean = () => true): CaptionOption {
+    const key = captionKey(placement)
+    let glide = this.captionGlide.get(id)
+    if (!glide) { glide = { x: 0, y: 0, key, left: placement.box.left, top: placement.box.top, until: 0 }; this.captionGlide.set(id, glide) }
+    if (leapt) {
+      glide.x = glide.y = 0; glide.key = key; glide.held = undefined; chip.classList.remove('is-reflowing'); this.captionReserve.delete(id)
+      this.captionKeys.set(id, key); this.lastPlacement.set(id, placement)
+      return placement
+    }
+    if (glide.key !== key) {
+      // Glide only along a clear path, clear of every name still on screen (shown, gliding, or
+      // fading out): otherwise it fades out where it was, moves unseen, and fades in.
+      const from = this.drawnBox(id, chip)
+      const crossing = !still && !!from && (this.pathCrosses(id, from, placement.box) || !this.pathClear(from, placement.box, clear))
+      if (still || crossing) {
+        // Fade out in place first; the change is applied once the name is gone.
+        if (!glide.held) {
+          glide.held = this.lastPlacement.get(id) ?? placement; glide.until = now + CAPTION_FADE_MS; chip.classList.add('is-reflowing')
+          if (from) this.captionReserve.set(id, { box: from, until: glide.until })
+        }
+        if (now < glide.until && glide.held && clear(glide.held.box)) return glide.held
+        glide.held = undefined; chip.classList.remove('is-reflowing'); glide.x = glide.y = 0
+      } else {
+        const lastDrawn = this.chipDrawn.get(chip)
+        if (lastDrawn && Number.isFinite(lastDrawn.x)) { glide.x = lastDrawn.x - (placement.box.left + placement.box.right) / 2; glide.y = lastDrawn.y - placement.box.top }
+      }
+      glide.key = key
+    }
+    // A glide that would carry it over a nearer globe ends at once.
+    if ((glide.x || glide.y) && !clear({ left: placement.box.left + glide.x, right: placement.box.right + glide.x, top: placement.box.top + glide.y, bottom: placement.box.bottom + glide.y })) glide.x = glide.y = 0
+    // Ease the offset away: exponentially when it is small, at the glide speed when it is large.
+    const left = Math.hypot(glide.x, glide.y)
+    if (left > 0) {
+      const step = Math.min(left, left * (1 - Math.exp(-dt / CAPTION_GLIDE_SECONDS)), CAPTION_GLIDE_SPEED * dt)
+      const keep = (left - step) / left
+      glide.x *= keep; glide.y *= keep
+      if (left - step < .25) glide.x = glide.y = 0
+    }
+    this.captionKeys.set(id, key); this.lastPlacement.set(id, placement)
+    return placement
+  }
+  private readonly lastPlacement = new Map<string, CaptionOption>()
+  /** Each planet's screen position on the last layout, to tell an orbit from a leap. */
+  private readonly planetDrawn = new Map<string, { x: number; y: number }>()
+  /** Drawn boxes held for names that are fading out or waiting to move, until a time. */
+  private readonly captionReserve = new Map<string, { box: ScreenBox; until: number }>()
+  /** A name's box where it is drawn now: its last placement's size at its drawn position. */
+  private drawnBox(id: string, chip: HTMLButtonElement): ScreenBox | undefined {
+    const placement = this.lastPlacement.get(id), at = this.chipDrawn.get(chip)
+    if (!placement || !at || !Number.isFinite(at.x)) return undefined
+    const half = (placement.box.right - placement.box.left) / 2
+    return { left: at.x - half, right: at.x + half, top: at.y, bottom: at.y + placement.box.bottom - placement.box.top }
+  }
+  /** Boxes no other name may take now: reservations still running, and every gliding name's drawn box. */
+  private drawnReservations(now: number): Map<string, ScreenBox> {
+    const out = new Map<string, ScreenBox>()
+    for (const [id, held] of this.captionReserve) { if (held.until > now) out.set(id, held.box); else this.captionReserve.delete(id) }
+    for (const [id, glide] of this.captionGlide) {
+      if (!glide.x && !glide.y) continue
+      const chip = this.galaxyChips?.get(id), box = chip && this.drawnBox(id, chip)
+      if (box) out.set(id, box)
+    }
+    return out
+  }
+  /** Whether every step of a straight glide between two boxes passes `clear` (no nearer globe or the sun). */
+  private pathClear(from: ScreenBox, to: ScreenBox, clear: (box: ScreenBox) => boolean): boolean {
+    for (let i = 1; i <= 8; i++) {
+      const t = i / 8, dx = (to.left - from.left) * t, dy = (to.top - from.top) * t
+      if (!clear({ left: from.left + dx, right: from.right + dx, top: from.top + dy, bottom: from.bottom + dy })) return false
+    }
+    return true
+  }
+  /** Whether a straight glide from one box to another would pass over another shown name. */
+  private pathCrosses(id: string, from: ScreenBox, to: ScreenBox): boolean {
+    const chips = this.galaxyChips
+    if (!chips) return false
+    const others: ScreenBox[] = []
+    for (const [other, chip] of chips) {
+      if (other === id || chip.hidden || chip.classList.contains('is-suppressed')) continue
+      const box = this.drawnBox(other, chip); if (box) others.push(box)
+    }
+    // A name fading out still shows until it has gone.
+    const now = performance.now()
+    for (const [other, held] of this.captionReserve) if (other !== id && held.until > now) others.push(held.box)
+    for (let i = 0; i <= 8; i++) {
+      const t = i / 8, dx = (to.left - from.left) * t, dy = (to.top - from.top) * t
+      const box = { left: from.left + dx, right: from.right + dx, top: from.top + dy, bottom: from.bottom + dy }
+      if (others.some(o => box.left < o.right && box.right > o.left && box.top < o.bottom && box.bottom > o.top)) return true
+    }
+    return false
+  }
   /** The galaxy's world captions, by world id. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly galaxyWorldKeys = new Map<string, HTMLButtonElement>()

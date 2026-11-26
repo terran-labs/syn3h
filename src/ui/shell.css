@@ -445,9 +445,17 @@ html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:f
   pointer-events: none; touch-action: none; white-space: nowrap; text-align: center;
   color: color-mix(in srgb, #f6f9fc 94%, var(--caption-tint));
   text-shadow: var(--float-under);
-  opacity: 1;
-  transition: color .22s ease-out;
+  /* Quiet names (the owner, 26 November 2026: "far too heavy ... their shadows are far too
+     intense ... I hate how they flash in and out"): the v26.11.2504 strength, set by Shell from
+     depth and the world in play, lifted toward full by the planet's resting pulse, and every
+     change eased. Legibility comes from where a name is placed, not from weight. */
+  --caption-strength: 1; --caption-pulse: 0;
+  opacity: calc(var(--caption-base) * var(--caption-strength) + (min(1, calc(var(--caption-strength) * 100)) - var(--caption-base) * var(--caption-strength)) * var(--caption-pulse));
+  transition: opacity .35s ease-out, color .35s ease-out, visibility 0s linear 0s;
 }
+/* .62 and .78 were tried first; the owner (17 November 2026) asked for "less transparent grey and
+   more solid white", over the sun's shafts as well as dark space. */
+.mira-shell { --caption-base: .92; }
 .galaxy-caption-text { display: grid; justify-items: center; }
 .galaxy-caption-text > * { width: max-content; }
 /* Move ink toward its globe without shrinking the native hit target. */
@@ -455,30 +463,25 @@ html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:f
 .mira-shell:not(.galaxy-flat) .galaxy-label[data-caption-inline="start"] .galaxy-caption-text { justify-self: stretch; justify-items: start; }
 .mira-shell:not(.galaxy-flat) .galaxy-label[data-caption-inline="end"] .galaxy-caption-text { justify-self: stretch; justify-items: end; }
 .mira-shell button.galaxy-label .galaxy-caption-text > strong { font: 500 10.5em/1.3333 'Barlow', sans-serif; letter-spacing: .24em; text-transform: uppercase; }
-.mira-shell button.galaxy-label .galaxy-caption-text > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; }
+.mira-shell button.galaxy-label .galaxy-caption-text > small { font: 400 9.5em/1.2632 'Barlow', sans-serif; letter-spacing: .08em; text-transform: none; opacity: calc(.72 + .13 * var(--caption-pulse, 0)); transition: opacity .35s ease-out; }
 .mira-shell button.galaxy-label .galaxy-caption-text > small:empty { display: none; }
 /* Compact captions keep the same measurable row sizes. Only the shown rows take up space. */
 .mira-shell:not(.galaxy-flat) button.galaxy-label:not(#galaxy-caption):is([data-caption-content="with-count"], [data-caption-content="name"]) {
   min-height: 24px;
 }
+/* A line the name drops (for room) fades rather than vanishing; the name keeps its place. */
+.mira-shell button.galaxy-label .galaxy-caption-text > small { transition: opacity .35s ease-out, visibility 0s linear 0s; }
 .mira-shell:not(.galaxy-flat) .galaxy-label[data-caption-content="with-count"] .galaxy-biome,
 .mira-shell:not(.galaxy-flat) .galaxy-label[data-caption-content="name"] .galaxy-caption-text > small {
-  position: absolute; visibility: hidden; pointer-events: none;
+  position: absolute; visibility: hidden; pointer-events: none; opacity: 0;
+  transition: opacity .35s ease-out, visibility 0s linear .35s;
 }
-/* Give the light glyphs a dark edge without putting the orbit behind a card. Both
-   colors stay opaque so the same edge reads when a shaft crosses the name. */
-.mira-shell:not(.galaxy-flat) button.galaxy-label .galaxy-caption-text > * {
-  paint-order: stroke fill;
-  -webkit-text-stroke: .20em #101118;
-  text-shadow: 0 1px 3px #101118;
-}
-.mira-shell:not(.galaxy-flat) button.galaxy-label .galaxy-caption-text > small { color: #cdd5e2; }
-.mira-shell:not(.galaxy-flat) button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) {
-  color: color-mix(in srgb, #f6f9fc 82%, var(--caption-accent));
-}
-@media (prefers-reduced-motion: reduce) {
-  .mira-shell button.galaxy-label:not(#galaxy-caption) { transition: none; }
-}
+/* A planet hovered (or held under a finger, or its caption focused, or chosen and flown to)
+   brings its caption to full strength in its corona's colour, easing in over 220 ms and out over
+   the resting 350 ms; the type line rises with it and stays a step quieter (as v26.11.2504). */
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) { opacity: min(1, calc(var(--caption-strength) * 100)); color: var(--caption-accent); transition: opacity .22s ease-out, color .22s ease-out, visibility 0s linear 0s; }
+.mira-shell button.galaxy-label:not(#galaxy-caption):is(.is-pointed, .is-chosen, :focus) .galaxy-caption-text > small { opacity: .85; transition: opacity .22s ease-out; }
+/* Reduced motion keeps the cross-fades: a fade is not movement. */
 .mira-shell button.galaxy-label:not(#galaxy-caption):focus-visible { outline: 1px solid rgb(238 244 248 / .5); outline-offset: 3px; }
 .mira-shell button.galaxy-label:not(#galaxy-caption)[hidden] { display: none; }
 .lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
@@ -492,7 +495,11 @@ html .mira-shell .join-view > .join-actions.join-actions > button.panel-action:f
   .mira-shell.galaxy-flat button.galaxy-label .galaxy-caption-text > small { transition: none; }
 }
 .galaxy-open button.galaxy-label:not(#galaxy-caption):not(.is-suppressed) { pointer-events: auto; cursor: pointer; }
-.mira-shell button.galaxy-label:not(#galaxy-caption).is-suppressed { visibility: hidden; opacity: 0; transition: none; }
+/* Reduced motion: a name changing side fades out where it was before it moves (Shell captionMotion). */
+.mira-shell button.galaxy-label:not(#galaxy-caption).is-reflowing { opacity: 0; transition: opacity .35s ease-out; }
+/* A name that loses its place fades out, then leaves the tab order and hit testing once it is
+   gone; one that gets its place back fades in. Never a cut. */
+.mira-shell button.galaxy-label:not(#galaxy-caption).is-suppressed { visibility: hidden; opacity: 0; transition: opacity .35s ease-out, color .35s ease-out, visibility 0s linear .35s; }
 
 /* An omitted caption still has a keyboard choice. The focus cue never intercepts a
    pointer, so near limbs and the sun keep their normal canvas hit testing. */
