@@ -60,7 +60,7 @@ export class ChatRow {
   private sync(): void {
     const n = chatLink.unread
     this.count.hidden = n === 0
-    this.count.textContent = n > 9 ? '9+' : String(n)
+    this.count.textContent = n > 99 ? '99+' : String(n)
     this.count.classList.toggle('from-person', chatLink.fromPerson)
     this.button.classList.toggle('is-on', n > 0)
     this.button.setAttribute('aria-label', `${this.label()}. Key Y.`)

@@ -98,7 +98,9 @@
   /* Past the first and last node by a row, fading to nothing at both ends, so it reads as a
      longer list turning through the three shown (the owner: "an actual carousel"). */
   top: calc(var(--gs-pitch) / -2); height: calc(100% + var(--gs-pitch));
-  background: linear-gradient(transparent, var(--s3-line-quiet) var(--gs-pitch), var(--s3-line-quiet) calc(100% - var(--gs-pitch)), transparent);
+  /* Full strength only around the selected dot (the middle 16%), falling to nothing at 15% and
+     85%, well inside the first and last rows (the owner: "fade out more aggressively"). */
+  background: linear-gradient(transparent, transparent 15%, var(--s3-line-quiet) 42%, var(--s3-line-quiet) 58%, transparent 85%, transparent);
 }
 /* The charge ring (gear.css .gs-ring), centred on the lit node. */
 :root .mira-shell.exploration-ui .gear-selector .gs-window .gs-ring { left: calc(var(--col-spine) + .5px - 8px); top: calc(50% - 8px); }
@@ -110,10 +112,9 @@
   border-radius: 50%; border: 1px solid var(--s3-accent-2); background: var(--s3-accent-2); box-shadow: var(--col-node-lit);
 }
 /* Every other gear has the hollow node an accessory has when off: one way of showing on and off. */
-:root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item:not(.is-active)::before {
-  content: ''; display: block; position: absolute; left: calc(var(--col-spine) - 3px - var(--gs-drum-left, 0px)); top: 50%; width: 7px; height: 7px; margin-top: -3.5px; box-sizing: border-box;
-  border-radius: 50%; border: var(--col-stroke); background: var(--col-node-off);
-}
+/* The drum's line carries one dot only, the selected gear's (the owner, 26 November 2026:
+   "There should only be the single circle under the active selection"). */
+:root .mira-shell.exploration-ui .gear-selector .gs-drum button.gs-item:not(.is-active)::before { content: none; }
 /* The gear's name in the column's type; its number is its key cap. */
 :root .mira-shell.exploration-ui .gear-selector .gs-text { letter-spacing: var(--col-track); }
 :root .mira-shell.exploration-ui .gear-selector .gs-keyhint,
@@ -172,6 +173,13 @@
    clears its neighbours' by more than 2 px with the cursor free. One pitch, free or captured,
    so nothing moves when the cursor locks. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label .gs-index.keycap { line-height: 1.2; }
+/* The rows scale about the name's left edge, so a smaller row's cap would sit nearer its name:
+   each cap moves out by what its row's scale takes off, and every cap's centre is on one line
+   (the owner, 26 November 2026: "vertically align the center points of each of the numbered
+   keycaps"). In the row's own (scaled) units: (gap + half the cap) * (1 - 1 / scale). */
+:root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=free] .gs-label .gs-index.keycap {
+  translate: calc((var(--gs-num-gap) + var(--gs-num) / 2) * (1 - 1 / (var(--s, 1) * var(--fit, 1)))) 0;
+}
 /* The meter follows the name across the change of form by transform, with the names' slide. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-meter { translate: var(--gs-name-x) 0; transition: translate .18s cubic-bezier(.16,1,.3,1); }
 /* As in gear.css: a row crossing the back of the ring jumps, and reduced motion never slides. */
@@ -297,6 +305,14 @@
 /* Chat's unread count: bright type just after the word Chat, inside the name's fixed column
    (ChatRow.ts), so the key column stays put as it appears, grows to 9+ and goes. No pill. */
 .hud-chat .chat-count { margin-left: .5em; color: var(--s3-accent-2); font: var(--col-type); letter-spacing: var(--col-track); text-shadow: var(--col-text-under); }
+/* A count, not part of the name (the owner, 26 November 2026: "in a circle or some kind of cool
+   tag so it's obviously a count"): a small ring in the count's own ink, round for one digit and
+   a pill for two or "99+", sized to the row. */
+.hud-chat .chat-count:not([hidden]) {
+  display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box;
+  min-width: 1.6em; height: 1.6em; padding: 0 .4em; border: 1px solid currentColor; border-radius: 999px;
+  font-size: .82em; letter-spacing: .02em; line-height: 1; vertical-align: .1em; font-variant-numeric: tabular-nums;
+}
 .hud-chat .chat-count[hidden] { display: none; }
 .hud-chat .chat-count.from-person { color: var(--s3-ink); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
