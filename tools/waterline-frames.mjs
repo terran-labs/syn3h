@@ -40,6 +40,7 @@ for (const build of builds) {
     const phone = viewport.width < viewport.height
     const ctx = await browser.newContext(phone ? { viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport })
     const page = await ctx.newPage()
+    await page.addInitScript((overlay) => { window.wlfOverlay = overlay }, build.name === 'old')
     page.on('pageerror', (e) => report.errors.push(`${build.name}: ${e.message}`))
     await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=buggy&planet=alpine&seed=4&room=wlf${Date.now().toString(36)}&daydream=0${webgl ? '&webgl=1' : ''}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30 && window.mira.shell.playing, null, { timeout: 240000 })
@@ -93,6 +94,9 @@ for (const build of builds) {
             if (Math.abs(p.z) > Math.abs(p.y)) { a = toPx(-k, (-p.x + p.y * k) / p.z); b = toPx(k, (-p.x - p.y * k) / p.z) }
             else { a = toPx((-p.x + p.z * k) / p.y, -k); b = toPx((-p.x - p.z * k) / p.y, k) }
             const el = document.getElementById('wlf-line')
+            // The fitted-plane line exists on builds before the fix only; after it, the game's own
+            // meniscus is the line (drawnSurface.ts), so the overlay would mark a line nobody draws.
+            el.style.display = window.wlfOverlay ? '' : 'none'
             el.setAttribute('x1', a[0]); el.setAttribute('y1', a[1]); el.setAttribute('x2', b[0]); el.setAttribute('y2', b[1])
             const cam = window.mira.game.camera
             return { plane: [p.x, p.y, p.z], a, b, near: cam.near, lens: cam.position.y - window.mira.terrain.liquidHeightAt(cam.position.x, cam.position.z) }
