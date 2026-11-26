@@ -24,6 +24,8 @@ export class SkyEnvironmentMap {
     scene.userData.skyEnvironment=this.stats
   }
   invalidate(){this.dirty=true}
+  /** Whether the first capture has been made and the scene's environment is the sky map. */
+  get ready(){return this.target!==null}
   update(dt:number,hour:number){
     this.elapsed+=dt
     const delta=Math.abs(hour-this.capturedHour),hourDelta=Math.min(delta,24-delta)
