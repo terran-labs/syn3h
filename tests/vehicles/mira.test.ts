@@ -18,7 +18,7 @@ import { MiraBuggy } from '../../src/vehicles/MiraBuggy'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
 import {
-  G, airStraighten, axis, bump, cruise, deploy, drop, flying, kick, lavaEscape, lavaPool, pitchedGlide, planted, pos, resetParams,
+  G, airStraighten, axis, bump, cruise, deploy, drop, flying, kick, lavaEscape, lavaPool, pitchedGlide, planted, pos, resetParams, roofLanding,
   sideways, slope, spawn, speed,
 } from './miraScenarios'
 
@@ -538,6 +538,16 @@ describe('MiraBuggy slide recovery', () => {
     const r = await kick(v, angle, false)
     expect(r.recovered).toBeLessThan(Infinity)
     expect(r.upright).toBeGreaterThan(0.9)
+  })
+})
+
+describe('MiraBuggy roof landing', () => {
+  // Landing on its roof on flat ground, hands off, the buggy ends back on its wheels: by tumbling
+  // on its grippy roof or by self righting once slow. 10 s is a bound, not a tuned time.
+  test.each([[10], [30], [60]])('upside down at %i m/s it ends upright within 10 s, every value finite', async (v) => {
+    const r = await roofLanding(v, 12)
+    expect(r.finite).toBe(true)
+    expect(r.upright).toBeLessThan(10)
   })
 })
 

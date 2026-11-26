@@ -174,6 +174,10 @@ async function miraBuggy(): Promise<VehicleReport> {
     fig('Body strikes landing a 4 m drop at 30 m/s', '', (await at(buggy.drop)).strikes),
     fig('Body strikes landing a 4 m drop at 30 m/s, planted suspension', '', (await at(buggy.drop, buggy.planted)).strikes),
   )
+  for (const v of [10, 30, 60]) {
+    const r = await at(() => buggy.roofLanding(v))
+    detail.push(fig(`Lands on its roof at ${v} m/s: time on its roof`, 's', r.onRoof), fig(`Lands on its roof at ${v} m/s: slid on its roof`, 'm', r.roofSlide), fig(`Lands on its roof at ${v} m/s: upright for good from`, 's', r.upright))
+  }
   const broadside = await at(buggy.sideways)
   detail.push(
     fig('Broadside at 20 m/s: distance in 6 s', 'm', broadside.distance),

@@ -283,6 +283,31 @@ export const steerStep = async (v: number, lock: number) => {
 }
 
 /**
+ * Dropped upside down from 1.6 m while moving forward at `v` m/s (with a 2 m/s sink), hands
+ * off, on flat ground, for `seconds`. Seconds spent on its roof (more than 60 degrees past level)
+ * and metres slid there; the time from which it stays upright for good (Infinity if it never
+ * does); whether every value stayed finite.
+ */
+export const roofLanding = async (v: number, seconds = 15) => {
+  const { bed, b } = await spawn(0, 3)
+  bed.run(2)
+  b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), true)
+  b.body.setTranslation({ x: 0, y: 1.6, z: 0 }, true)
+  b.body.setLinvel({ x: 0, y: -2, z: -v }, true)
+  b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+  let t = 0, onRoof = 0, roofSlide = 0, upright = Infinity, finite = true, last = pos(b)
+  bed.run(seconds, () => {
+    t += FIXED_DT
+    const up = axis(b, 0, 1, 0).y, p = pos(b), w = b.body.angvel()
+    if (![p.x, p.y, p.z, w.x, w.y, w.z].every(Number.isFinite)) finite = false
+    if (up < -0.5) { onRoof += FIXED_DT; roofSlide += Math.hypot(p.x - last.x, p.z - last.z) }
+    last = p
+    if (up > 0.8) { if (upright === Infinity) upright = t } else upright = Infinity
+  })
+  return { onRoof, roofSlide, upright, finite }
+}
+
+/**
  * A quick flick at cruise speed `v`: full left for half a second, full right for half a
  * second, then let go for two. The largest slide angle and the worst upright over the run, and
  * the slide angle at the end (near 0: it settled on a line).

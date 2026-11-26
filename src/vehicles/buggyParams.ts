@@ -272,14 +272,15 @@ export const buggyRoofGrip = defineParam({
   default: 1.5, min: 0, max: 3, step: 0.05,
 })
 /**
- * Friction of the lower hull, the sides below the roof. It combines with the ground by
- * Multiply. Mira's 0.6 (0.8 against terrain) let the side edges, which stand out past the skid
- * plate, catch the ground on a banked landing and trip the buggy into a roll. The skid plate
+ * Friction of the lower hull, the sides below the roof, averaged with the ground's (Mira's
+ * rule): 0.6 is Mira's, 0.8 against terrain. Measured 26 November 2026: lower values do not help
+ * a roof landing, they let the buggy skate on its side edge instead of tipping over (at 0.2 it
+ * stayed on its roof 4.4 s and 66 m from 30 m/s, against 0.8 s and 20 m at 0.6). The skid plate
  * itself has no friction at all.
  */
 export const buggyBodyGrip = defineParam({
   id: 'buggy.bodyGrip', label: 'Body side grip', group: 'Buggy', scope: 'world',
-  default: 0.2, min: 0, max: 1.5, step: 0.05,
+  default: 0.6, min: 0, max: 1.5, step: 0.05,
 })
 /**
  * Self righting (Mira VB 545-562) pushes an upside down buggy back onto its wheels only while it

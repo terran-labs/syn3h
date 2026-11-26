@@ -355,13 +355,12 @@ export class MiraBuggy extends Vehicle {
     const world = game.world
     // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average, which came to 0.8
     // against terrain. Here the hull is two pieces (HULL_CUT): a grippy roof, so a buggy on its
-    // back tumbles over instead of sledging, and slick lower sides, so a banked landing slides
-    // instead of tripping. Each keeps Mira's bounce.
+    // back grips and tumbles over instead of sledging, and lower sides at Mira's friction. Each
+    // keeps Mira's bounce.
     this.hull = world.createCollider(
       RAPIER.ColliderDesc.convexHull(HULL_PIECES.lower)!
         .setDensity(1)
         .setFriction(buggyBodyGrip.value)
-        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Multiply)
         .setRestitution(0.5)
         .setCollisionGroups(Vehicle.chassisGroups()),
       this.body,
