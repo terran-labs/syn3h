@@ -84,7 +84,8 @@ html[data-glass-material] .mira-shell.exploration-ui .player-panel button.pp-tog
 /* ---- The eject dialog: the Leave-world card (exploration.css) with Banish for ---- */
 .mira-shell .exit-confirm.eject-confirm { z-index: 61; }
 .mira-shell.is-paused .exit-confirm.eject-confirm { z-index: 63; }
-.mira-shell .eject-confirm-card { justify-items: stretch; width: min(440px, 100%); box-sizing: border-box; text-align: left; }
+/* Nearly opaque: a decision card must not show the notices or world behind it. */
+.mira-shell .eject-confirm-card { background: rgb(8 12 17 / .92); justify-items: stretch; width: min(440px, 100%); box-sizing: border-box; text-align: left; }
 .mira-shell .eject-confirm strong { letter-spacing: .06em; margin-right: 0; text-transform: none; font-size: 16px; font-weight: 600; }
 .mira-shell .eject-confirm .banish[hidden] { display: none; }
 .mira-shell .eject-confirm .banish-heading { display: block; margin-top: 6px; color: var(--s3-dim, #a9b0bd); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
