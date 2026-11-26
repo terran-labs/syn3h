@@ -25,6 +25,7 @@ import { FIXED_DT, initPhysics } from '../src/core/physics'
 import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
 import { JET_PRESETS } from '../src/vehicles/Jet'
 import * as buggy from '../tests/vehicles/miraScenarios'
+import { onGround } from '../tests/vehicles/groundScenarios'
 import * as jet from '../tests/vehicles2/jetScenarios'
 import * as liquid from '../tests/vehicles/liquidScenarios'
 import * as zorb from '../tests/vehicles2/zorbSkipScenarios'
@@ -32,6 +33,8 @@ import * as skip from '../tests/vehicles2/waterSkipScenarios'
 import { skipAngle } from '../src/vehicles/skip'
 import { harness } from '../tests/vehicles2/harness'
 import { MiraBuggy } from '../src/vehicles/MiraBuggy'
+import '../src/bots/params'
+import { ride } from '../tests/bots/camera-ride'
 import { HOVER_PRESETS, Hovercraft } from '../src/vehicles/Hovercraft'
 import { makeBed } from '../tests/vehicles/harness'
 
@@ -155,6 +158,18 @@ async function miraBuggy(): Promise<VehicleReport> {
   for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: turn radius after 2 s`, 'm', locks.get(v)!.radius))
   for (const v of locks.keys()) detail.push(fig(`Full lock at ${v} m/s: lateral after 2 s`, 'g', locks.get(v)!.lateralG))
   for (const v of [45, 60]) detail.push(fig(`Full lock at ${v} m/s for 2 s: largest slide angle`, 'deg', locks.get(v)!.worstSlip), fig(`Full lock at ${v} m/s for 2 s: least upright (1 level)`, '', locks.get(v)!.upright))
+  // Fishtail: a one second steering step, then let go (26 November 2026).
+  for (const v of [30, 60, 90]) for (const [lock, name] of [[0.25, 'quarter'], [1, 'full']] as const) {
+    const r = await at(() => buggy.steerStep(v, lock))
+    detail.push(fig(`${name} lock for 1 s at ${v} m/s: largest slide angle`, 'deg', r.worstSlip), fig(`${name} lock for 1 s at ${v} m/s: settled after letting go`, 's', r.settled))
+  }
+  // The same on real ground: the flattest straight strip of the generated island for seeds 1 to 3
+  // (tests/vehicles/groundScenarios.ts); seed 0 is a flat slab through the same code, the control.
+  for (const seed of [0, 1, 2, 3]) for (const v of [30, 60]) for (const [kick, lock] of [[false, 1], [false, 0.5], [true, 1]] as const) {
+    const r = await at(() => onGround(seed, v, kick, lock))
+    const what = `${seed ? `Island ${seed} (strip within ${r.roughness.toFixed(1)} m)` : 'Flat control'}, ${kick ? `40 deg slide at ${v} m/s, counter-steer` : `${lock === 1 ? 'full' : 'half'} lock for 1 s at ${v} m/s`}`
+    detail.push(fig(`${what}: largest slide angle`, 'deg', r.worstSlip), fig(`${what}: settled`, 's', r.settled), fig(`${what}: least upright (1 level)`, '', r.upright))
+  }
   const flick = await at(() => buggy.flick(45))
   detail.push(fig('Flick left-right at 45 m/s: largest slide angle', 'deg', flick.worstSlip), fig('Flick left-right at 45 m/s: slide angle 2 s after letting go', 'deg', flick.endSlip))
   detail.push(fig('In the air yawed 30 deg at 30 m/s: nose turned toward travel in 1 s', 'deg', await at(() => buggy.airStraighten())))
@@ -173,7 +188,7 @@ async function miraBuggy(): Promise<VehicleReport> {
     fig('Broadside at 20 m/s: time to face travel', 's', broadside.faced),
     fig('Broadside at 20 m/s: time to stop', 's', broadside.stopped),
   )
-  for (const [v, a] of [[30, 40], [45, 40], [60, 5], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
+  for (const [v, a] of [[30, 30], [30, 40], [45, 40], [60, 5], [60, 30], [90, 30], [45, 90]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, counter-steer: recovered`, 's', (await at(() => buggy.kick(v, a, true))).recovered))
   for (const [v, a] of [[30, 40], [45, 90], [60, 70]]) detail.push(fig(`Slide ${a} deg at ${v} m/s, let go: recovered`, 's', (await at(() => buggy.kick(v, a, false))).recovered))
   // Ice (surface.grip.ice): a frozen lake.
   const onIce = async <T>(scenario: () => Promise<T>) => { buggy.ground.surface = 'ice'; try { return await at(scenario) } finally { buggy.ground.surface = undefined } }
@@ -184,6 +199,9 @@ async function miraBuggy(): Promise<VehicleReport> {
     fig('On ice: full lock at 15 m/s, sideslip', 'deg', iceTurn.slip),
     fig('On ice: course change in 1 s at full lock, 25 m/s', 'deg', (await onIce(() => buggy.courseChange(25))).after1),
   )
+  // A bot drives the real buggy for 180 s on generated islands with the chase camera following
+  // (tests/bots/camera-ride.ts): RMS vertical acceleration of the lens.
+  for (const kind of [0, 1, 2]) for (const seed of ['a', 'b', 'c', 'd']) detail.push(fig(`Chase camera bounce, bot drive on world ${kind}, seed ${seed}`, 'm/s²', await at(() => ride(seed, 180, kind).bounce)))
   const glide = await at(buggyGlideSink)
   detail.push(fig('Wings open at 35 m/s: height lost in 3 s', 'm', glide.sink), fig('Wings open at 35 m/s: speed after 3 s', 'm/s', glide.speed))
   for (const [model, name] of [[0, 'Classic'], [1, 'Catch'], [2, 'Glide']] as const) {

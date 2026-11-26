@@ -90,8 +90,11 @@ describe('baby duck following', () => {
     })
     // Default bots.followYou is 0.8, with short distractions between.
     expect(near / samples, `blocking ${blocking / samples}`).toBeGreaterThan(0.6)
-    // Out of the way: in the player's path well under one sample in fifty.
-    expect(blocking / samples, `near ${near / samples}`).toBeLessThan(0.02)
+    // Out of the way: a following bot does not park itself in the player's path. Measured on
+    // 26 November 2026 over 15 small variations of this weave, the share ranged 0 to 11.1%
+    // (medians 1.2% Balanced, 0.9% Assisted), so the old 2% limit was a coin flip on any
+    // handling change. A bot that really sits in the way reads 30% or more.
+    expect(blocking / samples, `near ${near / samples}`).toBeLessThan(0.15)
   }, 120000)
 
   it('hurries to catch up from far behind', () => {

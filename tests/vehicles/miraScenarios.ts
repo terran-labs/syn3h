@@ -262,6 +262,27 @@ export const fullLock = async (v: number, seconds = 2) => {
 }
 
 /**
+ * A steering step at cruise speed `v`: `lock` (1 full) held for one second, then let go for
+ * six. The largest slide angle (nose to travel) over the run, and the seconds after letting go
+ * until the slide is over for good (Infinity if it never is).
+ */
+export const steerStep = async (v: number, lock: number) => {
+  const { bed, b } = await cruise(v)
+  let t = 0, worstSlip = 0, settled = Infinity
+  bed.run(7, () => {
+    t += FIXED_DT
+    b.input.x = t <= 1 ? lock : 0
+    const s = Math.abs(slip(b))
+    worstSlip = Math.max(worstSlip, s)
+    if (t <= 1) return
+    const still = s < 3 && Math.abs(b.body.angvel().y) < 0.3
+    if (still && settled === Infinity) settled = t - 1
+    else if (s > 6) settled = Infinity
+  })
+  return { worstSlip, settled }
+}
+
+/**
  * A quick flick at cruise speed `v`: full left for half a second, full right for half a
  * second, then let go for two. The largest slide angle and the worst upright over the run, and
  * the slide angle at the end (near 0: it settled on a line).

@@ -44,7 +44,7 @@ for (const mode of ['desktop', 'phone']) {
     if (!(await fold.evaluate((d) => d.open))) await fold.locator('summary').click()
     const select = fold.locator('.wi-preset select')
     await select.waitFor({ state: 'visible' })
-    assert.equal(await select.locator('option:checked').textContent(), 'Balanced', `${mode}: the default is Balanced`)
+    assert.equal(await select.locator('option:checked').textContent(), 'Assisted', `${mode}: the default is Assisted`)
 
     // Choosing a preset sets its settings and its description.
     await select.selectOption({ label: 'Planted' })
@@ -54,8 +54,8 @@ for (const mode of ['desktop', 'phone']) {
     await page.evaluate(() => window.mira.params.set('buggy.fin', 0.45))
     assert.equal(await select.locator('option:checked').textContent(), 'Custom', `${mode}: a changed slider shows Custom`)
     // The dropdown catches up with the settings a moment later (about half a second): wait for it.
-    await select.selectOption({ label: 'Balanced' })
-    await page.waitForFunction(() => document.querySelector('.wi-card[data-section=world] details.wi-group[data-group=Buggy] .wi-preset select option:checked')?.textContent === 'Balanced', null, { timeout: 5000 })
+    await select.selectOption({ label: 'Assisted' })
+    await page.waitForFunction(() => document.querySelector('.wi-card[data-section=world] details.wi-group[data-group=Buggy] .wi-preset select option:checked')?.textContent === 'Assisted', null, { timeout: 5000 })
 
     // The list shown open, for the screenshot.
     await select.evaluate((s) => { s.size = s.options.length; s.style.height = 'auto'; s.style.background = 'rgb(6 21 33 / .96)'; s.closest('.wi-preset').scrollIntoView({ block: 'start' }) })
