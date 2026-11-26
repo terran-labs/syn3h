@@ -115,14 +115,24 @@ fail() { printf '\nRELEASE FAILED: %s\n' "$*" >&2; exit 1; }
 # need_secrets <config in the frozen copy> <worker>: refuse, before anything is deployed, if the
 # Worker lacks a secret that config declares in [secrets] required.
 need_secrets() {
+  _warn="${3:-}"
   _need="$(node tools/frozen-fingerprint.mjs secrets "$DEST/$1")" || fail "could not read [secrets] from $DEST/$1"
   [ -n "$_need" ] || return 0
-  _have="$(with_cf_token node "$WRANGLER" secret list --name "$2" --format json </dev/null 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).map(x=>x.name).join("\n"))}catch{process.exit(1)}})')" \
-    || fail "could not list the secrets of Worker $2 (nothing deployed)"
-  for _s in $_need; do
-    printf '%s\n' "$_have" | grep -qx "$_s" || fail "Worker $2 has no secret $_s, which $1 requires: set it on $2 (wrangler secret put $_s --name $2) before this build is deployed there. Nothing was deployed."
-  done
-  echo "Secrets ok on $2: $(printf '%s ' $_need)"
+  if [ -n "${MIRA_SECRETS_STUB:-}" ]; then
+    # Tests only: "worker=NAME,NAME;worker=..." stands in for wrangler secret list.
+    _have="$(printf '%s' "$MIRA_SECRETS_STUB" | tr ';' '\n' | awk -F= -v w="$2" '$1 == w { print $2 }' | tr ',' '\n')"
+  else
+    _have="$(with_cf_token node "$WRANGLER" secret list --name "$2" --format json </dev/null 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).map(x=>x.name).join("\n"))}catch{process.exit(1)}})')" \
+      || fail "could not list the secrets of Worker $2 (nothing deployed)"
+  fi
+  _missing=""
+  for _s in $_need; do printf '%s\n' "$_have" | grep -qx "$_s" || _missing="$_missing $_s"; done
+  if [ -z "$_missing" ]; then echo "Secrets ok on $2: $(printf '%s ' $_need)"; return 0; fi
+  if [ -n "$_warn" ]; then
+    printf '\nWARNING: promote will need:%s on %s (set it in the same minute as the promote: ops/RELEASE.md, Secrets).\n\n' "$_missing" "$2" >&2
+    return 0
+  fi
+  fail "Worker $2 has no secret$_missing, which $1 requires: set it on $2 (wrangler secret put <name> --name $2) before this build is deployed there. Nothing was deployed."
 }
 
 # --- Preconditions --------------------------------------------------------------------------
@@ -260,9 +270,14 @@ if [ -n "$PROMOTE" ]; then
   [ "$_tested" = "$FINGERPRINT" ] || fail "$PROMOTE_ID changed since it shipped as a beta (fingerprint $_tested then, $FINGERPRINT now): nothing promoted. Ship a new beta."
   echo "Fingerprint matches the beta the owner tested."
 fi
-if [ -z "$DRY" ] && [ -z "$STUB" ]; then
+# Secrets, before any deploy. A beta needs them on staging (it deploys there) and only warns about
+# production, which gets a new secret in the same minute as the promote (setting one redeploys the
+# Worker and resets occupied rooms: one reset, at the moment the owner chose). A promote, or any
+# release that deploys to production, refuses without them.
+if { [ -z "$DRY" ] && [ -z "$STUB" ]; } || [ -n "${MIRA_SECRETS_STUB:-}" ]; then
   [ -n "$PROMOTE" ] || need_secrets wrangler.staging.toml syn3h-staging
-  need_secrets wrangler.toml syn3h # rename-keep: the production Worker's name
+  if [ -n "$BETA" ] || [ -n "$STAGE_ONLY" ]; then need_secrets wrangler.toml syn3h warn # rename-keep: the production Worker's name
+  else need_secrets wrangler.toml syn3h; fi # rename-keep: the production Worker's name
 fi
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
