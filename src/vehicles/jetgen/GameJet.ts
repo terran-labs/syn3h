@@ -155,6 +155,7 @@ export class GameJet {
   private articulate(jet: NextJet): void {
     const travel = FULL_TRAVEL * jetArticulation.value, c = this.controls
     jet.setVector(c.x * travel, c.z * travel, c.y * travel, travel)
+    this.plume.setVector(jet.vector.x, jet.vector.y, c.y * travel)
     jet.setControls(c.x, c.y, c.z, travel)
   }
 
