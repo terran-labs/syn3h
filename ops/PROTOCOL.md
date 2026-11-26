@@ -39,6 +39,9 @@ short and only part of it runs (26 November 2026: a step-2 batch stopped after 2
 the matrix after 17 of 30 cells). Report what ran from the result lines, never as a total.
 `tools/vehicle-switch-cost.mjs`'s camera orbit does not move under the Orchestrator's runner (every
 row invalid, "camera did not move", 26 November); its builder's runs measure. To fix another day.
+The production tier includes a GL error check on WebGL 2: the frame-cost table on both backends
+(tools/quality-frame-cost.mjs stops on any gl.getError() after a level) must finish with zero GL
+errors (26 November: v26.11.2601 raised about six per frame on WebGL 2, and was not promoted).
 Unit tests and typechecks need no allocation or
 permission: run them. There is no separate runtime allocation, receipt or pin step; the
 testing principle in `AGENTS.md` sets how much checking a change needs.
