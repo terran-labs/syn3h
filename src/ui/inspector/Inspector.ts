@@ -1,4 +1,4 @@
-import { glassLabels, LIQUID_TUNING_GROUPS, liquidEligible, liquidQualityHint } from '../glassMaterial'
+import { glassStyleChoice, glassStyles, LIQUID_TUNING_GROUPS, liquidEligible, liquidQualityHint } from '../glassMaterial'
 import { CARD_CLOSE } from '../cardClose'
 import { modeChoices } from '../modeAvailability'
 /**
@@ -709,7 +709,7 @@ export class Inspector {
     let notch: ((value: ParamValue) => number | null) | null = null
     let track: HTMLInputElement | null = null
     if (def.id === 'hud.glass') {
-      // Style: the label at the left and the three named options beside it on the same line
+      // Style: the label at the left and the two named options beside it on the same line
       // (the owner, 22 November 2026). The pressed option's outline is its only mark, and its own
       // name the only text tied to it: no slider, no readout repeating it at the row's end.
       label.textContent = def.label
@@ -718,21 +718,21 @@ export class Inspector {
       const ticks = document.createElement('div')
       ticks.className = 'glass-stops'
       ticks.setAttribute('role', 'group'); ticks.setAttribute('aria-label', def.label)
-      const stops = glassLabels.map((name, index) => {
+      const stops = glassStyles.map(({ label: name, value }) => {
         const button = document.createElement('button')
         button.type = 'button'; button.textContent = name
-        button.onclick = () => params.set(def.id, index)
+        button.onclick = () => params.set(def.id, value)
         ticks.append(button)
         return button
       })
-      format = value => glassLabels[Number(value)] ?? String(value)
+      format = value => glassStyleChoice(Number(value)).label
       row.classList.add('glass-material-row', 'glass-style-row')
       row.append(label, ticks, hint)
       sync = value => {
-        const index = Number(value)
+        const active = glassStyleChoice(Number(value)).value
         stops[0].disabled = !liquidEligible()
         hint.hidden = liquidEligible()
-        stops.forEach((button, i) => button.setAttribute('aria-pressed', String(i === index)))
+        stops.forEach((button, i) => button.setAttribute('aria-pressed', String(glassStyles[i].value === active)))
       }
     } else if (def.id === 'hud.surfaceCoverage') {
       row.classList.add('glass-material-row', 'tint-row')
@@ -1403,7 +1403,10 @@ export class Inspector {
     if (!result.ok) { this.say(result.why); return result.why }
     const world = result.entries.filter(entry => params.get(entry.id)?.def.scope === 'world')
     if (world.length && !canEditWorld()) { const why = 'The host has locked this world, so nothing was pasted.'; this.say(why); return why }
-    params.applySnapshot(Object.fromEntries(result.entries.map(entry => [entry.id, entry.value])), 'local')
+    // Apply a pasted tint after the style has set its default.
+    const { 'hud.surfaceCoverage': tint, ...values } = Object.fromEntries(result.entries.map(entry => [entry.id, entry.value]))
+    params.applySnapshot(values, 'local')
+    if (tint !== undefined) params.set('hud.surfaceCoverage', tint, 'local')
     this.element.querySelector<HTMLElement>('.wi-sheet')!.hidden = true
     const line = pasteSummary(result); this.say(line); return line
   }

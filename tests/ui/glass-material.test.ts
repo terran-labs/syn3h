@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { params, surfaceCoverage } from '../../shared/params'
+import { GLASS_FLAT, GLASS_LIQUID, params, surfaceCoverage } from '../../shared/params'
 import { qualityLevel } from '../../src/core/quality'
 import { glassStyle } from '../../src/ui/inspector/params'
-import { defaultTint, glassLabels, liquidSelected, restoreGlassMaterial } from '../../src/ui/glassMaterial'
+import { defaultTint, glassStyles, liquidSelected, restoreGlassMaterial, setGlassForVisit } from '../../src/ui/glassMaterial'
 
 describe('the saved interface material', () => {
   let stop: () => void
@@ -21,20 +21,22 @@ describe('the saved interface material', () => {
     params.set(qualityLevel.def.id, qualityLevel.def.default)
     vi.unstubAllGlobals()
   })
-  it.each([[0, 'liquid'], [1, 'frost'], [2, 'frost'], [3, 'flat']] as const)('migrates old stop %i to %s', (old, expected) => {
+  it.each([[0, 'liquid'], [1, 'flat'], [2, 'flat'], [3, 'flat']] as const)('migrates old stop %i to %s', (old, expected) => {
     storage.set('mira.glassMaterial.v1', String(old))
+    storage.set('mira.surfaceCoverage', '43')
     stop = restoreGlassMaterial(false)
     expect(document.documentElement.dataset.glassMaterial).toBe(expected)
     expect(storage.get('mira.glassMaterial.v2')?.toLowerCase()).toBe(expected)
+    expect(surfaceCoverage.value).toBe(43)
   })
   it('preserves Liquid across a drop, reload and return to Medium', () => {
     stop = restoreGlassMaterial(false)
-    expect(document.documentElement.dataset.glassMaterial).toBe(glassLabels[glassStyle.def.default].toLowerCase())
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
     params.set(glassStyle.def.id, 0)
     for (const level of [1, 0]) {
       params.set(qualityLevel.def.id, level)
       expect(liquidSelected()).toBe(false)
-      expect(document.documentElement.dataset.glassMaterial).toBe(glassLabels[glassStyle.def.default].toLowerCase())
+      expect(document.documentElement.dataset.glassMaterial).toBe('flat')
       expect(glassStyle.value).toBe(0)
     }
     stop()
@@ -47,8 +49,10 @@ describe('the saved interface material', () => {
   })
   it('sets the style default on a change and restores a custom tint on reload', () => {
     stop = restoreGlassMaterial(false)
+    params.set(glassStyle.def.id, GLASS_LIQUID)
+    expect(surfaceCoverage.value).toBe(25)
     params.set(surfaceCoverage.def.id, 18)
-    params.set(glassStyle.def.id, 2)
+    params.set(glassStyle.def.id, GLASS_FLAT)
     expect(surfaceCoverage.value).toBe(defaultTint(2))
     params.set(surfaceCoverage.def.id, 72)
     expect(glassStyle.value).toBe(2)
@@ -60,12 +64,52 @@ describe('the saved interface material', () => {
   })
   it('opens a Liquid shortcut without overwriting the saved material', () => {
     stop = restoreGlassMaterial(false)
-    params.set(glassStyle.def.id, 2)
+    storage.set('mira.glassMaterial.v2', 'Flat')
+    params.set(surfaceCoverage.def.id, 77)
     stop()
     stop = restoreGlassMaterial(true)
     expect(liquidSelected()).toBe(true)
+    expect(surfaceCoverage.value).toBe(25)
     stop()
     stop = restoreGlassMaterial(false)
     expect(document.documentElement.dataset.glassMaterial).toBe('flat')
+  })
+  it('uses Flat 65% for fresh visits and keeps the public numeric IDs', () => {
+    stop = restoreGlassMaterial(false)
+    expect(glassStyles).toEqual([{ value: 0, label: 'Liquid' }, { value: 2, label: 'Flat' }])
+    expect(glassStyle.value).toBe(2)
+    expect(surfaceCoverage.value).toBe(65)
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
+  })
+  it('migrates a named Frost save and retains its stored tint', () => {
+    storage.set('mira.glassMaterial.v2', 'Frost')
+    storage.set('mira.surfaceCoverage', '42')
+    stop = restoreGlassMaterial(false)
+    expect(glassStyle.value).toBe(GLASS_FLAT)
+    expect(surfaceCoverage.value).toBe(42)
+    expect(storage.get('mira.glassMaterial.v2')).toBe('Flat')
+    expect(storage.get('mira.surfaceCoverage')).toBe('42')
+  })
+  it('accepts old personal snapshots without changing the saved Flat ID or tint', () => {
+    stop = restoreGlassMaterial(false)
+    params.applySnapshot({ 'hud.glass': 1, 'hud.surfaceCoverage': 41 }, 'preset')
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
+    params.applySnapshot({ 'hud.glass': 2 }, 'preset')
+    expect(params.snapshot('client')['hud.glass']).toBe(2)
+    expect(surfaceCoverage.value).toBe(41)
+  })
+  it('treats Flat as a visit override without saving it or changing the chosen tint', () => {
+    storage.set('mira.glassMaterial.v2', 'Liquid')
+    storage.set('mira.surfaceCoverage', '34')
+    stop = restoreGlassMaterial(false, true)
+    expect(glassStyle.value).toBe(GLASS_FLAT)
+    expect(surfaceCoverage.value).toBe(34)
+    expect(storage.get('mira.glassMaterial.v2')).toBe('Liquid')
+    setGlassForVisit(false)
+    expect(liquidSelected()).toBe(true)
+    expect(surfaceCoverage.value).toBe(34)
+    setGlassForVisit(true)
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
+    expect(storage.get('mira.glassMaterial.v2')).toBe('Liquid')
   })
 })

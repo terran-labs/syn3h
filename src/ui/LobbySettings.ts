@@ -21,7 +21,7 @@
  * is open and returns to Settings. Closed, it is detached from the page, so the in-game rail stays
  * the only `.world-inspector` element there.
  */
-import { glassLabels, LIQUID_TUNING_GROUPS } from './glassMaterial'
+import { glassStyleChoice, LIQUID_TUNING_GROUPS } from './glassMaterial'
 import { CREATOR_KEY_EVENT, creatorKey } from '../core/creatorKey'
 import { creatorKeyRowVisible } from './creatorReveal'
 import { PORTAL_TITLE, creatorKeyRow } from './creatorKeyRow'
@@ -211,7 +211,7 @@ export class LobbySettings {
     // style is applied"). The fold's rows are every parameter in LIQUID_TUNING_GROUPS.
     const material = params.get('hud.glass')!
     const body = document.createElement('div')
-    this.inspector.addCard('glass', 'Glass', body, () => glassLabels[Number(material.value)], {
+    this.inspector.addCard('glass', 'Glass', body, () => glassStyleChoice(Number(material.value)).label, {
       fill: () => {
         const fold = document.createElement('details'); fold.className = 'lobby-liquid'
         const summary = document.createElement('summary'); summary.innerHTML = `<span>Liquid glass</span>${ACCORDION_ARROW}`

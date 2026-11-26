@@ -202,9 +202,29 @@ html[data-glass-material] .world-inspector.is-searching .wi-card.is-open > :is(.
   clip-path: inset(var(--glass-title-overlap, 0px) 0 0);
 }
 
-/* A caption behind a flat card would stay sharp through a translucent fill.
-   Frost retains the dense card backing beneath its surface gradient. */
-html[data-glass-material="flat"] #lobby-settings.liquid-glass { background: var(--interface-tint); }
+/* Flat only blurs expanded cards in play. Use a separate
+   filter from --panel-material-filter so collapsed controls and ghosts stay unblurred. */
+html[data-glass-material="flat"]:not([data-gfx="0"], [data-drive-glass="shed"])
+.mira-shell.exploration-ui:not([data-ui-frost="off"]) {
+  --flat-card-filter: var(--flat-card-blur, blur(4px));
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  html { --flat-card-blur: none; }
+}
+/* These older shell surfaces also have theme rules for Frost. Flat keeps their fill. */
+html[data-glass-material="flat"] .mira-shell.exploration-ui :is(.lobby-panels, .in-play-about),
+html[data-glass-material="flat"] .mira-shell.exploration-ui .world-inspector .rail-players {
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html[data-glass-material="flat"] #lobby-settings.liquid-glass {
+  background: var(--interface-tint);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+html[data-glass-material="flat"] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+.wi-cards > .wi-card.is-open:not([data-glass-surface="shader"]) {
+  -webkit-backdrop-filter: var(--flat-card-filter, none);
+  backdrop-filter: var(--flat-card-filter, none);
+}
 html[data-glass-material="frost"] #lobby-settings.liquid-glass { background-color: var(--glass-body); }
 
 /* Keep small rail labels readable when the scene behind the frost turns white.
