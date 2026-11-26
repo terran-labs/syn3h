@@ -137,6 +137,29 @@ try {
     const after = await page.evaluate(overlaps)
     await page.screenshot({ path: `${shots}/${size}-driving-chat.png` })
     assert.deepEqual(after.found, [], `${size}: with the toast gone, chat and tips touch nothing (${JSON.stringify(after)})`)
+    // A Grapple with a cord attached: its status line ("Cord 24 m") and the way to let go appear
+    // under its name, and the tips move down to clear them (Shell.measureBands). The rack's
+    // controls are swapped for a frozen attached state, as tests/ui/thumb-grid.mjs does.
+    await page.evaluate(() => {
+      const rack = window.miraNet.gear; rack.select('bungee')
+      const real = rack.controls(), noop = () => {}
+      const fake = Object.freeze({ ...real, gear: 'bungee', state: 'ground', status: 'Cord 24 m', actions: Object.freeze([
+        { id: 'reelIn', label: 'Reel in', keys: [], hold: true, start: noop, stop: noop },
+        { id: 'payOut', label: 'Let out', keys: [], hold: true, start: noop, stop: noop },
+        { id: 'release', label: 'Let go', keys: [], hold: false, start: noop },
+      ]) })
+      rack.controls = () => fake
+    })
+    await page.waitForFunction(() => [...document.querySelectorAll('.gear-selector .gs-status')].some(el => el.checkVisibility({ visibilityProperty: true }) && /cord/i.test(el.textContent)), null, { timeout: 10000 })
+    await page.waitForTimeout(700)
+    const cord = await page.evaluate(() => {
+      const status = [...document.querySelectorAll('.gear-selector :is(.gs-status, .gs-release, .gs-meter)')].filter(el => el.checkVisibility({ visibilityProperty: true })).map(el => el.getBoundingClientRect().bottom)
+      return { statusBottom: Math.max(...status), tipsTop: document.querySelector('.spawn-help').getBoundingClientRect().top, clash: null }
+    })
+    cord.clash = (await page.evaluate(overlaps)).found
+    await page.screenshot({ path: `${shots}/${size}-cord.png` })
+    if (width < height) assert.ok(cord.tipsTop >= cord.statusBottom, `${size}: the tips clear the Grapple's status line ${JSON.stringify(cord)}`)
+    assert.deepEqual(cord.clash, [], `${size}: with a cord attached nothing touches (${JSON.stringify(cord)})`)
     assert.deepEqual(errors, [], `${size}: no page errors`)
     console.log(`${size}: ok`)
     await context.close()
