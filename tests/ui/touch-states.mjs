@@ -23,7 +23,7 @@ const lookOf = (page, selector) => page.evaluate((sel) => {
   // A colour as the bytes it paints (the same colour can be written as rgb, oklab or color()).
   const c = (window.__px ??= document.createElement('canvas').getContext('2d', { willReadFrequently: true }))
   const bytes = (colour) => { c.clearRect(0, 0, 1, 1); c.fillStyle = '#000'; c.fillStyle = colour; c.fillRect(0, 0, 1, 1); return [...c.getImageData(0, 0, 1, 1).data].join(',') }
-  return [bytes(s.backgroundColor), s.backgroundImage, s.boxShadow.replace(/(rgba?|oklab|color)\([^)]*\)/g, bytes), s.getPropertyValue('--glass-rim').trim(), s.getPropertyValue('--glass-sheen').trim()].join(' | ')
+  return [s.opacity, bytes(s.backgroundColor), s.backgroundImage, s.boxShadow.replace(/(rgba?|oklab|color)\([^)]*\)/g, bytes), s.getPropertyValue('--glass-rim').trim(), s.getPropertyValue('--glass-sheen').trim()].join(' | ')
 }, selector)
 const look = (page, action) => lookOf(page, `.touch-actions [data-action=${action}]`)
 /** A real touch held on a button (CDP, so :active applies as on a phone): its look at 300 ms and 600 ms. */
