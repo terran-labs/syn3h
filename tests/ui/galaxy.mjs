@@ -352,7 +352,7 @@ try {
     await page.screenshot({ path: `${out}/still-swung.png` })
     // Held still or not, a tap is the whole drop, drawn as it goes.
     const target = await reachableWorld(page, 'caption', 'desert')
-    await page.touchscreen.tap(target.x, target.y)
+    await page.locator(`.galaxy-label[data-world="${target.id}"] strong`).tap()
     await page.waitForFunction(() => { const s = document.querySelector('.mira-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 20000 })
     assert.equal(await page.evaluate(() => window.mira.planets.currentPlanet().id), target.id)
     await page.close()
@@ -364,7 +364,7 @@ try {
     await page.goto(`${base}?room=galaxy-skip-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
     await page.evaluate(() => { window.__pin = setInterval(() => window.mira.params.set('gfx.level', 2), 400) })
     const target = await reachableWorld(page, 'caption', 'desert')
-    await page.mouse.click(target.x, target.y)
+    await page.locator(`.galaxy-label[data-world="${target.id}"] strong`).click()
     await page.waitForFunction(() => document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 1000 })
     // A key lands at once: it skips the blurred fall through the air (Shell.descent), which an
     // unskipped drop always shows. Watched as state, not timed, so a busy machine cannot fail it.
