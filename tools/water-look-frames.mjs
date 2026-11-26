@@ -29,10 +29,13 @@ const flag = (n) => argv.includes(n)
 const opt = (n, d) => { const i = argv.indexOf(n); return i >= 0 ? argv[i + 1] : d }
 const out = argv[0]
 const builds = argv.slice(1).filter((a) => a.includes('=') && !a.startsWith('--')).map((a) => { const [name, dir] = a.split('='); return { name, dir } })
-const webgl = flag('--webgl'), cost = flag('--cost'), framesOnly = flag('--frames-only')
+const webgl = flag('--webgl'), cost = flag('--cost') || flag('--gpu'), framesOnly = flag('--frames-only')
 // --preview-swell L: a labelled preview of a longer physical swell (water.waveLength L). It
 // changes the shared wave length for the page, physics included, so it is for frames only.
 const previewSwell = Number(opt('--preview-swell', '0'))
+// --gpu: GPU time per frame from the device's own timestamp queries (WebGPU timestamp-query, WebGL 2
+// EXT_disjoint_timer_query_webgl2), as tools/sea-see-through-cost.mjs. Implies --cost.
+const gpu = flag('--gpu')
 const levels = opt('--levels', '1,3,5').split(',').map(Number)
 const sizes = opt('--sizes', '1280x800,390x844').split(',').map((s) => { const [w, h] = s.split('x').map(Number); return { width: w, height: h } })
 const views = opt('--views', 'shore,open,glitter,shallows').split(',')
@@ -86,8 +89,15 @@ for (const build of builds) {
       for (const key of ['createRenderPipeline', 'createProgram', 'createComputePipeline']) {
         if (typeof b[key] !== 'function') continue
         const original = b[key].bind(b)
-        b[key] = (...a) => { work++; return original(...a) }
+        b[key] = (...a) => {
+          work++
+          // What each build is for, to compare two builds' lists on a level change.
+          const ro = a[0], o = ro?.object, m = ro?.material
+          window.__wlWorkNames.push(`${key}: ${o?.name || o?.type || '?'} | ${m?.name || m?.type || '?'}`)
+          return original(...a)
+        }
       }
+      window.__wlWorkNames = []
       window.__wlWork = () => work
       const frame = g.frame.bind(g)
       g.frame = (...a) => {
@@ -103,21 +113,45 @@ for (const build of builds) {
       return b.device ? 'webgpu' : 'webgl2'
     })
     for (const level of levels) {
+      await page.evaluate(() => { window.__wlWorkNames.length = 0 })
       const work0 = await shaderWork(page)
       await page.evaluate((level) => { const q = window.mira.game.quality; q.setAuto?.(false); q.setLevel(level) }, level)
       await page.waitForTimeout(6000)
       const settled = await shaderWork(page)
+      const builtOnChange = await page.evaluate(() => window.__wlWorkNames.slice())
+      report.levelBuilds ??= {}
+      report.levelBuilds[`${build.name} ${viewport.width}x${viewport.height} L${level}`] = builtOnChange
+      // Each page turns on its own renderer's timer (the first version did this once, for the
+      // first page only, and every other page measured nothing).
+      if (gpu && !page.wlTimer) page.wlTimer = report.timer = await page.evaluate(() => {
+        const b = window.mira.game.renderer.backend
+        if (b.device?.features?.has('timestamp-query')) { b.trackTimestamp = true; return 'webgpu timestamp-query' }
+        if (b.gl) { const ext = b.gl.getExtension('EXT_disjoint_timer_query_webgl2'); if (ext) { b.trackTimestamp = true; b.disjoint = ext; return 'webgl EXT_disjoint_timer_query_webgl2' } }
+        return 'none'
+      })
       for (const view of views) {
         await pose(page, view)
         const name = `${previewSwell > 0 ? `PREVIEW-swell${previewSwell}m-` : ''}${build.name}-${report.backend}-${viewport.width}x${viewport.height}-L${level}-${view}`
         if (!cost || !framesOnly) await page.screenshot({ path: `${out}/${name}.png` })
         if (!cost) { report.rows.push({ name, build: build.name, backend, level, view, size: `${viewport.width}x${viewport.height}` }); continue }
         const before = await shaderWork(page)
-        const blocks = await page.evaluate(async () => {
+        const blocks = await page.evaluate(async (gpu) => {
           const group = window.mira.game.scene.getObjectByName('volcanics')
-          const frames = (n) => new Promise((resolve) => { const start = window.wlTimes.length; const tick = () => (window.wlTimes.length - start >= n ? resolve(window.wlTimes.slice(start)) : requestAnimationFrame(tick)); tick() })
+          const r = window.mira.game.renderer
+          const timed = async (n) => {
+            const rows = []
+            for (let i = 0; i < n; i++) {
+              await new Promise((ok) => requestAnimationFrame(ok))
+              const start = window.wlTimes.length
+              const d = await r.resolveTimestampsAsync('render')
+              rows.push({ ...(window.wlTimes[start - 1] ?? {}), gpu: Number.isFinite(d) && d > 0 ? d : null })
+            }
+            return rows
+          }
+          const frames = gpu ? timed : (n) => new Promise((resolve) => { const start = window.wlTimes.length; const tick = () => (window.wlTimes.length - start >= n ? resolve(window.wlTimes.slice(start)) : requestAnimationFrame(tick)); tick() })
           const on = [], off = []
-          for (let k = 0; k < 6; k++) {
+          // Twelve alternating blocks: GPU time on a shared machine wanders between blocks.
+          for (let k = 0; k < (gpu ? 12 : 6); k++) {
             group.visible = k % 2 === 0
             await frames(4) // settle
             const rows = await frames(24)
@@ -126,7 +160,7 @@ for (const build of builds) {
           }
           group.visible = true
           return { on, off }
-        })
+        }, gpu)
         const after = await shaderWork(page)
         const med = (xs) => { const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null }
         const row = {
@@ -134,9 +168,12 @@ for (const build of builds) {
           scriptOn: med(blocks.on.map((r) => r.script)), scriptOff: med(blocks.off.map((r) => r.script)),
           tailOn: med(blocks.on.map((r) => r.tail)), tailOff: med(blocks.off.map((r) => r.tail)),
           shaderWorkDuringMeasure: after - before, shaderWorkLevelChange: settled - work0,
+          gpuOn: med(blocks.on.map((r) => r.gpu)), gpuOff: med(blocks.off.map((r) => r.gpu)), gpuFrames: blocks.on.filter((r) => r.gpu != null).length + blocks.off.filter((r) => r.gpu != null).length,
+          load: (await import('node:os')).loadavg()[0],
         }
         row.waterScript = row.scriptOn - row.scriptOff
         row.waterTail = row.tailOn - row.tailOff
+        row.waterGpu = row.gpuOn != null && row.gpuOff != null ? row.gpuOn - row.gpuOff : null
         report.rows.push(row)
         console.log(JSON.stringify(row))
       }
