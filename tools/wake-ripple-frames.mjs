@@ -40,14 +40,14 @@ for (const [vehicle, speed] of RUNS) for (const [look, set] of LOOKS) {
   page.on('pageerror', (e) => errors.push(`${tag}: ${e.message}`))
   await page.routeWebSocket(/\/ws/, (s) => s.close())
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=${vehicle}&world=archipelago.4`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3h.game.tick > 60, null, { timeout: 120000 })
-  await page.evaluate(() => { const q = window.syn3h.game.quality; q.setAuto(false); q.manualChange = (_l, apply) => apply(); q.setLevel(3) })
-  await page.waitForFunction(() => window.syn3h.game.quality.governor.level === 3 && !document.querySelector('.quality-change-veil'), null, { timeout: 90000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.mira.game.tick > 60, null, { timeout: 120000 })
+  await page.evaluate(() => { const q = window.mira.game.quality; q.setAuto(false); q.manualChange = (_l, apply) => apply(); q.setLevel(3) })
+  await page.waitForFunction(() => window.mira.game.quality.governor.level === 3 && !document.querySelector('.quality-change-veil'), null, { timeout: 90000 })
   await page.addStyleTag({ content: 'body * { visibility: hidden !important } #game, #game * { visibility: visible !important }' })
   const ready = await page.evaluate(({ set, LAUNCH, HOLD, speed }) => {
-    const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position, game = s.game
+    const s = window.mira, t = s.terrain, sp = t.spawnPoint(0).position, game = s.game
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 14); s.params.set('sun.dayLength', 0)
     for (const [k, v] of Object.entries(set)) s.params.set(k, v)
     const deep = (x, z) => t.liquidKindAt?.(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 8
@@ -96,7 +96,7 @@ for (const [vehicle, speed] of RUNS) for (const [look, set] of LOOKS) {
   const state = {}
   for (const view of ['three-quarter', 'top']) {
     Object.assign(state, await page.evaluate((view) => {
-      const s = window.syn3h, { spot } = window.__wake, cam = s.game.camera, p = s.player.body.translation(), w = s.terrain.liquidHeightAt(p.x, p.z)
+      const s = window.mira, { spot } = window.__wake, cam = s.game.camera, p = s.player.body.translation(), w = s.terrain.liquidHeightAt(p.x, p.z)
       if (view === 'top') { cam.position.set(p.x - spot.dx * 12, w + 40, p.z - spot.dz * 12 + .01); cam.lookAt(p.x - spot.dx * 12, w, p.z - spot.dz * 12) }
       else { cam.position.set(p.x - spot.dx * 20, w + 12, p.z - spot.dz * 20); cam.lookAt(p.x, w, p.z) }
       cam.updateMatrixWorld(); s.game.redrawPaused()

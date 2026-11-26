@@ -34,16 +34,16 @@ for (const [vehicle, speed] of RUNS) {
   page.on('pageerror', (e) => errors.push(`${vehicle}: ${e.message}`))
   await page.routeWebSocket(/\/ws/, (s) => s.close())
   await page.goto(`http://127.0.0.1:${port}/?autoplay=1&vehicle=${vehicle}&world=archipelago.4`, { waitUntil: 'load' })
-  await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
-  await page.evaluate(() => window.syn3h.shell.play())
-  await page.waitForFunction(() => window.syn3h.game.tick > 60, null, { timeout: 120000 })
+  await page.waitForFunction(() => window.mira?.shell, null, { timeout: 120000 })
+  await page.evaluate(() => window.mira.shell.play())
+  await page.waitForFunction(() => window.mira.game.tick > 60, null, { timeout: 120000 })
   // High, set as the quality menu would, and wait for its change to finish (a veil hides the game meanwhile).
-  await page.evaluate(() => { const q = window.syn3h.game.quality; q.setAuto(false); q.manualChange = (_l, apply) => apply(); q.setLevel(3) })
-  await page.waitForFunction(() => window.syn3h.game.quality.governor.level === 3 && !document.querySelector('.quality-change-veil'), null, { timeout: 90000 })
+  await page.evaluate(() => { const q = window.mira.game.quality; q.setAuto(false); q.manualChange = (_l, apply) => apply(); q.setLevel(3) })
+  await page.waitForFunction(() => window.mira.game.quality.governor.level === 3 && !document.querySelector('.quality-change-veil'), null, { timeout: 90000 })
   await page.waitForTimeout(1500)
   await page.addStyleTag({ content: 'body * { visibility: hidden !important } #game, #game * { visibility: visible !important }' })
   const spot = await page.evaluate(() => {
-    const s = window.syn3h, t = s.terrain, sp = t.spawnPoint(0).position
+    const s = window.mira, t = s.terrain, sp = t.spawnPoint(0).position
     s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 14); s.params.set('sun.dayLength', 0);
     const deep = (x, z) => t.liquidKindAt?.(x, z) === 'water' && t.liquidHeightAt(x, z) - t.heightAt(x, z) > 8
     for (let r = 30; r < 3000; r += 15) for (let a = 0; a < 64; a++) {
@@ -62,14 +62,14 @@ for (const [vehicle, speed] of RUNS) {
   // Out at the spot first and let the world there finish arriving (a jump of up to 3 km from the
   // spawn draws black for a second or so), then launch.
   await page.evaluate((spot) => {
-    const s = window.syn3h, V = s.game.camera.position.constructor
+    const s = window.mira, V = s.game.camera.position.constructor
     s.player.teleport({ x: spot.x, y: spot.surface + 1.5, z: spot.z }, spot.hd ?? 0)
     s.camera.setCinematicPose(new V(spot.x + 20, spot.surface + 6, spot.z + 20), new V(spot.x, spot.surface, spot.z))
   }, spot)
   await page.waitForTimeout(2500)
-  await page.evaluate(() => window.syn3h.camera.clearCinematicPose?.(0))
+  await page.evaluate(() => window.mira.camera.clearCinematicPose?.(0))
   await page.evaluate(({ spot, speed }) => {
-    const s = window.syn3h, b = s.player, dx = -Math.sin(spot.hd), dz = -Math.cos(spot.hd), a = 10 * Math.PI / 180
+    const s = window.mira, b = s.player, dx = -Math.sin(spot.hd), dz = -Math.cos(spot.hd), a = 10 * Math.PI / 180
     b.teleport({ x: spot.x, y: spot.surface + 1.5, z: spot.z }, spot.hd)
     b.body.setLinvel({ x: dx * speed * Math.cos(a), y: -speed * Math.sin(a), z: dz * speed * Math.cos(a) }, true)
     // Follow from the side, looking at where the vehicle is.
@@ -84,7 +84,7 @@ for (const [vehicle, speed] of RUNS) {
   for (let i = 0; i <= 24; i++) {
     await page.waitForTimeout(250)
     await page.screenshot({ path: `${out}/${vehicle}${phone ? '-phone' : ''}-${String(i).padStart(2, '0')}.png` })
-    trace.push(await page.evaluate(() => { const s = window.syn3h, p = s.player.body.translation(), v = s.player.body.linvel(); return { t: s.game.tick, gap: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), speed: +Math.hypot(v.x, v.z).toFixed(1), skipping: +s.player.liquidState.skipping.toFixed(2) } }))
+    trace.push(await page.evaluate(() => { const s = window.mira, p = s.player.body.translation(), v = s.player.body.linvel(); return { t: s.game.tick, gap: +(p.y - s.terrain.liquidHeightAt(p.x, p.z)).toFixed(2), speed: +Math.hypot(v.x, v.z).toFixed(1), skipping: +s.player.liquidState.skipping.toFixed(2) } }))
   }
   notes.push({ vehicle, spot, trace })
   await page.close()
