@@ -105,18 +105,34 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     await tap(glass.locator('.wi-head'))
     await glass.locator('.wi-row[data-id="hud.glass"]').waitFor({ state: 'visible' })
     const choices = glass.locator('.glass-stops button')
+    const tint = glass.locator('.tint-row input[type=range]')
+    const tintReset = glass.locator('.tint-row .wi-reset-row')
+    const offerTintReset = async expected => {
+      await tint.evaluate(input => {
+        input.value = '43'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+      await tintReset.waitFor({ state: 'visible' })
+      assert.equal(await tintReset.getAttribute('aria-label'), `Reset Tint to ${expected}%`)
+    }
+    const checkTint = expected => page.waitForFunction(value => window.mira.params.get('hud.surfaceCoverage').value === value, expected)
     assert.deepEqual(await choices.allTextContents(), ['Liquid', 'Flat'])
     assert.equal(style0, 2)
-    assert.equal(await glass.locator('.tint-row input').inputValue(), '65')
+    assert.equal(await tint.inputValue(), '65')
+    await offerTintReset(65)
     await page.waitForFunction(() => {
       const section = document.querySelector('#lobby-settings .wi-card[data-section="glass"]')
-      const button = section?.querySelector('.tint-default')
+      const button = section?.querySelector('.tint-row .wi-reset-row')
       const next = section?.nextElementSibling
       return button && next && button.getBoundingClientRect().bottom + 1 < next.getBoundingClientRect().top
     })
+    await page.screenshot({ path: `${out}/${mode}-flat-reset.png` })
+    await tap(tintReset)
+    await checkTint(65)
+    await page.waitForFunction(() => document.querySelector('#lobby-settings .tint-row input').value === '65')
     await page.screenshot({ path: `${out}/${mode}-flat-style.png` })
     await tap(glass.getByRole('button', { name: 'Liquid', exact: true }))
-    await page.waitForFunction(() => window.mira.params.get('hud.surfaceCoverage').value === 25)
+    await checkTint(25)
     const fold = glass.locator('details.lobby-liquid')
     // Lazy registration can rebuild the fold after the tint changes. Wait for the fold itself.
     await page.waitForFunction(() => window.mira.params.get('glass.thickness'), null, { timeout: 20000 })
@@ -125,6 +141,9 @@ for (const mode of ['desktop', 'phone', 'landscape', 'ipad-portrait', 'ipad-land
     } catch (cause) {
       throw new Error(`${mode}: Liquid settings registered, but the Liquid glass fold did not appear within 20 seconds`, { cause })
     }
+    await offerTintReset(25)
+    await tap(tintReset)
+    await checkTint(25)
     assert.equal(await fold.evaluate((d) => d.open), false, `${mode}: Liquid glass starts closed`)
     await tap(fold.locator('summary'))
     const liquidIds = await page.evaluate(() => window.mira.params.all().filter((p) => ['Glass', 'Clear lens'].includes(p.def.group)).map((p) => p.def.id).sort())
