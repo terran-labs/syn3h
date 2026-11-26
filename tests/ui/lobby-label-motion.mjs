@@ -82,10 +82,13 @@ try {
         const rate = before ? Math.abs(now.opacity - before.opacity) / Math.max(1e-3, (b.t - trace[i - 2].t) / 1000) : 0
         if (rate > worstOpacity) { worstOpacity = rate; fade = `${id} ${before.opacity.toFixed(2)} to ${now.opacity.toFixed(2)} at frame ${i}` }
         // Only a name that can be seen on both frames: one may take a new place while faded out.
-        if (Math.min(now.opacity, was.opacity) > 0.1 && now.at.length === 2 && was.at.length === 2 && a.planets[id] && b.planets[id]) {
-          const own = Math.hypot((now.at[0] - was.at[0]) - (b.planets[id][0] - a.planets[id][0]), (now.at[1] - was.at[1]) - (b.planets[id][1] - a.planets[id][1]))
-          const speed = Math.max(0, own - ROUNDING) / dt
-          if (speed > worstGlide) { worstGlide = speed; move = `${id} ${own.toFixed(1)} px in ${(dt * 1000).toFixed(0)} ms at frame ${i}, opacity ${now.opacity.toFixed(2)}` }
+        // Over two frames as well, for the same timestamp jitter.
+        const z = trace[i - 2], first = z?.names[id]
+        if (first && Math.min(now.opacity, was.opacity, first.opacity) > 0.1 && now.at.length === 2 && first.at.length === 2 && z.planets[id] && b.planets[id]) {
+          const own = Math.hypot((now.at[0] - first.at[0]) - (b.planets[id][0] - z.planets[id][0]), (now.at[1] - first.at[1]) - (b.planets[id][1] - z.planets[id][1]))
+          const span = Math.max(1e-3, (b.t - z.t) / 1000)
+          const speed = Math.max(0, own - ROUNDING) / span
+          if (speed > worstGlide) { worstGlide = speed; move = `${id} ${own.toFixed(1)} px in ${(span * 1000).toFixed(0)} ms at frame ${i}, opacity ${now.opacity.toFixed(2)}` }
         }
       }
       const shown = Object.entries(b.names).filter(([, n]) => n.opacity >= SHOWN)

@@ -2146,6 +2146,8 @@ export class Shell implements System {
             const since = this.captionFree.get(id) ?? now
             this.captionFree.set(id, since)
             if (now - since < CAPTION_SHOW_HOLD_MS && !leapt.has(id)) placement = undefined
+            // And only where no name is drawn now: a neighbour may still be gliding through its place.
+            else if (this.pathCrosses(id, placement.box, placement.box)) placement = undefined
           } else if (!placement) this.captionFree.delete(id)
           const suppressed = !placement
           // Leaving: its drawn box stays reserved while it fades, so nothing lands on it.
