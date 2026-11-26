@@ -108,9 +108,13 @@ export function releasesFromTsv(text) {
  * channel (milestone, production or withdrawn), and optionally preview (yes or no, default yes: whether
  * a milestone ran on a private preview; a plan or a build before the first preview did not).
  * Checks that each version's day is the day of its
- * time, that versions only rise, and that builds of a day run 00, 01, 02 with no gaps.
+ * time, that versions only rise, and that builds of a day run 00, 01, 02 with no gaps, except
+ * numbers in `used`: versions taken by betas (release-notes/betas.tsv) that were never
+ * promoted. A number is never reused, so production after two betas skips theirs (v26.11.2504
+ * after v26.11.2501, betas 2502 and 2503).
  */
-export function parseHistory(text) {
+export function parseHistory(text, used = []) {
+  const taken = new Set([...used].filter((u) => isVersion(u)).map((u) => parseVersion(u).tag))
   const rows = []
   const lines = text.split('\n').map((l) => l.replace(/\r$/, ''))
   for (const [i, line] of lines.entries()) {
@@ -135,7 +139,9 @@ export function parseHistory(text) {
       if (time < prev.time) throw new Error(`${where}: ${time} is earlier than ${prev.time}`)
     }
     const sameDay = prev && prev.parsed.yy === v.yy && prev.parsed.month === v.month && prev.parsed.day === v.day
-    const expected = sameDay ? prev.parsed.build + 1 : 0
+    let expected = sameDay ? prev.parsed.build + 1 : 0
+    const tagOf = (build) => `v${v.yy}.${v.month}.${String(v.day).padStart(2, '0')}${String(build).padStart(2, '0')}`
+    while (taken.has(tagOf(expected)) && expected < v.build) expected++
     if (v.build !== expected) throw new Error(`${where}: ${v.tag} should be build ${String(expected).padStart(2, '0')} of its day`)
     rows.push({ version: v.tag, milestone, commit, time, channel, preview: preview === 'yes', parsed: v, hour: Number(when[4]), minute: Number(when[5]) })
   }

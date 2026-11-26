@@ -266,8 +266,13 @@ function notesPath(tag) {
   return join(NOTES_DIR, `${tag}.md`)
 }
 
+/** Versions betas took (betas.tsv): never reused, so production may skip them. */
+function betaVersions() {
+  return existsSync(BETAS) ? readFileSync(BETAS, 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('\t')[0]) : []
+}
+
 function history() {
-  return existsSync(HISTORY) ? parseHistory(readFileSync(HISTORY, 'utf8')) : []
+  return existsSync(HISTORY) ? parseHistory(readFileSync(HISTORY, 'utf8'), betaVersions()) : []
 }
 
 function historyRow(tag) {
@@ -292,7 +297,7 @@ function recordedReleases() {
  */
 function knownVersions() {
   const tags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: REPO, encoding: 'utf8' }).split('\n')
-  const betas = existsSync(BETAS) ? readFileSync(BETAS, 'utf8').split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('\t')[0]) : []
+  const betas = betaVersions()
   const all = new Set([...history().map((r) => r.version), ...tags, ...betas].filter(isVersion).map((v) => parseVersion(v).tag))
   return [...all].sort(compareVersions)
 }

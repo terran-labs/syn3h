@@ -85,7 +85,9 @@ const TSV = [
 
 // The checked-in history, so a bad edit to it fails here.
 const HISTORY_TEXT = readFileSync(new URL('../../release-notes/history.tsv', import.meta.url), 'utf8')
-const LIVE = parseHistory(HISTORY_TEXT)
+// Betas take version numbers for good (betas.tsv), so the live history may skip them.
+const BETAS_TEXT = readFileSync(new URL('../../release-notes/betas.tsv', import.meta.url), 'utf8')
+const LIVE = parseHistory(HISTORY_TEXT, BETAS_TEXT.split('\n').filter((l) => l && !l.startsWith('#')).map((l) => l.split('\t')[0]))
 // The version logic is tested against the first two days, which never change; the live file
 // keeps growing with every release and is only checked for parsing and for its notes.
 const HISTORY = LIVE.slice(0, 15)
@@ -127,6 +129,9 @@ test('a bad history is rejected', () => {
   assert.equal(parseHistory(['# comment', row('v26.11.1400', '14:00'), row('v26.11.1401', '15:00', 'production')].join('\n')).length, 2)
   assert.throws(() => parseHistory(row('v26.11.1401', '14:00')), /should be build 00/)
   assert.throws(() => parseHistory([row('v26.11.1400', '14:00'), row('v26.11.1402', '15:00')].join('\n')), /should be build 01/)
+  // Betas take their numbers for good, so production after them skips exactly those.
+  assert.equal(parseHistory([row('v26.11.1400', '14:00'), row('v26.11.1403', '15:00')].join('\n'), ['v26.11.1401', 'v26.11.1402']).length, 2)
+  assert.throws(() => parseHistory([row('v26.11.1400', '14:00'), row('v26.11.1403', '15:00')].join('\n'), ['v26.11.1401']), /should be build 02/)
   assert.throws(() => parseHistory([row('v26.11.1401', '14:00'), row('v26.11.1400', '15:00')].join('\n')), /should be build 00/)
   assert.throws(() => parseHistory([row('v26.11.1400', '14:00'), row('v26.11.1401', '13:00')].join('\n')), /earlier than/)
   assert.throws(() => parseHistory(row('v26.11.1500', '14:00')), /not on the day/)
