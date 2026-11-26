@@ -149,6 +149,14 @@ async function checkCase({ view, route, backend }) {
   const errors = []
   page.on('pageerror', error => errors.push(error.message))
   try {
+    if (phone && backend === 'webgl' && route === 'reduced') await page.addInitScript(() => {
+      // Shell owns Escape, so observe it before Shell installs its capture listener.
+      window.addEventListener('keydown', event => {
+        if (window.observeResume && event.isTrusted && event.code === 'Escape') {
+          window.resumeInputFrame = window.mira.game.frames
+        }
+      }, { capture: true })
+    })
     if (route === 'flat') await page.addInitScript(() => {
       const getContext = HTMLCanvasElement.prototype.getContext
       HTMLCanvasElement.prototype.getContext = function (kind, ...args) {
@@ -205,17 +213,14 @@ async function checkCase({ view, route, backend }) {
       await leave(page)
       await page.evaluate(() => {
         const { shell, game, planets } = window.mira
-        let inputFrame
+        window.observeResume = true
         const observer = new MutationObserver(() => {
           if (!shell.playing || game.input.suspended) return
-          window.sameWorldResume = game.frames === inputFrame && !shell.transitioning &&
+          window.sameWorldResume = game.frames === window.resumeInputFrame && !shell.transitioning &&
             planets.currentPlanet().id === 'alpine'
           observer.disconnect()
         })
         observer.observe(shell.element, { attributes: true, attributeFilter: ['class'] })
-        window.addEventListener('keydown', event => {
-          if (event.isTrusted && event.code === 'Escape') inputFrame = game.frames
-        }, { capture: true, once: true })
       })
       await page.keyboard.press('Escape')
       assert.equal(await page.evaluate(() => window.sameWorldResume), true, 'same-world Resume restores control in the input turn')
