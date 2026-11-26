@@ -41,7 +41,8 @@ try {
         const m = renderObject?.material, o = renderObject?.object, chain = []
         for (let p = o; p && chain.length < 6; p = p.parent) chain.push(p.name || p.type)
         const remote = [...window.miraNet.remotes.values()].find(r => { for (let p = o; p; p = p.parent) if (p === r.vehicle.object) return true; return false })
-        window.__builds.push(`${remote ? remote.vehicle.kind : 'not a remote'} | ${m?.type ?? '?'}${m?.name ? ` "${m.name}"` : ''} | ${o?.type ?? '?'}${o?.name ? ` "${o.name}"` : ''} | ${chain.join(' < ')}`)
+        const q = window.mira.game.quality.getQualityState(), shade = window.mira.params.get('gfx.vehicleShading')?.value
+        window.__builds.push(`[rung ${q.rung} shading ${shade}] ${remote ? remote.vehicle.kind : 'not a remote'} | ${m?.type ?? '?'}${m?.name ? ` "${m.name}"` : ''} | ${o?.type ?? '?'}${o?.name ? ` "${o.name}"` : ''} | ${chain.join(' < ')}`)
       }
       return make.call(this, renderObject, ...rest)
     }
@@ -72,7 +73,8 @@ try {
       const builds = await a.evaluate(() => { const l = window.__builds; window.__builds = null; return l })
       const grouped = {}
       for (const x of builds) grouped[x] = (grouped[x] ?? 0) + 1
-      out.phases.push({ phase, kind, total: builds.length, grouped })
+      const state = await a.evaluate(() => { const q = window.mira.game.quality.getQualityState(); return { level: q.level, rung: q.rung, shading: window.mira.params.get('gfx.vehicleShading')?.value, load: null } })
+      out.phases.push({ phase, kind, total: builds.length, grouped, state })
       console.log(`${label} ${phase}: other player's ${kind} into view at 120 to 30 m: ${builds.length} pipelines`)
     }
   }
