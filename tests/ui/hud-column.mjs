@@ -163,8 +163,8 @@ try {
         assert.ok(Math.abs(part.left - m.gear.left) <= 1, `${at}: ${name} shares the gear's left edge ${JSON.stringify([part, m.gear])}`)
       }
       assert.ok(m.pitch > 0 && Math.abs((m.drum.bottom - m.drum.top) - 3 * m.pitch) <= 1, `${at}: the drum is three rows ${JSON.stringify([m.drum, m.pitch])}`)
-      // The column starts at the top left; its top inset matches its left (10, below), which
-      // replaced the shared top edge (the owner, 25 November 2026).
+
+
       if (mode === 'free') drumFree = m.drum
       else assert.ok(Math.abs(m.drum.top - drumFree.top) <= 1 && Math.abs(m.drum.bottom - drumFree.bottom) <= 1, `${at}: capturing the cursor moves nothing in the drum ${JSON.stringify([drumFree, m.drum])}`)
       assert.ok(m.keys.length >= 3 && m.keys.every(Boolean), `${at}: the Wings, Zorb and Chat keys are laid out ${JSON.stringify(m.keys)}`)
