@@ -112,7 +112,7 @@ export class PlayerPanel {
   constructor(private readonly host: HTMLElement, private readonly sidebar: () => HTMLElement | null, private readonly actions: PlayerPanelActions) {
     const el = this.element
     el.id = 'player-panel'
-    el.className = 'player-panel wi-glass'
+    el.className = 'player-panel'
     el.hidden = true
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'false')
     this.body.className = 'pp-body'

@@ -27,12 +27,16 @@
 .mira-shell .rail-player-body .score-row.is-rich { margin: 0 -6px; padding-left: 6px; padding-right: 6px; }
 
 /* ---- The panel ---- */
-.mira-shell .player-panel { --arrow-y: 24px; position: fixed; z-index: 59; box-sizing: border-box; display: flex; width: 300px; padding: 0; font: 400 13px/1.45 'Barlow', sans-serif; color: #fff; border-radius: var(--halo-r, 16px); text-shadow: none; }
+.mira-shell .player-panel { --arrow-y: 24px; position: fixed; z-index: 59; box-sizing: border-box; display: flex; width: 300px; padding: 0; font: 400 13px/1.45 'Barlow', sans-serif; color: var(--s3-ink, #fff); text-shadow: none;
+  /* The sidebar's own panel surface (theme-halo.css): one smoked tint, a hairline rim, no blur. */
+  border: 1px solid var(--s3-line, rgb(255 255 255 / .24)); border-radius: var(--halo-r, 16px); background: var(--halo-fill, rgb(12 12 13 / .4)); box-shadow: var(--halo-glow, none); }
 .mira-shell .player-panel[hidden] { display: none; }
 .mira-shell .player-panel .pp-body { flex: 1; min-width: 0; overflow: auto; overscroll-behavior: contain; padding: 14px 16px 16px; }
 /* The tooltip's pointer toward its row: a small diamond half outside the right edge, in the
    panel's own border and fill. Not on the phone sheet, which has no row beside it. */
-.mira-shell .player-panel .pp-arrow { position: absolute; right: -6px; top: var(--arrow-y); width: 11px; height: 11px; margin-top: -6px; transform: rotate(45deg); background: inherit; border: inherit; border-left-color: transparent; border-bottom-color: transparent; border-radius: 0 2px 0 0; -webkit-backdrop-filter: inherit; backdrop-filter: inherit; pointer-events: none; }
+.mira-shell .player-panel .pp-arrow { position: absolute; right: -7px; top: var(--arrow-y); width: 12px; height: 12px; margin-top: -6px; box-sizing: border-box; transform: rotate(45deg); background: var(--halo-fill, rgb(12 12 13 / .4)); border-top: 1px solid var(--s3-line, rgb(255 255 255 / .24)); border-right: 1px solid var(--s3-line, rgb(255 255 255 / .24)); border-radius: 0 2px 0 0;
+  /* Only the half outside the panel, so the tint does not double over the panel's edge. */
+  clip-path: polygon(0 0, 100% 0, 100% 100%); pointer-events: none; }
 .mira-shell .player-panel.is-sheet .pp-arrow { display: none; }
 .mira-shell .player-panel * { text-shadow: none; }
 .mira-shell .player-panel svg { filter: none; }
@@ -64,7 +68,7 @@
 .mira-shell .player-panel button:disabled { opacity: .45; cursor: default; }
 .mira-shell .player-panel .pp-eject-go { min-width: 96px; }
 .mira-shell .player-panel .pp-trait { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--reset-slot, 24px); align-items: center; column-gap: 8px; margin-top: 14px; }
-.mira-shell .player-panel .pp-trait label { font-weight: 500; }
+.mira-shell .player-panel .pp-trait label { font: 500 13px/1.3 'Barlow', sans-serif; letter-spacing: 0; }
 .mira-shell .player-panel .pp-trait output { color: var(--s3-dim, #a9b0bd); font-variant-numeric: tabular-nums; font-size: 12px; }
 .mira-shell .player-panel .pp-trait input { grid-column: 1 / -1; width: 100%; margin: 2px 0 0; height: 24px; accent-color: #fff; touch-action: pan-y; }
 .mira-shell .player-panel .pp-trait .pp-why { grid-column: 1 / -1; margin-top: 4px; }
@@ -75,6 +79,8 @@
 .mira-shell .player-panel.is-sheet .pp-trait input { height: 36px; }
 
 /* ---- The eject dialog: the Leave-world card (exploration.css) with Banish for ---- */
+.mira-shell .exit-confirm.eject-confirm { z-index: 61; }
+.mira-shell.is-paused .exit-confirm.eject-confirm { z-index: 63; }
 .mira-shell .eject-confirm-card { justify-items: stretch; width: min(440px, 100%); box-sizing: border-box; text-align: left; }
 .mira-shell .eject-confirm strong { letter-spacing: .06em; margin-right: 0; text-transform: none; font-size: 16px; font-weight: 600; }
 .mira-shell .eject-confirm .banish[hidden] { display: none; }

@@ -30,7 +30,11 @@ async function mock(page) {
     ]
     const apply = () => {
       const ids = [...miraNet.players.values()].filter(p => !p.bot).map(p => p.id).sort((a, b) => a - b)
-      ids.forEach((id, i) => { const p = miraNet.players.get(id); for (const [k, v] of Object.entries(people[i] ?? {})) if (p[k] !== v) p[k] = v })
+      // A new object, as a roster message makes, so the Players card sees the change.
+      ids.forEach((id, i) => {
+        const p = miraNet.players.get(id)
+        if (Object.entries(people[i] ?? {}).some(([k, v]) => p[k] !== v)) miraNet.players.set(id, { ...p, ...people[i] })
+      })
     }
     apply(); setInterval(apply, 100)
   })
@@ -129,6 +133,11 @@ try {
       await host.locator('#player-panel .pp-eject-go').click()
       await host.locator('.eject-confirm:not([hidden])').waitFor()
       assert.equal(await host.evaluate(() => document.activeElement?.classList.contains('eject-cancel')), true, 'focus starts on Cancel')
+      // The dialog is on top of everything, the panel included.
+      assert.equal(await host.locator('.eject-confirm-card').evaluate(card => {
+        const r = card.getBoundingClientRect()
+        return [[.5, .5], [.1, .2], [.9, .2], [.1, .9], [.9, .9]].every(([x, y]) => card.contains(document.elementFromPoint(r.left + r.width * x, r.top + r.height * y)))
+      }), true, 'the eject dialog is covered')
       await host.screenshot({ path: resolve(out, `${size}-eject-none.png`) })
       await host.locator('.banish-slider').focus(); await host.keyboard.press('End')
       assert.equal(await host.locator('.banish-slider').getAttribute('aria-valuetext'), 'Permanently')
