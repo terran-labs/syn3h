@@ -13,8 +13,8 @@ for two minutes). A failed live check rolls back by itself; then stop and report
 
 ## Production
 
-Live: v26.11.2501 (release-123, the first beta promoted on the owner's approval: each planet has its own public world; anonymous analytics and crash reports; the beta channel by hostname), source 56b51479,
-frozen copy 20261125-161352-56b51479 (beta fingerprint 3dbbfe0e), Worker version 46a80b78, at https://mira.cc/ since 25 November 16:37 PST.
+Live: v26.11.2504 (release-127, promoted from beta on the owner's approval: everything in betas 2502 and 2503 plus an Updates Changes list of game changes only; production CREATOR_KEY_SHA256 set in the same minute), source 6a29d15e,
+frozen copy 20261125-204044-6a29d15e (beta fingerprint bb83467a), Worker version d952357a, at https://mira.cc/ since 25 November 21:07 PST. Betas 2502 and 2503 were never promoted (2503's feed named the hidden sign-in).
 The game is Mira from v26.11.2300 (LAST_SYN3H_VERSION v26.11.2206; notes heading "## Mira vX"). Kept named syn3h on
 purpose: the Worker, its workers.dev addresses, the Durable Object, the R2 bucket, x-syn3h-version, the token path,
 'buggy-syn3h', local paths and /tmp names (ship.sh outcomes are now /tmp/mira-ship-N*), the repository (docs/NAMES.md).
@@ -190,6 +190,7 @@ Releases since the evening of 16 November, all accepted unless marked:
 | v26.11.2405 | 121 | m-pools-2405 | other vehicles' headlights light the ground at night; the WebGPU present test page; the counter box gives way to bottom notices |
 | v26.11.2500 | 122 | m-parallel-2500 | parallel universes when a world is full; chat, gear label, Name seed and send-rate fixes; frame cost tool |
 | v26.11.2501 | 123 | m-planets-2501 | first beta promoted on the owner's approval: per-planet public worlds, analytics and crash reports, beta mark, chat inset, exit icon |
+| v26.11.2504 | 127 | m-feed-2504 | promoted from beta: Welcome carousel and refresh, Updates by day, Report a bug, creator mark, water skipping, reset to default, built share card, Changes list of game changes only |
 | v26.11.1707 | 45 | m-lobby-1707 | iPhone sound on silent (unproven on a real iPhone), clean lobby name after rotating, WebGPU device-loss notice |
 
 ## Staging Worker
