@@ -16,11 +16,17 @@ const near: Look = { name: 'near', distance: 8 }
 // climb moves them, and a look warmed at the old distance would leave the new one to build in play.
 const medium: Look = { name: 'medium', get distance() { const d = detailDistances(); return (d.near + d.far) / 2 } }
 const far: Look = { name: 'silhouette', get distance() { return detailDistances().far * 1.1 + 10 } }
-const looks = [near, medium, far]
+// Full shape in plain paint: between the paint and full-detail distances (paint steps down
+// first). Drawn, not only compiled (Vehicle.prepareLooks), so the passes a level adds (ambient
+// occlusion at Ultra, indirect light at Cinematic) have it before a bot drives into that band.
+const plain: Look = { name: 'near plain paint', get distance() { const d = detailDistances(); return (d.paint + d.near) / 2 } }
+const looks = [near, plain, medium, far]
 // Not spread from `medium`: a spread copies its distance once, at load, before any level is set.
 const jetLooks: Look[] = [
   near,
   { ...near, name: 'near gear down', gearDown: true },
+  plain,
+  { name: 'near plain paint gear down', gearDown: true, get distance() { return plain.distance } },
   { name: 'medium gear down', gearDown: true, get distance() { return medium.distance } },
   { name: 'medium gear up', get distance() { return medium.distance } },
   far,
@@ -280,8 +286,10 @@ export class BotRenderWarm {
       drawPose(0, near, false)
       if (actors.some(v => v instanceof Jet)) drawPose(0, jetLooks[1], true)
       if (minimal) {
+        drawPose(0, plain, false)
+        drawPose(0, jetLooks[3], true)
         drawPose(0, medium, false)
-        drawPose(0, jetLooks[2], true)
+        drawPose(0, jetLooks[4], true)
         drawPose(0, far, false)
       }
     } finally { for (const vehicle of actors) this.reset(vehicle) }
