@@ -17,6 +17,7 @@ import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
 import { HeightAboveGround } from './heightAboveGround'
 import { altitudeAboveSea } from './altitude'
+import { chatLink } from './chat/chatLink'
 import { speedUnit, speedValue } from './units'
 import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
@@ -671,6 +672,13 @@ export class Shell implements System {
     noticeStack.prepend(this.raceHud.element)
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
+    const panelLabel = toggle.querySelector<HTMLElement>('.nav-label')!
+    const showUnread = (count: number) => {
+      panelLabel.textContent = count ? `Panels · ${count > 99 ? '99+' : count}` : 'Panels'
+      toggle.setAttribute('aria-label', count ? `Open the panels, ${count} unread chat messages` : 'Open the panels')
+    }
+    showUnread(chatLink.unread)
+    signal.addEventListener('abort', chatLink.subscribe(showUnread), { once: true })
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
     command.querySelector('.rail-pause')!.addEventListener('click', () => { if (this.userPaused) this.requestResume(); else this.requestPause() }, { signal })
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })

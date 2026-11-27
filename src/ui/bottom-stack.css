@@ -66,3 +66,18 @@ html .mira-shell.exploration-ui.has-touch > .bottom-stack > #mira-build-notice {
 /* The touch spawn help is centred too: it steps aside while the stack shows anything, as it
    already does on a desktop (glass.css). */
 html .mira-shell.has-touch:has(> .bottom-stack > :not([hidden])) .spawn-help { visibility: hidden; }
+
+@media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+  html .mira-shell.has-touch.is-playing:not(.is-paused) > .bottom-stack.bottom-stack {
+    bottom: var(--thumb-base);
+    left: var(--drive-left-clearance); right: var(--drive-right-clearance);
+    margin-inline: auto; transform: none;
+    max-width: calc(100% - var(--drive-left-clearance) - var(--drive-right-clearance));
+  }
+  /* Keep the room action reachable first, then the update or performance offer.
+     The race readout returns as soon as the notice clears. */
+  html .mira-shell.is-playing:not(.is-paused) > .bottom-stack:has(> .room-notice:not([hidden])) > :is(#mira-build-notice, .performance-recommendation, .race-hud),
+  html .mira-shell.is-playing:not(.is-paused) > .bottom-stack:has(> #mira-build-notice:not([hidden])) > :is(.performance-recommendation, .race-hud),
+  html .mira-shell.is-playing:not(.is-paused) > .bottom-stack:has(> .performance-recommendation:not([hidden])) > .race-hud { display: none; }
+  body:has(.mira-shell.is-playing:not(.is-paused) > .bottom-stack > :not([hidden])) .daydream-pill { visibility: hidden; }
+}

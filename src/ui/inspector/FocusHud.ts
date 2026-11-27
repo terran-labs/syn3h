@@ -85,7 +85,7 @@ export class FocusHud {
       <g data-style="1" transform="translate(0 -372)"><path class="fh-faint" d="M-420 0H420"/><g data-tape>${ticks}</g><path class="fh-accent" d="M0 6V18"/></g>
     </svg>
     <div class="fh-read fh-left" data-style="0"><b><span data-t="speed"></span><i data-t="speedUnit"></i></b><small>SPEED</small></div>
-    <div class="fh-read fh-right" data-style="0"><b><span data-t="altitude"></span><i data-t="heightUnit"></i></b><small>ALT</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
+    <div class="fh-read fh-right" data-style="0"><b><span data-t="altitude"></span><i data-t="heightUnit"></i></b><small title="Altitude above sea level">ALT ASL</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-top" data-style="0"><small data-t="world"></small></div>
     <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> <span data-t="speedUnit"></span> · ALT <span data-t="altitude"></span> <span data-t="heightUnit"></span> · <span data-t="clock"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-corner fh-tl" data-style="2"><small>MIRA // SURVEY</small><span data-t="world"></span></div>

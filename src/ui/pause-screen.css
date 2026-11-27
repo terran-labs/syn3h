@@ -2,7 +2,7 @@
    UX other than the minimap so it looks absolutely gorgeous next to the welcome button."
    Paused (.is-paused on the shell): every piece of interface fades out but the minimap, the
    veil that resumes, and the row of three buttons (Exit world, Welcome, Screenshot). No
-   full-screen dim: a soft shade sits behind PAUSED only while the words show. After a moment
+   separate dialog is needed. Pause shares the Leave veil. After a moment
    with nothing moving (.is-whisper, Shell.whisper) the words and their shade fade too.
    Buttons are the shared glass (.liquid-glass, shell.css); this file sets place and state. */
 
@@ -18,15 +18,14 @@ body:has(> .mira-shell.is-paused) > :is(.touch-controls, .mira-nametags, .daydre
 /* It is a button holding focus while paused, so general button styling (a border, a focus
    ring, a glow) would draw a frame round the whole screen. None of that here. */
 html .mira-shell.exploration-ui .pause-veil, html .mira-shell.exploration-ui .pause-veil:is(:hover, :focus, :focus-visible) { background: transparent; border: 0; outline: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.mira-shell .pause-veil::before {
-  content: ""; position: absolute; left: 50%; top: 50%; z-index: -1; width: min(640px, 110vw); height: 300px; translate: -50% -50%;
-  background: radial-gradient(closest-side, rgb(2 8 14 / .42), rgb(2 8 14 / .2) 55%, transparent); pointer-events: none;
-  transition: opacity .6s ease;
+html .mira-shell.exploration-ui.is-paused:not(.is-whisper):not(:has(.exit-confirm:not([hidden]))) .pause-veil {
+  border-radius: 0; background: var(--dialog-dim);
+  -webkit-backdrop-filter: var(--dialog-blur); backdrop-filter: var(--dialog-blur);
 }
 .mira-shell .pause-veil > * { transition: opacity .6s ease; }
-.mira-shell.is-whisper .pause-veil::before, .mira-shell.is-whisper .pause-veil > * { opacity: 0; }
+.mira-shell.is-whisper .pause-veil > * { opacity: 0; }
 /* "Leave this world?" is the only text while it asks: PAUSED steps out from behind it. */
-.mira-shell:has(.exit-confirm:not([hidden])) .pause-veil::before, .mira-shell:has(.exit-confirm:not([hidden])) .pause-veil > * { opacity: 0; }
+.mira-shell:has(.exit-confirm:not([hidden])) .pause-veil > * { opacity: 0; }
 
 /* ---- Exit world, Welcome, Screenshot: one row at the bottom centre, above the veil. It lives in
    the bottom-centre stack (bottom-stack.css), which places it; the rules here are its look. ---- */

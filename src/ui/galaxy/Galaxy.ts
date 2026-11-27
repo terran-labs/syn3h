@@ -1354,7 +1354,10 @@ export class Galaxy {
     // A press that skips it also keeps where the worlds were shown, so lifting it on a world
     // in flight still picks that world (up), not whatever settled under the finger.
     for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, event => {
-      if (!this.opening || this.opening.start === null) return
+      if (!this.opening || veiled()) return
+      // Minimal may show the lobby before its first animation frame. Enter can
+      // skip immediately. Pointer picking still needs a drawn frame.
+      if (this.opening.start === null && !(event instanceof KeyboardEvent && event.key === 'Enter')) return
       if (event instanceof PointerEvent) this.skipped = { pointer: event.pointerId, screen: this.screen, sun: this.sunScreen }
       this.opening = null; this.chrome(null); this.wake = 2
     }, { capture: true, passive: true, signal })

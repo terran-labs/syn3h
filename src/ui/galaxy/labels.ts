@@ -222,6 +222,17 @@ export function captionOptions(place: LabelPlace, metrics: CaptionMetrics, space
       return bright ? [bright] : []
     })
     const choices = build(anchors)
+    // A dock corner can cover the space directly below and to one side.
+    // Try the corners before suppressing the planet's name.
+    if (content === 'name' && blockers.length && !choices.length) {
+      const corner = (place.radius + gap) / Math.SQRT2
+      choices.push(...build([
+        [place.x - corner - size.width / 2, place.y - corner - size.height, 'upper-left'],
+        [place.x + corner + size.width / 2, place.y - corner - size.height, 'upper-right'],
+        [place.x - corner - size.width / 2, place.y + corner, 'lower-left'],
+        [place.x + corner + size.width / 2, place.y + corner, 'lower-right'],
+      ]))
+    }
     if (belowInGlare && sun) {
       choices.sort((a, b) => b.solarGap - a.solarGap)
       // A diagonal on the outward side can clear a neighbouring caption beside the globe.

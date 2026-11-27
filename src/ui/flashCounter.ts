@@ -122,7 +122,7 @@ export function startFlashCounter(recorder: () => BlankFrameRecorder | null, inP
   const place = () => {
     const b = box.getBoundingClientRect()
     let top = 8
-    for (const el of document.querySelectorAll('.gear-selector, .fh-read')) {
+    for (const el of document.querySelectorAll('.gear-selector, .fh-read, .shell-toast:not([hidden])')) {
       const r = el.getBoundingClientRect()
       if (!r.width || !r.height || r.top > innerHeight / 2) continue
       if (r.left < b.right && r.right > b.left) top = Math.max(top, r.bottom + 6)

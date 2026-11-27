@@ -126,11 +126,19 @@ html[data-touch-hand="left"] .mira-shell.exploration-ui.has-touch .shell-minimap
   body:has(.daydream-pill:not([hidden])) .touch-controls .touch-stick-hint { opacity: 0; visibility: hidden; }
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  html[data-touch-hand] body {
+    --drive-side-clearance: calc((var(--thumb-columns, 2) + 1) * (var(--thumb-size) + var(--thumb-gap)) + var(--edge-right));
+    --drive-left-clearance: var(--map-top);
+    --drive-right-clearance: var(--drive-side-clearance);
+  }
+  html[data-touch-hand="left"] body {
+    --drive-left-clearance: var(--drive-side-clearance);
+    --drive-right-clearance: var(--edge-right);
+  }
   html[data-touch-hand] .daydream-pill {
     bottom: var(--thumb-base);
-    /* Centred, so clear of the grid on both sides: the vehicle's columns (--thumb-columns, set
-       by TouchControls) plus one for the gear's extra buttons. */
-    max-width: calc(100% - 2 * (max(var(--thumb-margin), var(--safe-right)) + (var(--thumb-columns, 2) + 1) * (var(--thumb-size) + var(--thumb-gap)) + 12px));
+    left: var(--drive-left-clearance); right: var(--drive-right-clearance);
+    transform: none; width: auto; max-width: none;
   }
 }
 

@@ -48,3 +48,8 @@
 :root .mira-shell .world-inspector .wi-group-reset { display: flex; justify-content: flex-end; padding: 4px 6px 6px; }
 :root .mira-shell button.reset-all.reset-all { display: inline-flex; align-items: center; gap: 6px; }
 :root .mira-shell .world-inspector .wi-foot > button.reset-all.reset-all { margin-left: auto; }
+/* Leave space inside the curved lower corners when the scroller reaches its end. */
+:root .mira-shell .world-inspector .wi-foot:has(> .reset-all) {
+  padding-inline: calc(var(--halo-r, 16px) / 2);
+  padding-bottom: 6px;
+}
