@@ -268,8 +268,8 @@ export class GlassButton {
       if (!rgba || !filter) continue
       const pressed = [...this.pressed.values()].includes(b) || b.matches(':active, .held')
       const i = this.drawn.size
-      // The bevel and the ceiling for secondary card text follow the painted opening.
-      const panelWeight = isCard ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
+      // Sidebar cards keep the command face at every height. Notices retain their panel face.
+      const panelWeight = isCard && b.matches('.performance-recommendation') ? Math.max(0, Math.min(1, (rect.height - 52) / 64)) : 0
       let inkLimit = isCard ? textFaceLimit + (cardFaceLimit - textFaceLimit) * panelWeight : iconFaceLimit
       if (b.matches('.pause-actions > button')) {
         // The shared shortcut and the full Pause labels are hidden in the compact layout.

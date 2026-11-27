@@ -427,12 +427,25 @@ html[data-glass-material="liquid"] [data-ui-frost="off"] [data-glass-surface="sc
   --panel-material-fill: rgb(14 14 15 / .94);
 }
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  /* Compress the bright sky behind secondary text while keeping the dark scene visible.
-     Collapsed cards, expanded cards and their ghosts all use the same curve. */
+  /* Compress the bright sky behind secondary text on scrolling panel bodies. */
   html[data-glass-material="liquid"]:not([data-drive-glass="shed"], [data-gfx="0"]) [data-glass-surface="scroll"]:not([data-ui-frost="off"] *) {
     --panel-material-fill: rgb(8 8 10 / .1);
     --panel-material-filter: blur(3px) brightness(.74) saturate(1.4) contrast(.76) brightness(.50);
   }
+  /* All driving sidebar cards follow the same Tint control as the command row. */
+  html[data-glass-material="liquid"]:not([data-drive-glass="shed"], [data-gfx="0"])
+  .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost):not([data-glass-surface="shader"]):not([data-ui-frost="off"] *) {
+    --panel-material-fill: var(--liquid-card-tint, var(--interface-frost-tint));
+    --panel-material-filter: var(--glass-frost);
+    background: var(--panel-material-fill);
+    -webkit-backdrop-filter: var(--panel-material-filter);
+    backdrop-filter: var(--panel-material-filter);
+  }
+}
+/* Drive glass can still draw Search when the frame budget disables CSS frost. */
+html[data-glass-material="liquid"][data-drive-glass="on"] .mira-shell.exploration-ui[data-ui-frost="off"] > .world-inspector:not(.lobby-settings)
+:is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost):not([data-glass-surface="shader"]) {
+  background: var(--liquid-card-tint, var(--interface-tint));
 }
 /* Keep the marker's face above the ordinary panel face and its tier overrides. */
 html[data-glass-material="liquid"] :is(

@@ -135,6 +135,11 @@ export class GlassPost {
     this.tuning.edges.value.set(settings.rim.value, settings.hair.value, .405 * settings.lift.value)
     this.frost.value = settings.frost.value / settings.frost.def.default
     const root = document.documentElement
+    // CSS scrolling faces approximate the shader curve by matching its black and white endpoints.
+    const transmission = Math.max(0, Math.min(1, transfer.slope + transfer.quadratic))
+    const alpha = 1 - transmission
+    const grey = alpha > 0 ? Math.min(255, Math.max(0, 255 * transfer.lift / alpha)) : 0
+    root.style.setProperty('--liquid-card-tint', `rgb(${grey} ${grey} ${grey} / ${alpha})`)
     if (settings.growth.value) root.style.setProperty('--glass-extra-scale', String(1 + settings.growth.value))
     else root.style.removeProperty('--glass-extra-scale')
     this.controls?.tune(settings.growth.value)
