@@ -114,6 +114,7 @@ export class Game {
         const frame = this.frames
         const rendererFrame = renderer.info.frame
         recorder.recordFrame({ frame, startMs, intervalMs, cpuMs: performance.now() - startMs,
+          bufferWidth: this.canvas.width, bufferHeight: this.canvas.height, firstDrawMs: this.performance.firstFrameMs,
           renderCalls: renderer.info.render.frameCalls, quality: this.quality.governor.level, backend: this.backend, playing })
         if (!playing || pending || !timing.trackTimestamp || !renderer.info.render.frameCalls) return
         pending = true

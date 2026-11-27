@@ -9,6 +9,9 @@ export interface PhoneRenderFrame {
   cpuMs: number
   /** Renderer calls made during this game frame, including passes. */
   renderCalls: number
+  bufferWidth: number
+  bufferHeight: number
+  firstDrawMs: number | null
   quality: number
   backend: 'webgpu' | 'webgl'
   /** True during visible gameplay. Pass false for lobby, loading, or covered play. */
@@ -59,7 +62,7 @@ function summarize(name: string, readings: Reading[], durationMs: number): strin
   const settings = new Set<string>()
   for (const reading of readings) {
     const { intervalMs, cpuMs, gpuMs, renderCalls, backend, quality } = reading
-    settings.add(`${backend} quality ${quality}`)
+    settings.add(`${backend} quality ${quality}, ${reading.bufferWidth} × ${reading.bufferHeight} pixels`)
     if (intervalMs !== null) {
       intervals.push(intervalMs)
       if (intervalMs > HITCH) hitches++
@@ -138,6 +141,7 @@ export function createPhoneRenderRecorder(parent: HTMLElement = document.body): 
     const lines = [
       'Syn3h phone render report',
       state === 'ended' ? endReason : 'Recording in progress',
+      `Navigation to first draw submission  ${samples[0]?.firstDrawMs?.toFixed(1) ?? 'unavailable'}${samples[0]?.firstDrawMs != null ? ' ms' : ''}`,
       summarize('First minute', first, Math.min(elapsedMs, MINUTE)),
     ]
     if (elapsedMs >= WARMUP_END) {
@@ -238,9 +242,9 @@ export function createPhoneRenderRecorder(parent: HTMLElement = document.body): 
         finish('Completed the minute after ten minutes of continuous play.', 'Recording complete')
         return
       }
-      const { frame, cpuMs, renderCalls, quality, backend } = sample
+      const { frame, cpuMs, renderCalls, quality, backend, bufferWidth, bufferHeight, firstDrawMs } = sample
       const intervalMs = firstFrame || !validDuration(sample.intervalMs) ? null : sample.intervalMs
-      const reading: Reading = { frame, elapsedMs, intervalMs, cpuMs, renderCalls, quality, backend }
+      const reading: Reading = { frame, elapsedMs, intervalMs, cpuMs, renderCalls, quality, backend, bufferWidth, bufferHeight, firstDrawMs }
       samples.push(reading)
       byFrame.set(frame, reading)
       show.disabled = false
