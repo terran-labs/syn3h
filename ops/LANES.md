@@ -1,4 +1,8 @@
-# Lanes
+# Lanes (historical)
+
+**This table describes the lanes and threads of 14 November 2026. None of those threads is
+running. It is kept for the file fences in the last column, which are still a fair guide to
+who should touch what. Current work is in this repository's GitHub issues.**
 
 Who owns what, and whether anyone is home. Checked by the Foreman on Saturday 14 November
 at 4:30pm Pacific, corrected by the Orchestrator at 4:40pm. The Orchestrator corrects this file's ownership column; the Foreman

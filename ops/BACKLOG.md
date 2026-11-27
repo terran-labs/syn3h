@@ -1,4 +1,8 @@
-# Backlog
+# Backlog (historical)
+
+**This file is history, kept for the record of the first weekend. The backlog is this
+repository's GitHub issues, with the labels described in `AGENTS.md`. Do not dispatch from
+anything below.**
 
 Priority order. Each item has a one line acceptance check. The Orchestrator dispatches from here.
 

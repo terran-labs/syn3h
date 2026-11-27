@@ -5,6 +5,26 @@ releases for Mira. The next release after this one should be a beta and should n
 I physically approve it for production release. You should add beta.mira.cc for testing beta
 builds." It applies to every release after v26.11.2500.
 
+**There is no standing approval.** The owner once pre-authorized a single production release;
+it was used by v26.11.2606 on 26 November 2026. Every later version needs the owner's own
+words again, for that version.
+
+## Checks by stage
+
+Agreed with the owner on 26 November 2026, after measuring that browser checks and the three
+shared heavy slots, not the unit suite, were what made releases slow.
+
+- **Branch:** typecheck, the unit tests for what changed, frames reviewed.
+- **Beta:** typecheck, the unit suite, a short works-at-all check on the beta address (loads,
+  enter a world, drive, two players), and the new feature's own checks.
+- **Production:** all of that plus the core browser checks (`ops/browser-core.json` once the
+  prune lands), the nothing-built-in-play probe, the GL error probe on WebGL 2, the per-frame
+  cost probe, the latency smoke, the runtime assets check and the reconnect check. Run once,
+  on the exact beta build.
+
+A long production-tier job sets its own heavy time limit, and its report counts result lines.
+Until the release tool runs these tiers itself they are applied by hand.
+
 ## The two steps
 
 1. **Beta.** The Orchestrator assembles the train on the Foreman's word, runs the train's checks,

@@ -1,8 +1,13 @@
 # Coordination protocol
 
-How the Mira lanes work together through the Sunday noon handoff. Updated by the
-Foreman on 15 November 2026 to reflect the owner's overnight and default-on directions.
-Later explicit owner decisions take precedence over historical notes.
+How the Mira lanes work together. Written for the first weekend (14 and 15 November 2026) and
+revised on 27 November 2026 for the handover to factory operation. Later explicit owner
+decisions take precedence over historical notes.
+
+Roles: the Foreman is whoever coordinates the work and accepts results; the Orchestrator is
+whoever merges and releases. A factory may name these roles differently; the rules attach to
+the role, not the thread. The backlog is this repository's GitHub issues (`AGENTS.md`, the
+working agreement).
 
 ## 1. One trunk, one merger
 
@@ -79,16 +84,15 @@ hunks. Validate the combined default experience, including fresh rooms and delib
 off choices. Stored room values lack provenance: preserve them rather than guessing
 which false values were old defaults and which were host choices.
 
-## 6. Two channels: live and production
+## 6. Two channels: beta and production
 
-The live preview follows every merge. Production is served from Cloudflare and changes only
-when the Orchestrator ships a production release: a tagged, green milestone, frozen with
-`tools/promote-stable.sh`, deployed from the frozen copy, then verified with
-`tools/net-smoke.mjs` against the public address. Each release gets a `release-N` tag and a
-line in the digest. The demo runs on production. Overnight releases are authorized
-without prior owner viewing. Occupied lobbies do not block deployment. Validate public
-assets and gameplay after deployment and roll back immediately on failed live checks.
-Keep tested fallback builds; results from one frozen commit do not validate another.
+`ops/RELEASE.md` is the rule. Every release is a beta first, on the beta address, and reaches
+production only when the owner approves that exact version in their own words. Production
+ships the frozen beta build, never a rebuild. A failed live check rolls back by itself; then
+stop and report. Results from one frozen build do not validate another.
+
+The first weekend's permission for overnight production releases without the owner's viewing
+ended on 25 November 2026 and must not be relied on.
 
 ## 7. Handoffs and digests have a fixed shape
 
@@ -125,18 +129,14 @@ When the owner gives a lead an instruction in its own thread, the lead follows i
 the Orchestrator one line saying what changed and whether it touches a shared seam. The
 Foreman reads lead threads on each sweep and records owner decisions in `ops/DECISIONS.md`.
 
-## 10. Continue overnight and prepare the morning handoff
+## 10. Acceptance comes before a release, and from one place
 
-The owner chose continued overnight development and will decide the cutoff in the morning.
-Prepare an 8am Pacific brief with verified build choices, known issues and a fifteen-minute
-viewing list. The noon handoff is the public address and GitHub repository link.
-
-Finish current assignments first. After every current assignment finishes, the owner's
-follow-on priorities are measured performance tiers, toggleable FPS/history/hardware/failure
-diagnostics, sustained-low-FPS recommendations, richer cursor-locked UX with minimap-edge
-vignettes, complete gear and playful bots, multiplayer playtesting, and transparent water.
-Preserve explicit holds such as deferred smooth-ground interpolation. The later default-on
-directive applies now and does not wait for that follow-on queue.
+A branch joins a release only when the Foreman has reviewed its diff and its result (frames
+for anything visible, a real browser drive for physics) and named its tip as accepted. The
+Orchestrator checks that the tip it merges is the tip that was named, on the remote, and does
+not take a hash from a builder's message. A branch that changes shared code runs the whole
+suite before it is accepted. One review, of the change: see the testing principle in
+`AGENTS.md`.
 
 ## 11. Never kill processes by name
 

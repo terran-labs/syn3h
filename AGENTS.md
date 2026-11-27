@@ -62,9 +62,17 @@ that fails because someone improved the game is a cost, and we stop paying it.
    - Interface, copy, styling: typecheck, the affected tests, one look in a browser at
      phone and desktop size.
    - Physics, bots, world generation: the above plus the full suite.
-   - Networking and the room server: the above plus the two-player smoke test.
-   - A production release: `tools/release.sh`, which freezes, deploys, checks the public
-     address and rolls back on failure. Nothing else is required.
+   - Physics, also: one real drive in a browser against `main` before the change is
+     reported as working. Simulation numbers alone have been wrong (27 November 2026:
+     a water rework passed every test and sank in the game).
+   - Networking and the room server: the above plus a boot of the real Workers runtime
+     and the two-player smoke test.
+   - Any change to code shared between lanes: the full suite before it is accepted.
+   - A release: the tier for its stage, set out in `ops/RELEASE.md` (a light tier for a
+     beta, the full set once for production, on the exact beta build). The release tool
+     freezes, deploys, checks the public address and rolls back on failure.
+   - A look is reviewed from frames at phone and desktop size. Do not add a blocking
+     browser check for a look; add one only when a named player-facing fault has recurred.
 5. **Run the test; do not package it.** Unit tests and typechecks run directly through
    `tools/heavy.sh`. No bespoke runners, hash pins, receipts or process-closure audits
    around a test that finishes in seconds. If a check needs its own harness, the harness
@@ -131,3 +139,57 @@ and to get out of, not failures the game repairs. In practice:
 for a minute, and a buggy on its roof in shallow lava and water, is moved by nothing but
 physics; and every vehicle leaves a lava or water pool from its surface and its bed within the
 pool's radius at walking pace.
+
+## Working agreement: where the work is and who decides
+
+Set down on 27 November 2026 from the owner's standing directions, so that any agent or
+factory picking this project up starts from the same rules.
+
+**The work is in this repository's GitHub issues.** They are the only backlog.
+`ops/BACKLOG.md` and `ops/LANES.md` are history. Labels:
+
+- State: `ready-to-merge` (accepted, needs only a rebase and a release), `built-unshipped`
+  (exists on a branch, not finished or not accepted), `needs-owner` (waits on a decision or
+  a real device), `later` (queued at low priority).
+- Area: `physics`, `graphics`, `interface`, `networking`, `performance`, `tooling`,
+  `feature`.
+
+An issue names its branch, what is left and what done means. When the owner gives feedback
+on shipped work, record it on the matching issue, or open one, before building anything.
+
+**Releases** follow `ops/RELEASE.md`: every release is a beta first, and production needs
+the owner's approval of that exact version in their own words. There is no standing
+approval.
+
+**Acceptance.** Nothing rides a release until whoever coordinates the work has reviewed the
+branch's diff and its frames and named its tip as accepted. Check that tip on the remote
+yourself; do not trust a reported hash. A builder finishing is not acceptance.
+
+**Not authorized until the owner says so, each time:** a production release; a crowd test
+against the staging Worker; uploading images to this repository or its README; editing or
+publishing the studio website; rewriting pushed history. An old go-ahead does not carry
+over to a new occasion.
+
+**The shared machine.** Heavy jobs (suites, builds, headless browsers) go through the trunk's
+`tools/heavy.sh`. Start the server, run the check and stop the server inside one job, with a
+time limit on every wait. Stop only processes you started, by the process id you recorded.
+Never stop processes by name or pattern (`ops/PROTOCOL.md`, section 11).
+
+**How the owner wants things built.**
+
+- Interface work ships to beta when its checks pass and is adjusted from the owner's
+  feedback there. There is no preview gate before a beta.
+- Motion: no slide animations, and nothing already on screen jumps when something else
+  appears.
+- Everything adjustable goes on the parameter registry so the owner can tune it live.
+- Give an estimate sized to the request. If it sounds large, break it down and cut it to
+  what was asked before quoting it.
+
+**How to report.**
+
+- Lead with the point, in plain language. Say plainly whether a thing is proposed, built,
+  tested or live, and never imply a check ran when it did not.
+- Count results from result lines, never by arithmetic on what should have run.
+- Correct your own earlier statement as soon as you find it was wrong.
+- Any issue, comment or pull request body an agent writes begins with the line
+  `(AI Generated)`. Release notes and release descriptions do not.
