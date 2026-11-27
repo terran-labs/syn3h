@@ -193,6 +193,17 @@ html[data-glass-material] .mira-shell.exploration-ui > .world-inspector:not(.lob
   background: transparent; border: 0; box-shadow: none;
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
+html[data-glass-material="flat"] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+.wi-cards > .wi-card > .wi-head:is(:active, .held) {
+  background: var(--button-held-fill);
+}
+@media (prefers-reduced-motion: no-preference) {
+  html[data-glass-material="flat"] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
+  .wi-cards > .wi-card > .wi-head:is(:active, .held) > h3 {
+    scale: 1.04;
+    transform-origin: left center;
+  }
+}
 html[data-glass-material] .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings)
 :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost, .rail-command > input, .rail-command > button, .panels-close):not([data-glass-surface="shader"]) {
   background: var(--panel-material-fill, rgb(255 255 255 / .06));
