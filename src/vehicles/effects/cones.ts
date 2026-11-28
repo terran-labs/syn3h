@@ -60,7 +60,7 @@ export function hasCone(kind: string): boolean {
  * metre) at which it reaches about two thirds of that: the glow saturates, so a dense bank
  * reads as a bright beam rather than a white-out. Tuned by frames.
  */
-export const CONE_GAIN = 5.6, CONE_DENSITY_SCALE = 120
+export const CONE_GAIN = 19.6, CONE_DENSITY_SCALE = 120
 /** Metres over which a cone fades where it meets the scene behind it. */
 export const CONE_SOFT_DEPTH = 1.5
 /** Most cones drawn (two per vehicle). */
