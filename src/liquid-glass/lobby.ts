@@ -1,3 +1,4 @@
+import { presentLiquid } from '../ui/glassMaterial'
 import { insideScroller } from './scrolling'
 import { tintAdaptation } from './tintAdaptation'
 import faceSource from './lobby.frag.glsl?raw'
@@ -30,7 +31,7 @@ void main() {
 }`
 // Settings owns one surface. The other sheets are text directly over the galaxy.
 const surfaces = '.lobby-gear-dock > button, .lobby-sheet[open] button, #lobby-settings'
-const plain = '.lobby-version, .card-close, .galaxy-label, .saved-world-moon, #lobby-settings button, .lobby-sheet button:has(img, video)'
+const plain = '.lobby-version, .card-close, .galaxy-label, .saved-world-moon, #lobby-settings button, .update-day-toggle, .update-release-toggle, .lobby-sheet button:has(img, video)'
 type Shape = { el: HTMLElement; x: number; y: number; w: number; h: number; radius: number; alpha: number; clip?: DOMRect; panel: boolean; pressed: boolean }
 
 /** Render after the galaxy and logo. The scene is already display-encoded.
@@ -227,6 +228,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
     get dirty() { return changed || clock.active || (active && shapes.length > 0 && revision !== tuning.revision()) },
     draw(enabled) {
       if (!enabled) {
+        presentLiquid('lobby', false)
         if (active) { captions?.style.removeProperty('clip-path'); scope.removeAttribute('data-lobby-glass'); clock.release(); clearMarkers() }
         lastBlur = 0
         active = false; changed = false
@@ -238,7 +240,7 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
       if (clock.advance(now) || changed || !active || growth !== tuning.growth()) layout(now)
       growth = tuning.growth()
       active = true
-      if (!shapes.length) return
+      if (!shapes.length) { presentLiquid('lobby', true); return }
       const sx = width/pw, sy = height/ph
       if (phone.matches && shapes.some(s => s.panel)) {
         gl.useProgram(face); gl.uniform1f(u.veil,.78)
@@ -293,8 +295,10 @@ export function createLobbyGlass(gl: WebGL2RenderingContext, canvas: HTMLCanvasE
         mark(s.el, 'shader')
       }
       gl.disable(gl.SCISSOR_TEST); gl.disable(gl.BLEND)
+      presentLiquid('lobby', true)
     },
     dispose() {
+      presentLiquid('lobby', false)
       captions?.style.removeProperty('clip-path')
       scope.removeAttribute('data-lobby-glass')
       clock.release(); size.disconnect(); membership.disconnect(); attributes.disconnect(); events.abort()

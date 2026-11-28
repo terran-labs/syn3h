@@ -1,4 +1,4 @@
-import { currentTint, onPaintedTint, liquidSelected, respectReducedTransparency } from '../../ui/glassMaterial'
+import { currentTint, onPaintedTint, liquidSelected, presentLiquid, respectReducedTransparency } from '../../ui/glassMaterial'
 import * as THREE from 'three/webgpu'
 import { float, max, renderOutput, rtt, uniform, uv, vec3, vec4 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
@@ -55,6 +55,7 @@ export class GlassPost {
     if (!playing) {
       this.timing.monitoring = false
       if (this.driving) {
+        presentLiquid('drive', false)
         delete root.dataset.driveGlass
         this.driveBlock = ''
         this.controls?.invalidate()
@@ -64,6 +65,7 @@ export class GlassPost {
     }
     const now = performance.now()
     if (!this.driving) {
+      presentLiquid('lobby', false)
       this.driving = true
       this.enteredAt = now
       this.lastReason = 'drive started'
@@ -222,6 +224,7 @@ export class GlassPost {
     if (!this.graphReady && this.driving && !covered) this.setDriveSurface(!this.driveBlock)
     this.graphReady = true
     if (!covered && this.driving && this.driveBlock) {
+      presentLiquid('drive', false)
       if (!this.drawPlain) controls.hide()
       this.drawPlain = true
       this.record(false, this.driveBlock)
@@ -249,11 +252,13 @@ export class GlassPost {
         this.record(false, controls.reducedTransparency ? 'transparency preference' : 'interface frost disabled')
       }
       controls.present()
+      if (this.driving) presentLiquid('drive', on)
       if (controls.animating) this.wake()
     }
   }
 
   release(reason = 'post graph unavailable') {
+    presentLiquid('drive', false)
     if (this.graphReady) this.controls?.hide()
     this.graphReady = false
     if (this.driving && liquidSelected()) this.setDriveSurface(false)
@@ -262,6 +267,7 @@ export class GlassPost {
   }
 
   dispose() {
+    presentLiquid('drive', false)
     delete document.documentElement.dataset.driveGlass
     this.unsubscribe()
     document.documentElement.style.removeProperty('--glass-extra-scale')

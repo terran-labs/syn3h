@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GLASS_FLAT, GLASS_LIQUID, params, surfaceCoverage } from '../../shared/params'
 import { qualityLevel } from '../../src/core/quality'
 import { glassStyle } from '../../src/ui/inspector/params'
-import { defaultTint, glassStyles, liquidSelected, restoreGlassMaterial, setGlassForVisit } from '../../src/ui/glassMaterial'
+import { defaultTint, glassStyles, liquidSelected, presentLiquid, restoreGlassMaterial, setGlassForVisit } from '../../src/ui/glassMaterial'
 
 describe('the saved interface material', () => {
   let stop: () => void
@@ -25,6 +25,8 @@ describe('the saved interface material', () => {
     storage.set('mira.glassMaterial.v1', String(old))
     storage.set('mira.surfaceCoverage', '43')
     stop = restoreGlassMaterial(false)
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
+    presentLiquid('lobby', true)
     expect(document.documentElement.dataset.glassMaterial).toBe(expected)
     expect(storage.get('mira.glassMaterial.v2')?.toLowerCase()).toBe(expected)
     expect(surfaceCoverage.value).toBe(43)
@@ -45,7 +47,12 @@ describe('the saved interface material', () => {
     expect(glassStyle.value).toBe(0)
     params.set(qualityLevel.def.id, 2)
     expect(liquidSelected()).toBe(true)
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
+    presentLiquid('drive', true)
+    presentLiquid('lobby', false)
     expect(document.documentElement.dataset.glassMaterial).toBe('liquid')
+    presentLiquid('drive', false)
+    expect(document.documentElement.dataset.glassMaterial).toBe('flat')
   })
   it('sets the style default on a change and restores a custom tint on reload', () => {
     stop = restoreGlassMaterial(false)

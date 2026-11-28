@@ -17,6 +17,26 @@ export const liquidQualityHint = 'Liquid glass needs Medium quality or higher'
 export const liquidEligible = () => qualityLevel.value >= 2
 export const liquidSelected = () => glassStyle.value === GLASS_LIQUID && liquidEligible()
 
+// The selected style starts shader preparation. The painted style changes only when a
+// renderer presents its first frame. A retiring renderer cannot clear its successor.
+type GlassRenderer = 'lobby' | 'drive'
+let presentedBy: GlassRenderer | null = null
+let refreshFlatFill: (() => void) | undefined
+function paintStyle() {
+  if (!liquidSelected()) presentedBy = null
+  const style = presentedBy ? 'liquid' : 'flat'
+  if (document.documentElement.dataset.glassMaterial !== style) {
+    document.documentElement.dataset.glassMaterial = style
+    refreshFlatFill?.()
+  }
+}
+export function presentLiquid(renderer: GlassRenderer, ready: boolean): void {
+  const next = ready && liquidSelected() ? renderer : presentedBy === renderer ? null : presentedBy
+  if (next === presentedBy) return
+  presentedBy = next
+  paintStyle()
+}
+
 // An explicit Liquid selection currently wins over the system preference.
 export const respectReducedTransparency = false
 // Flat's default comes from the bright-patch contrast audit. Liquid keeps the owner's 25%.
@@ -110,7 +130,7 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
     // contrast floor in the paint path so the slider and saved tint stay put.
     const tint = glassStyle.value === GLASS_LIQUID && !liquidEligible()
       ? Math.max(paintedTint, liquidFallbackTintFloor())
-      : paintedTint
+      : liquidSelected() && !presentedBy ? defaultTint(GLASS_FLAT) : paintedTint
     document.documentElement.style.setProperty('--interface-tint', fill(flatFill, tint))
   }
   function paintTint() {
@@ -141,9 +161,8 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
     }
     frame = requestAnimationFrame(tick)
   }
-  function paintStyle() {
-    document.documentElement.dataset.glassMaterial = liquidSelected() ? 'liquid' : 'flat'
-  }
+  presentedBy = null
+  refreshFlatFill = paintFlatFill
   paintTint(); paintStyle()
   const unsubscribe = params.onChange(id => {
     if (id === glassStyle.def.id) {
@@ -164,5 +183,5 @@ export function restoreGlassMaterial(shortcut: boolean, flat = false) {
     paintStyle()
     paintFlatFill()
   })
-  return () => { unsubscribe(); if (frame) cancelAnimationFrame(frame) }
+  return () => { unsubscribe(); refreshFlatFill = undefined; presentedBy = null; if (frame) cancelAnimationFrame(frame) }
 }
