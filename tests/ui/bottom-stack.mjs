@@ -74,6 +74,7 @@ try {
         if (window.mira.player.kind !== kind && window.mira.swapVehicle(kind)?.kind !== kind) {
           throw new Error(`Could not switch to ${kind}`)
         }
+        window.mira.params.set('help.tips', true)
         window.mira.shell.showHelp(false)
         window.miraChat.net.chat.receive({ type: 'chat', from: 42, text: line, t: 0 })
       }, { kind, line })
@@ -115,7 +116,9 @@ try {
     await steady(page, () => {
       const opaque = el => !!el && !el.hidden && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none' && Number(getComputedStyle(el).opacity) === 1
       const shell = document.querySelector('.mira-shell')
-      return shell.classList.contains('is-playing') && !shell.classList.contains('is-paused') && opaque(document.querySelector('.bottom-stack > .performance-recommendation')) && opaque(document.getElementById('mira-build-notice'))
+      const offer = document.querySelector('.bottom-stack > .performance-recommendation')
+      const singleNotice = matchMedia('(orientation: landscape) and (max-height: 500px) and (pointer: coarse)').matches
+      return shell.classList.contains('is-playing') && !shell.classList.contains('is-paused') && (singleNotice ? !offer.hidden && getComputedStyle(offer).display === 'none' : opaque(offer)) && opaque(document.getElementById('mira-build-notice'))
         && [...document.querySelectorAll('.touch-controls button:not([hidden])')].every(b => getComputedStyle(b).visibility !== 'hidden' && Number(getComputedStyle(b.closest('.touch-controls')).opacity) === 1)
     }, `${tag} in play`)
     const play = await page.evaluate(layout)
@@ -132,7 +135,8 @@ try {
     for (const [i, a] of column.slice(1).entries()) assert.ok(a.top - column[i].bottom < 40, `${tag} in play: ${column[i].name} and ${a.name} are ${Math.round(a.top - column[i].bottom)}px apart, not one gap`)
     // The build notice takes a tap where it is drawn.
     assert.ok(await page.evaluate(() => { const n = document.getElementById('mira-build-notice'); const r = n.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === n && getComputedStyle(n).pointerEvents !== 'none' }), `${tag} in play: the build notice takes a tap`)
-    assert.ok(play.items.length >= 2, `${tag} in play: the build notice and the offer both show (${play.items.map(i => i.name)})`)
+    const offerShown = play.items.some(item => item.name === 'performance-recommendation')
+    assert.equal(offerShown, !(touch && height < width && height <= 500), `${tag}: build notice takes priority on landscape phones`)
 
     if (width === 390 || width === 1280) {
       const actions = page.locator('.bottom-stack > .performance-recommendation .performance-offer-actions')
