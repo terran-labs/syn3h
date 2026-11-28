@@ -24,7 +24,7 @@ import {
 import { GatedViewportDepthTexture, midPassCopyNode } from '../../core/midPassCopy'
 import { applyCurve } from '../../world/curve'
 import { defineParam } from '../../../shared/params'
-import { CORE_SHARE, lampPitch, type LampPose } from './lamps'
+import { lampPitch, type LampPose } from './lamps'
 
 type N = any // TSL node
 
@@ -60,7 +60,7 @@ export function hasCone(kind: string): boolean {
  * metre) at which it reaches about two thirds of that: the glow saturates, so a dense bank
  * reads as a bright beam rather than a white-out. Tuned by frames.
  */
-export const CONE_GAIN = 1.6, CONE_DENSITY_SCALE = 120
+export const CONE_GAIN = 5.6, CONE_DENSITY_SCALE = 120
 /** Metres over which a cone fades where it meets the scene behind it. */
 export const CONE_SOFT_DEPTH = 1.5
 /** Most cones drawn (two per vehicle). */
@@ -111,7 +111,7 @@ export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
   const rim = pow(facing, float(3)).mul(float(1).sub(up.mul(0.75)))
   // Brighter near the lamp, gone at the end; and not a hard ring at the lamp itself.
   // Bright at the lamp, thinning toward the beam's reach: most of it in the first third.
-  const fall = pow(float(1).sub(along), float(2.6)).mul(smoothstep(0.0, 0.06, along))
+  const fall = pow(float(1).sub(along), float(2.6)).mul(smoothstep(0.0, 0.2, along))
   // Where it meets the world behind it: the scene's depth at this pixel against the cone's. That
   // depth is a copy taken in the middle of the scene pass: not made where that is not yet proven
   // (phones, tablets, Safari: core/midPassCopy.ts), and the beam keeps a hard edge there.
@@ -140,13 +140,13 @@ export function createConeBatch(haze: ConeHaze): T.InstancedMesh {
 const tilt = new T.Matrix4(), shape = new T.Matrix4()
 /**
  * Write one vehicle's cones from its lamp points (even ones are the front headlights) at
- * `brightness` (the lamp's, before haze). Each is the lamp's bright core (lamps.ts): along the
- * pose's axis, CORE_SHARE of its spread, `lengths[k]` metres long for the k-th front lamp (to
+ * `brightness` (the lamp's, before haze). Each follows the lamp's full outer angle, along the
+ * pose's axis, `lengths[k]` metres long for the k-th front lamp (to
  * where its axis meets the ground, or the reach). Returns the next free index.
  */
 export function writeVehicleCones(mesh: T.InstancedMesh, index: number, object: T.Object3D, points: readonly T.Object3D[], colour: T.Color, brightness: number, scratch: T.Matrix4, camera: T.Vector3 | undefined, pose: LampPose, lengths: readonly number[]): number {
   tilt.makeRotationX(-lampPitch(pose))
-  const slope = Math.tan(pose.spread * CORE_SHARE)
+  const slope = Math.tan(pose.spread)
   for (let i = 0, k = 0; i < points.length && index < MAX_CONES; i += 2, k++, index++) {
     const length = Math.max(.1, lengths[k] ?? pose.reach), radius = length * slope
     shape.makeScale(radius, radius, length)

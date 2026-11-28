@@ -1,4 +1,4 @@
-import {describe,expect,it} from 'vitest'
+import {beforeEach,describe,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../src/core/Game'
 import type {Terrain} from '../../src/world/Terrain'
@@ -7,7 +7,7 @@ import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 import {ParticleBatch} from '../../src/vehicles/effects/ParticleBatch'
 import {dustSprite} from '../../src/vehicles/effects/sprites'
 import {attachVehicleEffects} from '../../src/vehicles/effects'
-import {buggyHeadlights} from '../../src/vehicles/effects/headlights'
+import {buggyHeadlights,headlightsEnabled} from '../../src/vehicles/effects/headlights'
 import {params} from '../../shared/params'
 
 /** Effects that follow the player across a world seam. */
@@ -75,6 +75,7 @@ function scene(){
 }
 
 describe('buggy headlights',()=>{
+ beforeEach(()=>{headlightsEnabled.value=true;return ()=>{headlightsEnabled.value=false}})
  it('uses two lamp positions, shares the night intensity, and turns both off by day',()=>{
   const s=scene(),v=stand()
   const sky=Object.assign(new T.Object3D(),{sunDirection:{value:new T.Vector3(0,-1,0)}})
@@ -89,6 +90,9 @@ describe('buggy headlights',()=>{
   for(const beam of beams){expect(beam.position.z).toBeLessThan(0);expect(beam.target.position.z).toBeLessThan(beam.position.z);expect(beam.castShadow).toBe(false)}
   const updateLights=()=>{s.world().update(0);s.game.scene.updateMatrixWorld()}
   updateLights()
+  headlightsEnabled.value=false;updateLights()
+  expect(beams.every(beam=>beam.intensity===0)).toBe(true)
+  headlightsEnabled.value=true;updateLights()
   // Both beams share the night strength, which follows the headlight setting (headlights.ts).
   const night=beams.map(b=>b.intensity)
   expect(night[0]).toBeGreaterThan(0);expect(night[1]).toBe(night[0])
@@ -172,6 +176,7 @@ describe('vehicle effects across a world seam',()=>{
 })
 
 describe("other vehicles' headlights on the ground",()=>{
+ beforeEach(()=>{headlightsEnabled.value=true;return ()=>{headlightsEnabled.value=false}})
  const night=(s:ReturnType<typeof scene>,y:number)=>{const sky=Object.assign(new T.Object3D(),{sunDirection:{value:new T.Vector3(0,y,0)}});s.game.scene.add(sky);return sky}
  const pools=(s:ReturnType<typeof scene>)=>(s.game.scene.userData.vehicleEffects as {pools:number}).pools
  it('a bot or other player lights the ground ahead of it at night, on the ground, not by day',()=>{

@@ -7,7 +7,7 @@ import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
 import { buggyBody } from '../buggygen/body'
-import { buggyHeadlights, headlightScale } from '../effects/headlights'
+import { buggyHeadlights, headlightScale, headlightsEnabled, headlightBrightness } from '../effects/headlights'
 import { params } from '../../../shared/params'
 import { buildParts } from '../buggygen/parts'
 import { attribute, clamp, dot, float, length, min, normalView, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
@@ -208,7 +208,12 @@ export class MiraBuggySkin implements BuggySkin {
   /** The headlight lenses' glow: HEAD_LAMP times the headlight setting (effects/headlights.ts), kept current by unlistenLamps. */
   private headLamps?: THREE.Color
   /** Follows the headlight setting while this skin lives; removed in dispose. */
-  private readonly unlistenLamps = params.onChange(id => { if (id === buggyHeadlights.def.id) this.headLamps?.copy(HEAD_LAMP).multiplyScalar(headlightScale().lamp) })
+  private updateHeadLamps() {
+    this.headLamps?.copy(HEAD_LAMP).multiplyScalar(headlightsEnabled.value ? headlightScale().lamp * headlightBrightness.value : 0)
+  }
+  private readonly unlistenLamps = params.onChange(id => {
+    if ([buggyHeadlights.def.id, headlightsEnabled.def.id, headlightBrightness.def.id].includes(id)) this.updateHeadLamps()
+  })
   private bodyColor = new THREE.Color(0x1768b4)
   private accentColor = new THREE.Color(0x49e6ff)
   private readonly bodyMaterials: THREE.MeshStandardMaterial[] = []
@@ -273,7 +278,7 @@ export class MiraBuggySkin implements BuggySkin {
       // hotExposureNode, as the effects lamps use hotExposureDim, so they do not bleach under the
       // night exposure. mergeStatic reads the emissive Color by reference, so setLights can
       // change it after the merge.
-      else if (key === 'headlight') { setRole(m, 'lamp'); m.color.set(0xe8f0ff); m.emissive.copy(HEAD_LAMP).multiplyScalar(headlightScale().lamp); m.metalness = 0; this.headLamps = m.emissive }
+      else if (key === 'headlight') { setRole(m, 'lamp'); m.color.set(0xe8f0ff); m.metalness = 0; this.headLamps = m.emissive; this.updateHeadLamps() }
       else if (key === 'taillight') { setRole(m, 'lamp'); m.color.set(0x400000); m.emissive.setRGB(TAIL_LAMP, 0, 0); m.metalness = 0; this.tailLamps = m.emissive }
       else setRole(m, 'trim')
       surfaces.set(key, m)

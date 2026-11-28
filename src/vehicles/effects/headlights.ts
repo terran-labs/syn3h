@@ -14,7 +14,31 @@
  * 65 percent showing; 0.35 left 47 percent, 0.4 about half. At midday the lamps add nothing
  * measurable. One factor serves both parts. (/tmp/headlights, 18 November 2026.)
  */
-import { defineParam } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
+
+export const headlightsEnabled = defineParam<boolean>({
+  id: 'light.headlights', label: 'Headlights', group: 'Light', scope: 'client', default: false,
+})
+
+export const headlightBrightness = defineParam<number>({
+  id: 'light.headlightBrightness', label: 'Headlight brightness', group: 'Light', scope: 'client',
+  default: 0.125, min: 0, max: 1, step: 0.025,
+})
+
+/** Restore the two personal controls before the first vehicle is drawn. */
+export function restoreHeadlightPreferences(): void {
+  const controls = [headlightsEnabled.def.id, headlightBrightness.def.id]
+  for (const id of controls) {
+    try {
+      const saved = JSON.parse(localStorage.getItem('mira.' + id) ?? 'null')
+      if (typeof saved === typeof params.get(id)?.def.default) params.set(id, saved)
+    } catch { /* Storage is optional. */ }
+  }
+  params.onChange((id, value) => {
+    if (!controls.includes(id)) return
+    try { localStorage.setItem('mira.' + id, JSON.stringify(value)) } catch { /* Storage is optional. */ }
+  })
+}
 
 export const buggyHeadlights = defineParam({
   id: 'light.buggyHeadlights', label: 'Buggy headlights (1 is the old brightness)', group: 'Vehicle looks', scope: 'world',

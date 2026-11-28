@@ -9,7 +9,7 @@
  * bumper; and other vehicles' ground pool (pools.ts), a hand-drawn patch brightest 3 m ahead. Now:
  *
  *   - the player's spot lights take the pose's origin, axis, spread and reach;
- *   - the visible cone is the same lamp's bright core: the same axis, CORE_SHARE of the spread,
+ *   - the visible cone is the same axis and outer angle as the spot, including its soft rim,
  *     running to where the axis meets the ground, or fading out at the reach when it misses;
  *   - other vehicles' ground pool evaluates the same spot equation per pixel from the same pose
  *     (pools.ts), so it lights the ground as the player's own lamps would.
@@ -34,8 +34,6 @@ export interface LampPose {
   readonly reach: number
 }
 
-/** The visible cone's half angle, as a share of the lamp's spread: its bright core. */
-export const CORE_SHARE = .4
 
 /**
  * Where the buggy's beam lands ahead, metres: tunable, as the owner judges the look. Nearer

@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import * as T from 'three/webgpu'
 import { writeVehicleCones } from '../../src/vehicles/effects/cones'
 import { GroundPools } from '../../src/vehicles/effects/pools'
-import { CORE_SHARE, LAMP_POSES, groundHit, lampAxis, lampPoseFor, poseSpot } from '../../src/vehicles/effects/lamps'
+import { LAMP_POSES, groundHit, lampAxis, lampPoseFor, poseSpot } from '../../src/vehicles/effects/lamps'
 
 const flat = () => 0
 const kinds = ['buggy', 'hovercraft', 'jet', 'tank'] as const
@@ -28,10 +28,10 @@ describe('one lamp pose for every view of a headlight', () => {
     writeVehicleCones(mesh, 0, lamp, [lamp, lamp], new T.Color(1, 1, 1), 1, m, undefined, pose, [length])
     mesh.getMatrixAt(0, m)
     const tip = new T.Vector3(0, 0, -1).applyMatrix4(m), rim = new T.Vector3(1, 0, -1).applyMatrix4(m)
-    // The cone's end lies on the spot's axis, on the ground; its width is the core of the spread.
+    // The cone's end lies on the spot's axis, on the ground; its width is the full spot including its penumbra.
     expect(tip.clone().sub(origin).normalize().distanceTo(axis)).toBeLessThan(1e-6)
     expect(tip.y).toBeCloseTo(0, 2)
-    expect(rim.distanceTo(tip) / tip.distanceTo(origin)).toBeCloseTo(Math.tan(pose.spread * CORE_SHARE), 6)
+    expect(rim.distanceTo(tip) / tip.distanceTo(origin)).toBeCloseTo(Math.tan(spot.angle), 6)
   })
 
   it.each(kinds)('%s: the ground pool is lit by the same lamp, along the same axis', (kind) => {

@@ -4,6 +4,7 @@ import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 import {ParticleBatch} from '../../src/vehicles/effects/ParticleBatch'
 import {dustSprite} from '../../src/vehicles/effects/sprites'
 import {DUST_WIND,EXHAUST_WIND,createWeaponEffects,effectNoise,hideUnusedLamps,writeVehicleLamps} from '../../src/vehicles/effects'
+import {headlightsEnabled} from '../../src/vehicles/effects/headlights'
 import type {Game,System} from '../../src/core/Game'
 import {graphicsLevel,qualityLevel} from '../../src/core/quality'
 describe('bounded vehicle effects',()=>{
@@ -106,7 +107,10 @@ describe('bounded vehicle effects',()=>{
   expect(effectNoise(42)).toBe(effectNoise(42));expect(effectNoise(42)).not.toBe(effectNoise(43))
   for(let i=0;i<100;i++){expect(effectNoise(i)).toBeGreaterThanOrEqual(0);expect(effectNoise(i)).toBeLessThan(1)}
  })
- it('skips lamp blobs for a vehicle whose skin has its own lamps and collapses the spare slots',()=>{
+ it('skips lamp blobs for a vehicle whose skin has its own lamps and collapses the spare slots',({onTestFinished})=>{
+  const initial=headlightsEnabled.value
+  onTestFinished(()=>{headlightsEnabled.value=initial})
+  headlightsEnabled.value=true
   const batch=new T.InstancedMesh(new T.BufferGeometry(),new T.MeshBasicMaterial(),512);batch.count=8
   const head=new T.Color(1,1,.8),tail=new T.Color(1,0,0),m=new T.Matrix4(),p=new T.Vector3(),q=new T.Quaternion(),scale=new T.Vector3()
   const vehicle=(x:number,own:boolean)=>{const object=new T.Object3D();object.position.x=x;if(own)object.userData.ownLamps=true

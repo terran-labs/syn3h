@@ -67,7 +67,7 @@ const LIFT = 0.06
 export const POOL_RANGE = 220
 const FADE_FAR = 40
 /** Light added at the pool's brightest point at strength 1, times the ground's colour. Tuned by frames. */
-export const POOL_PEAK = 10
+export const POOL_PEAK = 5
 /** The spot equation's value (spread fall times the ground facing the lamp over distance) that POOL_PEAK is for: 3 m ahead. */
 export const POOL_REFERENCE = .067
 /**
@@ -180,7 +180,7 @@ export class GroundPools {
       tintAt(lamp.x + along.x * 8, lamp.z + along.z * 8, this.tint)
       const cosSpread = Math.cos(pose.spread)
       for (let j = 0; j < ALONG; j++) {
-        const t = j / (ALONG - 1), d = POOL_NEAR + (reach - POOL_NEAR) * t
+        const t = j / (ALONG - 1), d = POOL_NEAR + (reach - POOL_NEAR) * t * t
         const half = halfLamps + Math.max(.5, d) * spreadTan
         for (let i = 0; i < ACROSS; i++) {
           const u = ((i / (ACROSS - 1)) * 2 - 1) * half
@@ -227,7 +227,10 @@ function poolMaterial(): T.MeshBasicNodeMaterial {
   const toLamp = lampA.xyz.sub(positionGeometry) as N, distance = toLamp.length() as N
   const l = normalize(toLamp) as N
   const spot = smoothstep(lampA.w, float(1), dot(l.negate(), axisA.xyz)) as N
-  const facing = max(l.y, float(0)) as N
+  // A rising slope can face the lamp even above its elevation.
+  const surface = positionGeometry.dFdx().cross(positionGeometry.dFdy()).normalize()
+  const upward = surface.mul(surface.y.sign())
+  const facing = max(dot(l, upward), float(0)) as N
   const cutoff = pow(clamp(float(1).sub(pow(distance.div(axisA.w), 4)), 0, 1), 2) as N
   // decay 1, as the player's own spots: a linear fall with distance.
   const shape = clamp(spot.mul(facing).mul(cutoff).div(max(distance, float(.5))).div(POOL_REFERENCE), 0, 1.5) as N

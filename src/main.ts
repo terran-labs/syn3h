@@ -62,10 +62,12 @@ import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weath
 import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
 import { setDayClock } from './world/sky/dayCycle'
 import { screenEdgesLine } from './ui/screenEdges'
+import { restoreHeadlightPreferences } from './vehicles/effects/headlights'
 import { sessionStore } from './core/safeStorage'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
+  restoreHeadlightPreferences()
   const canvas = document.getElementById('game') as HTMLCanvasElement
   const hud = document.getElementById('hud') as HTMLDivElement
   const query = new URLSearchParams(location.search)

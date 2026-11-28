@@ -1,5 +1,5 @@
 import {hotExposureDim} from '../skins/hotExposure'
-import {headlightScale} from './headlights'
+import {headlightScale,headlightsEnabled,headlightBrightness} from './headlights'
 import {type ConeHaze,MAX_CONES,beamFactorFor,createConeBatch,createConeHaze,hasCone,headlightCones,hideUnusedCones,writeVehicleCones} from './cones'
 import {SPOT_MATCH,groundHit,lampAxis,lampPoseFor,poseSpot,type LampPose} from './lamps'
 import {GroundPools,groundPools,type PoolSource} from './pools'
@@ -98,7 +98,7 @@ class EffectWorld implements System {
       if(banks){c.bankMap.value=banks.map.value;c.bankWeights.value.copy(banks.weights.value);c.bankInvSize.value=banks.invSize.value}
       else c.bankWeights.value.set(0,0)
       // The beam's dusk-to-dawn ramp, as the real spot lights use it (VehicleEffects.update).
-      const night=clamp((.08-this.sunY())/.18,0,1)*headlightCones.value
+      const night=clamp((.08-this.sunY())/.18,0,1)*headlightCones.value*headlightBrightness.value
       let index=0
       for(const e of this.vehicles.values())index=e.writeCones(this.cones,index,night,eye)
       hideUnusedCones(this.cones,index)
@@ -127,7 +127,7 @@ class EffectWorld implements System {
   registerWarm(){
     // Particles, lamps and cones already submit their live meshes. Empty ribbons have
     // no triangles to submit until this covered draw.
-    this.unwarm=warmGear(this.game,[],undefined,()=>[this.marks.mesh,this.trails.mesh])
+    this.unwarm=warmGear(this.game,[],undefined,()=>[this.marks.mesh,this.trails.mesh,this.cones,this.pools.mesh])
   }
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
@@ -179,11 +179,14 @@ class EffectWorld implements System {
     for(const e of this.vehicles.values())e.update(dt)
     // Other vehicles' headlights on the ground, from dusk to dawn as the real spot lights.
     const sources=this.poolSources;sources.length=0
-    const night=clamp((.08-this.sunY())/.18,0,1)*Number(groundPools.value)
+    const enabled=headlightsEnabled.value
+    this.cones.visible=enabled
+    this.pools.mesh.visible=enabled
+    const night=enabled ? clamp((.08-this.sunY())/.18,0,1)*Number(groundPools.value)*headlightBrightness.value : 0
     if(night>0)for(const e of this.vehicles.values()){const pool=e.poolSource(night);if(pool)sources.push(pool)}
     const terrain=this.terrain
-    if(terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint)
-    this.stats.pools=this.pools.drawn
+    if(enabled&&terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint)
+    this.stats.pools=enabled?this.pools.drawn:0
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
@@ -349,6 +352,7 @@ class VehicleEffects {
     return writeVehicleCones(batch,index,this.vehicle.object,this.lampPoints,CONE_COLOUR,night*(this.buggy?headlightScale().beam:1)*beamFactorFor(this.vehicle.kind),this.lampMatrix,camera,pose,this.coneLengths)
   }
   writeLamps(batch:T.InstancedMesh,index:number):number {
+    this.headMaterial.color.setRGB(2.447059,2.858824,3).multiplyScalar(headlightBrightness.value)
     this.root.updateWorldMatrix(true,true)
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
   }
@@ -398,14 +402,16 @@ class VehicleEffects {
     this.throttle=T.MathUtils.lerp(this.throttle,Math.max(0,v.kind==='hovercraft'?v.input.y:v.input.z),Math.min(1,dt*10))
     this.color.set(v.colors.accent)
     this.tailMaterial.color.setRGB(v.input.brakes?5:2,0,0)
-    if(this.headlightRig){
+    // Keep the light list stable so switching headlights does not rebuild terrain shaders.
+    if(this.headlightRig && !headlightsEnabled.value)this.headlightRig.beamIntensity=0
+    if(this.headlightRig && headlightsEnabled.value){
       const sunY=w.sunY()
       // The buggy's beam follows the headlight setting (headlights.ts); other kinds are unchanged.
       // Decay 0 within the reach (lamps.ts): SPOT_MATCH keeps the old brightness near the car.
       // The jet's one spot carries what the buggy's two share: a third of its old figure lights its ground as the buggy's does.
       const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?600:1600)/this.spots.length*(this.buggy?headlightScale().beam:1)*SPOT_MATCH
       const pose=lampPoseFor(v.kind);this.spots.forEach((spot,i)=>poseSpot(spot,pose,this.spotX[i],this.size))
-      this.headlightRig.beamIntensity=intensity
+      this.headlightRig.beamIntensity=intensity*headlightBrightness.value
     }
     // A sealed zorb has no running engine plume or tyre contact. Keep lamps current above;
     // particles already in flight finish their bounded lifetime.
@@ -552,7 +558,7 @@ export function writeVehicleLamps(batch:T.InstancedMesh,index:number,object:T.Ob
   if(object.userData.ownLamps===true)return index
   for(let i=0;i<points.length&&index<512;i++,index++){
     scratch.copy(points[i].matrixWorld)
-    if(!object.visible)scratch.makeScale(0,0,0)
+    if(!object.visible || (i%2===0 && !headlightsEnabled.value))scratch.makeScale(0,0,0)
     batch.setMatrixAt(index,scratch);batch.setColorAt(index,i%2?tail:head)
   }
   return index

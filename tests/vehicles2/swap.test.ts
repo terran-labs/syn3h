@@ -11,6 +11,7 @@ import {REST_HEIGHT} from '../../src/vehicles/Vehicle'
 import type {Vehicle} from '../../src/vehicles/Vehicle'
 import {Materialize} from '../../src/vehicles/effects/Materialize'
 import {LAMP_POSES} from '../../src/vehicles/effects/lamps'
+import {headlightsEnabled} from '../../src/vehicles/effects/headlights'
 beforeAll(initPhysics)
 
 /** A flat world with the parts of Game the vehicles, their effects and the swap use. */
@@ -58,7 +59,10 @@ describe('swapping the player vehicle in place',()=>{
   expect(old.body.isEnabled()).toBe(false)
   w.physics.free()
  })
- it('keeps both shared headlights lit on the next frame of a nighttime round trip',()=>{
+ it('keeps both shared headlights lit on the next frame of a nighttime round trip',({onTestFinished})=>{
+  const initial=headlightsEnabled.value
+  onTestFinished(()=>{headlightsEnabled.value=initial})
+  headlightsEnabled.value=true
   const w=world(),{swapper}=player(w)
   w.game.scene.add(Object.assign(new T.Object3D(),{sunDirection:{value:new T.Vector3(0,-1,0)}}))
   const beams=()=>w.game.scene.getObjectsByProperty('isSpotLight',true) as T.SpotLight[]
