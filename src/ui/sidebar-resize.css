@@ -9,13 +9,12 @@
   html .mira-shell.exploration-ui .world-inspector:not(.lobby-settings) { width: min(var(--rail-width, 352px), calc(100vw - 2 * var(--edge))); }
 
   /* The strip: 12 px on the column's inner edge, 8 px of it over the game and 4 px over the
-     cards' rims, so it never takes a click meant for a card's own controls. Its height is the
-     column's filled span (set in sidebarWidth.ts). */
+     cards' rims, so it never takes a click meant for a card's own controls. It spans the column between the screen edge insets. */
   .mira-shell.exploration-ui .world-inspector > .rail-resize {
-    position: absolute; z-index: 5; top: 0; left: -8px; width: 12px; height: 0; margin: 0; padding: 0;
+    position: absolute; z-index: 5; top: 0; left: -8px; width: 12px; bottom: 0; margin: 0; padding: 0;
     cursor: col-resize; touch-action: none; outline: none; background: none; -webkit-tap-highlight-color: transparent;
   }
-  /* The visible bar, beside the card or button the pointer is next to. It fades; it never slides. */
+  /* One continuous bar follows the strip. It fades; it never slides. */
   .mira-shell.exploration-ui .world-inspector > .rail-resize > .rail-resize-bar {
     position: absolute; left: 4px; top: 0; width: 3px; height: 100%; border-radius: 2px; pointer-events: none;
     background: rgb(255 255 255 / .9); box-shadow: 0 0 6px rgb(255 255 255 / .55), 0 0 1px rgb(0 0 0 / .6);
@@ -24,7 +23,7 @@
   .mira-shell.exploration-ui .world-inspector > .rail-resize:is(:hover, .is-dragging) > .rail-resize-bar { opacity: 1; }
   .mira-shell.exploration-ui .world-inspector > .rail-resize:focus-visible > .rail-resize-bar { opacity: 1; outline: 2px solid white; outline-offset: 2px; }
   /* Touch tablets have no hover: a faint bar is always there to find. */
-  .mira-shell.exploration-ui.has-touch .world-inspector > .rail-resize > .rail-resize-bar { opacity: .35; height: 56px !important; top: 50% !important; translate: 0 -50%; }
+  .mira-shell.exploration-ui.has-touch .world-inspector > .rail-resize > .rail-resize-bar { opacity: .35; }
   .mira-shell.exploration-ui.has-touch .world-inspector > .rail-resize.is-dragging > .rail-resize-bar { opacity: 1; }
   /* A left-handed column (left side): the handle is on its right edge. */
   .mira-shell.exploration-ui .world-inspector > .rail-resize.on-left { left: auto; right: -8px; }

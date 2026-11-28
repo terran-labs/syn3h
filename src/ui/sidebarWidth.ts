@@ -31,8 +31,6 @@ export const MAX_SHARE = 0.45
 /** Keyboard steps: an arrow, and Shift with an arrow. */
 export const STEP = 16
 export const BIG_STEP = 64
-/** Milliseconds the column must be still before the handle's span is measured again. */
-export const SPAN_SETTLE_MS = 150
 /**
  * A wider column must never cover the centred play HUD (the Foreman, 25 November 2026). Beside
  * the column that is the bottom stack: the world name and the speed and altitude readouts show only
@@ -123,10 +121,8 @@ export interface SidebarResizeOptions {
 }
 
 /**
- * Give the column its saved width and a grab handle on its inner edge. The handle is one
- * 12 px strip along the part of the edge the column actually fills (its top row to its last
- * card), so it never covers empty game; its visible bar fades in beside the card or button the
- * pointer is next to. On phones the column is a full panel and the strip is hidden (CSS).
+ * Give the column its saved width and one full-height grab handle on its inner edge.
+ * Phones use a full panel and hide the handle in CSS.
  */
 export function mountSidebarResize({ shell, rail, signal }: SidebarResizeOptions): { readonly width: number; reset(): void } {
   let saved = readWidth()
@@ -146,13 +142,14 @@ export function mountSidebarResize({ shell, rail, signal }: SidebarResizeOptions
   rail.append(strip)
 
   /** The column is on the right unless it sits on the left half (a left-handed tablet). */
-  const onLeft = () => { const r = rail.getBoundingClientRect(); return r.left + r.width / 2 < innerWidth / 2 }
+  const onLeft = () => { const r = rail.getBoundingClientRect(); return r.width > 0 && r.left + r.width / 2 < innerWidth / 2 }
   /** How wide the column may grow, from its outer edge to the centred HUD less the gap. */
   const room = () => {
     const r = rail.getBoundingClientRect(), centre = innerWidth / 2, reach = hudReach()
     return (onLeft() ? centre - reach - r.left : r.right - (centre + reach)) - CLEAR_GAP
   }
   const apply = (next: number) => {
+    strip.classList.toggle('on-left', onLeft())
     const space = room()
     width = clampWidth(next, innerWidth, space)
     const value = `${width}px`
@@ -174,63 +171,6 @@ export function mountSidebarResize({ shell, rail, signal }: SidebarResizeOptions
 
   // A smaller window clamps the column; a larger one gives back the width the player chose.
   addEventListener('resize', () => apply(saved ?? DEFAULT_WIDTH), { signal })
-
-  // The strip covers the column's filled span only: the top row to the last card's bottom,
-  // or the stack's bottom when the cards scroll.
-  const cards = rail.querySelector<HTMLElement>('.wi-cards')
-  const span = () => {
-    const top = rail.getBoundingClientRect().top
-    let bottom = top
-    for (const el of rail.children) {
-      if (el === strip || !(el instanceof HTMLElement) || el.hidden || !el.getClientRects().length) continue
-      if (el === cards) {
-        const view = el.getBoundingClientRect()
-        const last = [...el.children].reverse().find((c): c is HTMLElement => c instanceof HTMLElement && !c.hidden && c.getClientRects().length > 0)
-        if (last) bottom = Math.max(bottom, Math.min(view.bottom, last.getBoundingClientRect().bottom))
-      } else bottom = Math.max(bottom, el.getBoundingClientRect().bottom)
-    }
-    strip.style.height = `${Math.max(0, Math.round(bottom - top))}px`
-    strip.classList.toggle('on-left', onLeft())
-  }
-  // Measured once the column has been still for SPAN_SETTLE_MS, never on the frame a change lands:
-  // reading the column's layout then forced it mid-way through the panels' opening and stalled
-  // that motion for a fifth of a second on a phone (phone-panels.mjs). Where the handle is hidden
-  // (the phone layout, sidebar-resize.css) nothing is measured at all.
-  const hidden = matchMedia('(max-width: 700px), (max-height: 500px)')
-  let spanTimer: ReturnType<typeof setTimeout> | undefined
-  const queueSpan = () => {
-    if (hidden.matches) return
-    clearTimeout(spanTimer)
-    spanTimer = setTimeout(() => { if (!signal.aborted) span() }, SPAN_SETTLE_MS)
-  }
-  hidden.addEventListener('change', queueSpan, { signal })
-  // What moves the column's filled span: a card opening or closing, cards added or removed, a
-  // window resize. Deliberately no ResizeObserver: one more observer on the rail and its cards
-  // made WebKit report a ResizeObserver loop on phones whenever another observer's callback
-  // changed their size in the same frame. A mutation observer queues the measure for the next
-  // frame instead, and entering the strip measures again, so a press always meets a current span.
-  // Only the cards themselves (open, closed, hidden) and the lists' members, not classes deep inside.
-  const changes = new MutationObserver(records => { if (records.some(r => r.type === 'childList' || r.target.parentElement === cards)) queueSpan() })
-  changes.observe(rail, { childList: true })
-  if (cards) changes.observe(cards, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'hidden'] })
-  addEventListener('resize', queueSpan, { signal })
-  rail.addEventListener('transitionend', queueSpan, { signal })
-  signal.addEventListener('abort', () => changes.disconnect())
-  queueSpan()
-
-  // The bar stands beside whichever card or button the pointer is next to.
-  const besideTarget = (y: number) => {
-    const top = rail.getBoundingClientRect().top
-    const items = [...rail.querySelectorAll<HTMLElement>(':scope > .rail-command, :scope > .wi-cards > *, :scope > .rail-foot > *')]
-    for (const el of items) {
-      if (el.hidden || !el.getClientRects().length) continue
-      const r = el.getBoundingClientRect()
-      if (y >= r.top - 4 && y <= r.bottom + 4) { bar.style.top = `${Math.round(r.top - top)}px`; bar.style.height = `${Math.round(r.height)}px`; return }
-    }
-  }
-  strip.addEventListener('pointermove', event => { if (!strip.classList.contains('is-dragging')) besideTarget(event.clientY) }, { signal })
-  strip.addEventListener('pointerenter', event => { span(); besideTarget(event.clientY) }, { signal })
-  strip.addEventListener('focus', () => { bar.style.top = '0px'; bar.style.height = strip.style.height }, { signal })
 
   // Dragging: one width per animation frame, saved when the pointer lets go. The press never
   // reaches the game (camera drag and pointer lock start from the canvas) or the cards.
@@ -278,6 +218,6 @@ export function mountSidebarResize({ shell, rail, signal }: SidebarResizeOptions
     commit(next)
   }, { capture: true, signal })
 
-  signal.addEventListener('abort', () => { cancelAnimationFrame(frame); clearTimeout(spanTimer); strip.remove(); root.style.removeProperty('--rail-width') })
+  signal.addEventListener('abort', () => { cancelAnimationFrame(frame); strip.remove(); root.style.removeProperty('--rail-width') })
   return { get width() { return width }, reset }
 }
