@@ -292,13 +292,6 @@ export class Inspector {
     // Space changes (a resize, a phone turning, a fold opening inside a card): refit once,
     // on the next frame, not every frame.
     window.addEventListener('resize', () => this.queueFit(null), { signal })
-    this.element.addEventListener('scroll', event => { const card = (event.target as Element).closest?.<HTMLElement>('.wi-card.is-clipped'); if (card) this.syncFade(card) }, { capture: true, passive: true, signal })
-    // The stack fades at an edge only while there is more past it (phones, phone-panels.css): under
-    // the search field once scrolled, and at its foot until the end (the owner, 26 November 2026).
-    const stack = this.element.querySelector<HTMLElement>('.wi-cards')!
-    const stackEdges = () => { const top = stack.scrollTop > 1, end = stack.scrollHeight - stack.scrollTop - stack.clientHeight < 2; if (stack.classList.contains('is-scrolled') !== top) stack.classList.toggle('is-scrolled', top); if (stack.classList.contains('is-at-end') !== end) stack.classList.toggle('is-at-end', end) }
-    stack.addEventListener('scroll', stackEdges, { passive: true, signal })
-    if (typeof ResizeObserver !== 'undefined') { const edges = new ResizeObserver(stackEdges); edges.observe(stack); signal.addEventListener('abort', () => edges.disconnect()) }
     this.element.addEventListener('toggle', event => { const card = (event.target as Element).closest<HTMLElement>('.wi-card'); this.queueFit(card) }, { capture: true, signal })
     if (typeof ResizeObserver !== 'undefined') { const watch = new ResizeObserver(() => this.queueFit(null)); watch.observe(this.element.querySelector('.wi-cards')!); signal.addEventListener('abort', () => watch.disconnect()) }
     // A card's content changing size (diagnostics lines, a list growing), and a growing region
@@ -1102,7 +1095,7 @@ export class Inspector {
     const id = card.dataset.section!, at = this.openOrder.indexOf(id)
     if (open && at < 0) this.openOrder.push(id)
     if (!open && at >= 0) this.openOrder.splice(at, 1)
-    if (!open) { card.style.removeProperty('min-height'); card.style.removeProperty('flex'); card.classList.remove('is-sized', 'is-clipped') }
+    if (!open) { card.style.removeProperty('min-height'); card.style.removeProperty('flex'); card.classList.remove('is-sized') }
     // A tooltip never outlives its row: closing the card that holds it (by hand or to make
     // room for another) takes the tooltip with it.
     if (!open && this.selected && card.querySelector(`.wi-row[data-id="${CSS.escape(this.selected)}"]`)) this.hideTooltip()
@@ -1351,7 +1344,7 @@ export class Inspector {
     // below, which briefly gives it its default height and lets the browser clamp its scroll.
     const grows = [...stack.querySelectorAll<HTMLElement>('.wi-card.is-open [data-card-grow]')].map(el => ({ el, fromEnd: el.scrollHeight - el.scrollTop - el.clientHeight }))
     // Measure every card at its own height: last fit's sizes come off first.
-    for (const card of cards) if (card.classList.contains('is-sized')) { card.style.removeProperty('flex'); card.classList.remove('is-sized', 'is-clipped') }
+    for (const card of cards) if (card.classList.contains('is-sized')) { card.style.removeProperty('flex'); card.classList.remove('is-sized') }
     const measured = new Map<HTMLElement, FitCard>()
     for (const card of cards) {
       const height = card.getBoundingClientRect().height
@@ -1381,10 +1374,6 @@ export class Inspector {
       // Held at its share. A card that wants no more than its share keeps its own height,
       // unless it has a growing region, which then shows all its lines.
       if (height < fit.natural - 0.5 || card.querySelector('[data-card-grow]')) { card.style.flex = `0 0 ${height}px`; card.classList.add('is-sized') }
-      // Held shorter than its content (a growing region scrolls on its own): the body fades out at
-      // its bottom edge until it is scrolled to the end, so a cut row reads as "more below".
-      card.classList.toggle('is-clipped', height < fit.natural - 0.5 && !card.querySelector('[data-card-grow]'))
-      this.syncFade(card)
     }
     for (const { el, fromEnd } of grows) el.scrollTop = el.scrollHeight - el.clientHeight - fromEnd
     // Only a card the player has just opened is scrolled to; a fold opening inside a card
@@ -1418,11 +1407,6 @@ export class Inspector {
         else if (!fits && box.top > view.top) stack.scrollTop += box.top - view.top
       })
     })
-  }
-  /** A clipped card's body shows its bottom fade only while there is more below. */
-  private syncFade(card: HTMLElement): void {
-    const body = card.querySelector<HTMLElement>(':scope > .wi-body')
-    if (body) card.classList.toggle('is-at-end', body.scrollHeight - body.scrollTop - body.clientHeight < 2)
   }
   /** Stop every card animation now and leave each card in its resting state. */
   private settle(): void {

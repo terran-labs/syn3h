@@ -1,0 +1,8 @@
+/* Masks the scrollport's ink against the actual surface behind it. Scroll input and
+   layout stay on the native scroller, and all positions are static until it scrolls. */
+.mira-shell :is(.wi-body, .wi-sheet, .chat-log, .lobby-sheet-body, .about-updates, .lobby-panels > section, .in-play-about, .performance-body, .update-table) {
+  --scroll-boundary-mask: none;
+  -webkit-mask-image: var(--scroll-boundary-mask, none);
+  mask-composite: add, intersect;
+  mask-image: var(--scroll-boundary-mask, none);
+}

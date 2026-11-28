@@ -22,10 +22,7 @@
 /* The content scrolls inside. */
 .lobby-sheet-body {
   position: relative; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent;
-  margin: 0; padding: 30px 48px 40px 8px; text-align: left;
-  /* The scroll's top and bottom edges fade out instead of ending at a line. */
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent);
-  mask-image: linear-gradient(180deg, transparent, #000 28px, #000 calc(100% - 44px), transparent);
+  margin: 0; padding: 30px 48px 40px 8px; text-align: left; --scroll-fade-end: 44px;
 }
 /* The title row is as tall as the X beside it, so the text below starts clear of both. */
 .mira-shell.exploration-ui .lobby-sheet .lobby-sheet-title { display: flex; align-items: center; min-height: 48px; margin: 0 0 16px; padding-right: 64px; font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: 0; text-transform: uppercase; color: var(--s3-accent); }
@@ -40,8 +37,7 @@
 .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { flex: none; padding-right: 200px; font: 600 34px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .03em; color: var(--s3-accent-2); }
 .mira-shell.exploration-ui .lobby-sheet.lobby-sheet-updates .lobby-sheet-close { top: 32px; right: 48px; }
 .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-body > .updates-github { position: absolute; top: 32px; right: 96px; }
-.mira-shell.exploration-ui .lobby-sheet-updates .about-updates { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent; padding: 14px 4px 40px 0;
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 14px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 14px, #000 calc(100% - 44px), transparent); }
+.mira-shell.exploration-ui .lobby-sheet-updates .about-updates { --scroll-fade-start: 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #3a3a3c transparent; padding: 14px 4px 40px 0; }
 @media (max-width: 600px), (max-height: 500px) {
   .mira-shell.exploration-ui .lobby-sheet-updates .lobby-sheet-title { padding-right: 100px; font-size: 28px; }
   .mira-shell.exploration-ui .lobby-sheet.lobby-sheet-updates .lobby-sheet-close { top: 24px; right: 60px; }
@@ -78,10 +74,7 @@
    it"). As on Updates, the header does not scroll: the guide's body starts below the X's row, so
    its top edge, and the 28 px fade along it, never move, and nothing passes under the X. */
 .lobby-sheet-about .lobby-sheet-panel { --x-row: 78px; }
-/* The fade along the scroller's top is shallower than elsewhere (16 px), so the first line starts
-   just under it; the bottom keeps the usual 44 px. */
-.mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-body { margin-top: var(--x-row); padding-top: 16px;
-  -webkit-mask-image: linear-gradient(180deg, transparent, #000 16px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(180deg, transparent, #000 16px, #000 calc(100% - 44px), transparent); }
+.mira-shell.exploration-ui .lobby-sheet-about .lobby-sheet-body { --scroll-fade-start: 16px; margin-top: var(--x-row); padding-top: 16px; }
 @media (max-width: 600px), (max-height: 500px) { .lobby-sheet-about .lobby-sheet-panel { --x-row: 70px; } }
 @media (max-width: 600px) and (min-height: 501px) { .lobby-sheet-about .lobby-sheet-body { padding-right: 12px; } }
 

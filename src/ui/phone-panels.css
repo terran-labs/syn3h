@@ -139,9 +139,6 @@ html .mira-shell.exploration-ui.has-touch .world-inspector .panels-close.panels-
   /* Upright, the list as tall as its names, so Close panels sits right under the last; longer
      than the screen, it still runs to the bottom edge. */
   html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards { flex: 0 1 auto; }
-  /* The only fade is where rows pass under the search field, once scrolled. Every row draws at
-     full strength at rest and at the foot (the owner, 26 November 2026: "show all the buttons"). */
-  html .mira-shell.exploration-ui.has-touch .world-inspector:not(.is-single) .wi-cards.is-scrolled { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
   /* Chat alone on screen: the log fills the card and the field sits at its foot, one line or several. */
   html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body { display: flex; flex-direction: column; overflow: hidden; }
   html .mira-shell.exploration-ui.has-touch .world-inspector.is-single .wi-card.is-open > .chat-body > * { flex: none; }
