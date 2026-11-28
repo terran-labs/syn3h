@@ -1076,6 +1076,7 @@ export class Galaxy {
     this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
     // A held backdrop or reduced-motion frame still needs to reflect a visual setting edit.
     const unsubscribe = params.onChange(id => {
+      if (id === wordmarkPlacement.def.id || id === wordmarkCrispPass.def.id) this.prepareWordmarkPass()
       const group = params.get(id)?.def.lobbyGroup
       if (group && group !== 'Opening' && group !== 'Lobby music') this.wake = 2
     })
@@ -1337,10 +1338,9 @@ export class Galaxy {
       // screen's full resolution (see WordmarkOverlay).
       this.logo = new LogoRenderer(gl, { particles: logoBudget(this.options.logo()?.level ?? 0).particles, drawMark: false })
       this.markOverlay = new WordmarkOverlay(); canvas.after(this.markOverlay.element)
-      // The in-space letters' full-resolution pass, made only when a placement in space is chosen.
-      this.markCrisp = null
       if (!this.logo.ok) { this.logo.dispose(); this.logo = null }
       else if (this.logoSeen || this.reduced.matches || this.options.still?.()) this.logo.skipIntro()
+      this.prepareWordmarkPass()
     }
     const signal = this.abort.signal, options = { signal }
     // The opening: the first showing after the page loads, unless motion is reduced. Any tap,
@@ -1878,6 +1878,13 @@ export class Galaxy {
   /** The flat wordmark, drawn by the browser over the canvas (see WordmarkOverlay). */
   private markOverlay: WordmarkOverlay | null = null
   private markCrisp: WordmarkCrisp | null = null
+  /** Compile during setup or an explicit tuning change, before the next lobby draw. */
+  private prepareWordmarkPass(): void {
+    if (this.markCrisp || !this.canvas || !this.logo?.distanceField?.ok) return
+    if (!wordmarkCrispPass.value || placementOf(wordmarkPlacement.value) === 0) return
+    this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
+    this.canvas.after(this.markCrisp.canvas)
+  }
   /** performance.now() when the in-space wordmark was first drawn this showing, for its fade in. */
   private markStart: number | null = null
   private markMode = 0
@@ -1921,10 +1928,6 @@ export class Galaxy {
     const below = mode >= 4 ? this.aimLift(liftPlacement(placeWordmark(mode, markView, screen, system, true), lift), markView, lift) : null
     const planeShown = below ? this.abovePlane(below, markView) : 1
     this.markFrame = { mode, screen, system }
-    if (!this.markCrisp && wordmarkCrispPass.value && this.canvas) {
-      this.markCrisp = new WordmarkCrisp(VERTEX, FRAGMENT, UNIFORMS)
-      this.canvas.after(this.markCrisp.canvas)
-    }
     const now = performance.now()
     if (this.markStart === null) this.markStart = held ? now - 1e6 : now
     // The opening and a return carry their own fade (opening.ts); otherwise (a placement
