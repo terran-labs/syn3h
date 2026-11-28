@@ -95,6 +95,7 @@ export class GlassButton {
   private readonly hover = matchMedia('(hover: hover)')
   private readonly reduced = matchMedia('(prefers-reduced-transparency: reduce), (prefers-contrast: more), (forced-colors: active)')
   private controls: HTMLElement[] = []
+  private cardStack: HTMLElement | null = null
   private registryDirty = true
   private readonly membership = new MutationObserver(() => { this.registryDirty = true; this.invalidate() })
   private tuningVisible = false
@@ -187,9 +188,13 @@ export class GlassButton {
       // the content; the shader cannot keep up (src/liquid-glass/scrolling.ts).
       // Those take data-glass-surface="scroll", which glass.css gives Liquid's CSS look.
       const candidates = Array.from(document.querySelectorAll<HTMLElement>(this.capacity === 1 ? panel : [buttons, card].join(',')))
+      this.cardStack = document.querySelector<HTMLElement>(inspector + ' > .wi-cards')
       const next: HTMLElement[] = []
       for (const b of candidates) {
-        if (!insideScroller(b)) { if (b.dataset.glassSurface === 'scroll') delete b.dataset.glassSurface; next.push(b) }
+        // The sidebar fits cards to its available height. An auto overflow policy alone
+        // does not move them. Recheck its actual scroll range as cards and the viewport resize.
+        if (this.cardStack && b.parentElement === this.cardStack && !insideScroller(this.cardStack)) next.push(b)
+        else if (!insideScroller(b)) { if (b.dataset.glassSurface === 'scroll') delete b.dataset.glassSurface; next.push(b) }
         else if (b.dataset.glassSurface !== 'scroll') b.dataset.glassSurface = 'scroll'
       }
       for (const old of this.controls) if (!next.includes(old) && old.dataset.glassSurface === 'shader') {
@@ -199,7 +204,8 @@ export class GlassButton {
       this.resize.observe(this.canvas)
       this.changes.disconnect()
       this.membership.disconnect()
-      const stack = document.querySelector(inspector + ' > .wi-cards')
+      const stack = this.cardStack
+      if (stack) this.resize.observe(stack)
       for (const host of [stack, stack?.parentElement, ...document.querySelectorAll('.gear-actions, .rail-foot')]) {
         if (host) this.membership.observe(host, { childList: true })
       }
@@ -222,6 +228,8 @@ export class GlassButton {
     this.dirty = false
     this.drawn.clear()
     const available = this.available
+    const stack = this.cardStack
+    const scrolls = stack && (stack.scrollHeight > stack.clientHeight || stack.scrollWidth > stack.clientWidth)
     this.showTuning(available && !this.clearMaterial)
     const c = this.canvas.getBoundingClientRect()
     const rects = this.controls.map(b => b.hidden ? null : b.getBoundingClientRect())
@@ -246,6 +254,10 @@ export class GlassButton {
       let rect = rects[index]
       if (!rect || !rect.width || !rect.height) continue
       const style = styleFor(b)
+      if (scrolls && b.parentElement === stack && insideScroller(b)) {
+        if (b.dataset.glassSurface !== 'scroll') b.dataset.glassSurface = 'scroll'
+        continue
+      }
       if (!b.checkVisibility({ visibilityProperty: true }) || (document.documentElement.dataset.driveGlass !== 'on' && b.closest('[data-ui-frost="off"]'))) continue
       let alpha = 1
       for (let el: Element | null = b; el; el = el.parentElement) {

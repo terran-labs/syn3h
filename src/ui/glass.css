@@ -447,7 +447,9 @@ html[data-glass-material="liquid"] [data-ui-frost="off"] [data-glass-surface="sc
   html[data-glass-material="liquid"]:not([data-drive-glass="shed"], [data-gfx="0"])
   .mira-shell.exploration-ui > .world-inspector:not(.lobby-settings) :is(.wi-cards > .wi-card, .wi-ghosts > .wi-ghost):not([data-glass-surface="shader"]):not([data-ui-frost="off"] *) {
     --panel-material-fill: var(--liquid-card-tint, var(--interface-frost-tint));
-    --panel-material-filter: var(--glass-frost);
+    --panel-material-filter: blur(var(--glass-blur, 3px)) saturate(1.2);
+    --panel-material-edge: transparent;
+    --panel-material-shadow: none;
     background: var(--panel-material-fill);
     -webkit-backdrop-filter: var(--panel-material-filter);
     backdrop-filter: var(--panel-material-filter);
