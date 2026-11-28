@@ -114,7 +114,13 @@ class EffectWorld implements System {
   terrain:Terrain|null=null
   private readonly poolSources:PoolSource[]=[]
   /** The surface a pool lies on: the ground, or the water over it. */
-  private readonly poolHeight=(x:number,z:number)=>{const t=this.terrain!;return Math.max(t.heightAt(x,z),t.liquidHeightAt?.(x,z)??-Infinity)}
+  private readonly poolHeight=(x:number,z:number)=>{
+    const t=this.terrain!
+    const ground=t.renderHeightAt?.(x,z)??t.heightAt(x,z)
+    const liquid=t.liquidHeightAt?.(x,z)??-Infinity
+    const ice=liquid===-Infinity && t.surfaceAt?.(x,z)==='ice' ? t.heightAt(x,z) : -Infinity
+    return Math.max(ground,ice,liquid)
+  }
   /** The colour a pool's light takes: the ground's own (groundTone.ts), or a dim grey on water. */
   private readonly poolTint=(x:number,z:number,out:{r:number;g:number;b:number})=>{
     const t=this.terrain!
@@ -185,7 +191,7 @@ class EffectWorld implements System {
     const night=enabled ? clamp((.08-this.sunY())/.18,0,1)*Number(groundPools.value)*headlightBrightness.value : 0
     if(night>0)for(const e of this.vehicles.values()){const pool=e.poolSource(night);if(pool)sources.push(pool)}
     const terrain=this.terrain
-    if(enabled&&terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint)
+    if(enabled&&terrain)this.pools.update(sources,this.game.camera.position,this.poolHeight,this.poolTint,terrain.renderCellSize,-terrain.size/2)
     this.stats.pools=enabled?this.pools.drawn:0
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted

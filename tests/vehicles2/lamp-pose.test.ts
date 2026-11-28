@@ -48,6 +48,27 @@ describe('one lamp pose for every view of a headlight', () => {
     pools.dispose()
   })
 
+  it('keeps the light on the ground across a diagonal ridge when the vehicle turns', () => {
+    const pools = new GroundPools(1), object = new T.Object3D()
+    // A crease along the terrain grid's anti-diagonal exposes a patch cutting through the ridge.
+    const height = (x: number, z: number) => -Math.abs(x + z)
+    object.position.set(.25, 2, -.25)
+    object.rotation.y = -.71
+    try {
+      pools.update([{ object, pose: LAMP_POSES.hovercraft, size: 1, strength: 1 }], object.position, height, () => {})
+      expect(pools.drawn).toBe(1)
+      const geometry = pools.mesh.geometry, pos = geometry.attributes.position, indices = geometry.index!
+      const lift = pos.getY(0) - height(pos.getX(0), pos.getZ(0))
+      for (let i = 0; i < geometry.drawRange.count; i += 3) {
+        const a = indices.getX(i), b = indices.getX(i + 1), c = indices.getX(i + 2)
+        const x = (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3
+        const z = (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3
+        const y = (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3
+        expect(y - height(x, z)).toBeCloseTo(lift, 4)
+      }
+    } finally { pools.dispose() }
+  })
+
   // Bug: a jet high in the air drew a pool (or a cone ending at a pool) on ground its lamps cannot reach.
   it('a lamp too high for its light to reach the ground throws no pool', () => {
     const pose = LAMP_POSES.jet, pools = new GroundPools(2), object = new T.Object3D()

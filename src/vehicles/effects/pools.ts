@@ -11,7 +11,7 @@
  *   - one mesh for every pool, one draw call, one material, built under cover with the rest
  *     (EffectWorld.registerWarm), so nothing is built when a bot arrives or leaves;
  *   - each patch is a small grid draped over the terrain on the CPU each frame (terrain.heightAt
- *     at each vertex) and bent with the planet like everything else drawn (applyCurve);
+ *     at each vertex of the visible terrain grid) and bent with the planet like everything else drawn (applyCurve);
  *   - the shape of the light is computed per pixel in the shader from each vertex's place in its
  *     patch: brightest just ahead of the lamps, widening and fading down the road, soft at the
  *     sides. Nothing is loaded;
@@ -55,12 +55,10 @@ export const groundPools = defineParam({
   default: 1, min: 0, max: 2, step: 0.05,
 })
 
-// The patch: from POOL_NEAR metres behind the lamps to the lamp's reach ahead, along the ground
-// under its axis, as wide as the spread there. ACROSS by ALONG vertices: enough to follow rolling
-// ground; the light itself is computed per pixel.
-export const POOL_NEAR = -0.6
-const ACROSS = 9, ALONG = 16
-const VERTS = ACROSS * ALONG, INDICES = (ACROSS - 1) * (ALONG - 1) * 6
+// A 60 m lamp with a 30 degree spread fits within 24 cells of the usual 4 m lattice.
+// Finer worlds use a power-of-two multiple of their cell pitch to bound the work per pool.
+const MAX_CELLS = 24
+const VERTS = (MAX_CELLS + 1) ** 2, INDICES = MAX_CELLS ** 2 * 6
 /** Metres above the ground the patch is laid, against flicker with the terrain's own surface. */
 const LIFT = 0.06
 /** Pools beyond this distance from the camera are not drawn; they fade over the last FADE_FAR m. */
@@ -92,12 +90,14 @@ export interface PoolSource {
 /** Linear colour of the ground (or water) at a point, written into `out`. */
 export type TintAt = (x: number, z: number, out: { r: number; g: number; b: number }) => void
 
-const local = new T.Vector3(), world = new T.Vector3(), lamp = new T.Vector3(), axis = new T.Vector3(), lower = new T.Vector3(), along = new T.Vector3(), across = new T.Vector3(), q = new T.Quaternion()
+const local = new T.Vector3(), lamp = new T.Vector3(), axis = new T.Vector3(), lower = new T.Vector3(), along = new T.Vector3(), q = new T.Quaternion()
 
 export class GroundPools {
   readonly mesh: T.Mesh
   readonly capacity: number
   private readonly positions: Float32Array
+  private readonly slopes: Float32Array
+  private readonly indices: Uint32Array
   private readonly strengths: Float32Array
   private readonly tints: Float32Array
   private readonly lamps: Float32Array
@@ -110,33 +110,20 @@ export class GroundPools {
     this.capacity = capacity
     const geometry = new T.BufferGeometry()
     this.positions = new Float32Array(capacity * VERTS * 3)
+    this.slopes = new Float32Array(capacity * VERTS * 2)
+    this.indices = new Uint32Array(capacity * INDICES)
     this.strengths = new Float32Array(capacity * VERTS)
     this.tints = new Float32Array(capacity * VERTS * 3)
     // Per vertex, its pool's lamp: place and the cosine of its spread; axis and reach.
     this.lamps = new Float32Array(capacity * VERTS * 4)
     this.axes = new Float32Array(capacity * VERTS * 4)
-    // Each vertex's place in its patch, fixed: x across (-1 to 1), y along (0 near, 1 far).
-    const place = new Float32Array(capacity * VERTS * 2)
-    const index = new Uint32Array(capacity * INDICES)
-    for (let c = 0, k = 0; c < capacity; c++) {
-      for (let j = 0; j < ALONG; j++) for (let i = 0; i < ACROSS; i++) {
-        const v = c * VERTS + j * ACROSS + i
-        place[v * 2] = (i / (ACROSS - 1)) * 2 - 1; place[v * 2 + 1] = j / (ALONG - 1)
-      }
-      for (let j = 0; j < ALONG - 1; j++) for (let i = 0; i < ACROSS - 1; i++) {
-        const a = c * VERTS + j * ACROSS + i
-        // Wound to face up (the patch runs ahead along -z): the ground's side is never seen.
-        index[k++] = a; index[k++] = a + 1; index[k++] = a + ACROSS
-        index[k++] = a + 1; index[k++] = a + ACROSS + 1; index[k++] = a + ACROSS
-      }
-    }
     geometry.setAttribute('position', new T.BufferAttribute(this.positions, 3).setUsage(T.DynamicDrawUsage))
-    geometry.setAttribute('poolPlace', new T.BufferAttribute(place, 2))
+    geometry.setAttribute('poolSlope', new T.BufferAttribute(this.slopes, 2).setUsage(T.DynamicDrawUsage))
     geometry.setAttribute('poolStrength', new T.BufferAttribute(this.strengths, 1).setUsage(T.DynamicDrawUsage))
     geometry.setAttribute('poolTint', new T.BufferAttribute(this.tints, 3).setUsage(T.DynamicDrawUsage))
     geometry.setAttribute('poolLamp', new T.BufferAttribute(this.lamps, 4).setUsage(T.DynamicDrawUsage))
     geometry.setAttribute('poolAxis', new T.BufferAttribute(this.axes, 4).setUsage(T.DynamicDrawUsage))
-    geometry.setIndex(new T.BufferAttribute(index, 1))
+    geometry.setIndex(new T.BufferAttribute(this.indices, 1).setUsage(T.DynamicDrawUsage))
     // Never culled by bounds: the positions move every frame.
     geometry.boundingSphere = new T.Sphere(new T.Vector3(), Infinity)
     this.mesh = new T.Mesh(geometry, poolMaterial())
@@ -145,15 +132,15 @@ export class GroundPools {
     this.mesh.renderOrder = 1
     // One patch always submitted (at strength 0 it changes nothing), so the pipeline is built by
     // the covered preparation draw and never during play.
-    geometry.setDrawRange(0, INDICES)
+    geometry.setDrawRange(0, 3)
   }
 
   /**
    * Lay this frame's pools. `heightAt` is the surface under a world point (the ground, or water
    * over it); `tintAt` its colour; `camera` is where the view is. Allocates nothing.
    */
-  update(sources: readonly PoolSource[], camera: T.Vector3, heightAt: (x: number, z: number) => number, tintAt: TintAt): void {
-    let n = 0
+  update(sources: readonly PoolSource[], camera: T.Vector3, heightAt: (x: number, z: number) => number, tintAt: TintAt, cell = 4, origin = 0): void {
+    let n = 0, vertexCount = 0, indexCount = 0
     for (const s of sources) {
       if (n >= this.capacity) break
       if (!(s.strength > 0) || !s.object.visible) continue
@@ -174,38 +161,64 @@ export class GroundPools {
       // nearly straight down), as wide as the spread at each distance.
       along.set(axis.x, 0, axis.z)
       if (along.lengthSq() < .04) along.set(0, 0, -1).applyQuaternion(o.quaternion).setY(0)
-      along.normalize(); across.set(-along.z, 0, along.x)
-      const reach = pose.reach, spreadTan = Math.tan(pose.spread) * 1.15, halfLamps = Math.abs(pose.x * s.size)
-      // One colour for the pool, from the ground 8 m ahead of the lamps.
+      along.normalize()
+      // Bound the cone projected onto the horizontal plane, including a lamp aimed down.
+      const reach = pose.reach, radius = reach * Math.tan(pose.spread)
+      const endX = lamp.x + axis.x * reach, endZ = lamp.z + axis.z * reach
+      const rx = radius * Math.sqrt(Math.max(0, 1 - axis.x * axis.x))
+      const rz = radius * Math.sqrt(Math.max(0, 1 - axis.z * axis.z))
+      const minX = Math.min(lamp.x, endX - rx), maxX = Math.max(lamp.x, endX + rx)
+      const minZ = Math.min(lamp.z, endZ - rz), maxZ = Math.max(lamp.z, endZ + rz)
+      const minPitch = Math.max(maxX - minX, maxZ - minZ) / (MAX_CELLS - 1)
+      const pitch = cell * 2 ** Math.max(0, Math.ceil(Math.log2(minPitch / cell)))
+      const left = origin + pitch * Math.floor((minX - origin) / pitch)
+      const back = origin + pitch * Math.floor((minZ - origin) / pitch)
+      const cols = Math.ceil((maxX - left) / pitch) + 1, rows = Math.ceil((maxZ - back) / pitch) + 1
       tintAt(lamp.x + along.x * 8, lamp.z + along.z * 8, this.tint)
       const cosSpread = Math.cos(pose.spread)
-      for (let j = 0; j < ALONG; j++) {
-        const t = j / (ALONG - 1), d = POOL_NEAR + (reach - POOL_NEAR) * t * t
-        const half = halfLamps + Math.max(.5, d) * spreadTan
-        for (let i = 0; i < ACROSS; i++) {
-          const u = ((i / (ACROSS - 1)) * 2 - 1) * half
-          world.set(lamp.x + along.x * d + across.x * u, 0, lamp.z + along.z * d + across.z * u)
-          world.y = heightAt(world.x, world.z) + LIFT
-          const v = n * VERTS + j * ACROSS + i
-          this.positions[v * 3] = world.x; this.positions[v * 3 + 1] = world.y; this.positions[v * 3 + 2] = world.z
+      const first = vertexCount
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const x = left + i * pitch, z = back + j * pitch
+          const v = vertexCount++
+          this.positions[v * 3] = x; this.positions[v * 3 + 1] = heightAt(x, z) + LIFT; this.positions[v * 3 + 2] = z
           this.strengths[v] = strength
           this.tints[v * 3] = this.tint.r; this.tints[v * 3 + 1] = this.tint.g; this.tints[v * 3 + 2] = this.tint.b
           this.lamps[v * 4] = lamp.x; this.lamps[v * 4 + 1] = lamp.y; this.lamps[v * 4 + 2] = lamp.z; this.lamps[v * 4 + 3] = cosSpread
           this.axes[v * 4] = axis.x; this.axes[v * 4 + 1] = axis.y; this.axes[v * 4 + 2] = axis.z; this.axes[v * 4 + 3] = reach
         }
       }
+      // Match the terrain's anti-diagonal. Interpolate the slope between vertices so the
+      // falloff of a grazing light is continuous across each shared triangle edge.
+      for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+        const v = first + j * cols + i
+        const west = v - Number(i > 0), east = v + Number(i + 1 < cols)
+        const north = v - (j > 0 ? cols : 0), south = v + (j + 1 < rows ? cols : 0)
+        this.slopes[v * 2] = (this.positions[east * 3 + 1] - this.positions[west * 3 + 1]) / ((east - west) * pitch)
+        this.slopes[v * 2 + 1] = (this.positions[south * 3 + 1] - this.positions[north * 3 + 1]) / ((south - north) / cols * pitch)
+        if (i + 1 === cols || j + 1 === rows) continue
+        this.indices[indexCount++] = v; this.indices[indexCount++] = v + cols; this.indices[indexCount++] = v + 1
+        this.indices[indexCount++] = v + 1; this.indices[indexCount++] = v + cols; this.indices[indexCount++] = v + cols + 1
+      }
       n++
     }
-    // With no pool to draw, the first patch stays submitted at strength 0 (see the constructor).
-    if (n === 0) this.strengths.fill(0, 0, VERTS)
+    if (!n) {
+      this.indices.fill(0, 0, 3)
+      this.strengths[0] = 0
+      vertexCount = 1; indexCount = 3
+    }
     this.drawn = n
     const geometry = this.mesh.geometry
-    geometry.setDrawRange(0, Math.max(1, n) * INDICES)
-    geometry.attributes.position.needsUpdate = true
-    geometry.attributes.poolStrength.needsUpdate = true
-    geometry.attributes.poolTint.needsUpdate = true
-    geometry.attributes.poolLamp.needsUpdate = true
-    geometry.attributes.poolAxis.needsUpdate = true
+    geometry.setDrawRange(0, indexCount)
+    for (const buffer of Object.values(geometry.attributes) as T.BufferAttribute[]) {
+      buffer.clearUpdateRanges()
+      buffer.addUpdateRange(0, vertexCount * buffer.itemSize)
+      buffer.needsUpdate = true
+    }
+    const index = geometry.index!
+    index.clearUpdateRanges()
+    index.addUpdateRange(0, indexCount)
+    index.needsUpdate = true
   }
 
   dispose(): void {
@@ -228,8 +241,8 @@ function poolMaterial(): T.MeshBasicNodeMaterial {
   const l = normalize(toLamp) as N
   const spot = smoothstep(lampA.w, float(1), dot(l.negate(), axisA.xyz)) as N
   // A rising slope can face the lamp even above its elevation.
-  const surface = positionGeometry.dFdx().cross(positionGeometry.dFdy()).normalize()
-  const upward = surface.mul(surface.y.sign())
+  const slope = attribute('poolSlope', 'vec2') as N
+  const upward = normalize(vec3(slope.x.negate(), 1, slope.y.negate()))
   const facing = max(dot(l, upward), float(0)) as N
   const cutoff = pow(clamp(float(1).sub(pow(distance.div(axisA.w), 4)), 0, 1), 2) as N
   // decay 1, as the player's own spots: a linear fall with distance.
