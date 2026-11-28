@@ -5,7 +5,7 @@
  * worst words (`filterChat`), rate limits each speaker (`ChatBucket`) and stamps the sender's
  * real id. Nothing here is stored: a line exists only on the wire and in each screen's log.
  */
-import { defineParam } from './params'
+import { botCount, defineParam } from './params'
 
 /** Longest line, in characters (code points), after cleaning. */
 export const MAX_CHAT_LENGTH = 200
@@ -42,7 +42,7 @@ export const botRescueNewsRange = defineParam({ id: 'bots.rescueNewsRange', labe
 export const botRescue = defineParam({ id: 'bots.rescue', label: 'Bots rescue each other (host only)', group: 'Bots', scope: 'world', default: true })
 
 /** Parameters only the host may change. */
-export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botChatterAmount.def.id, botRescueNewsRange.def.id, botRescue.def.id])
+export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([botCount.def.id, chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botChatterAmount.def.id, botRescueNewsRange.def.id, botRescue.def.id])
 
 // Personal settings, never sent.
 

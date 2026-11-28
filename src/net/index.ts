@@ -61,7 +61,7 @@ import { aimError as botAimError, fireRate as botFireRate, gameGear, grappleRate
 import { aimDirection } from '../bots/tactics'
 import { botGameOptions } from './bots'
 import { BotRamReporter } from './botRams'
-import { canModerate, type ModerationReason, type RoomKind } from '../../shared/moderation'
+import { botManagement, canModerate, type ModerationReason, type RoomKind } from '../../shared/moderation'
 import { deviceLabelSync, deviceModel } from '../core/device'
 import { localStore } from '../core/safeStorage'
 import { CLOSE_EJECTED, type BanishChoice, type BotTraits, type BotTraitsPatch } from '../../shared/protocol'
@@ -2073,6 +2073,7 @@ export class NetClient implements System {
   moderation(targetId: number): { ok: boolean; reason: ModerationReason } {
     const me = this.players.get(this.id), target = this.players.get(targetId)
     if (!this.roomKind || !me || !target) return { ok: false, reason: 'unknown' }
+    if (target.bot) return botManagement(this.isHost)
     const who = (p: PlayerInfo) => ({ id: p.id, host: p.id === this.game.host, ...(p.role === 'creator' ? { role: 'creator' as const } : {}), ...(p.bot ? { bot: true } : {}) })
     return canModerate(who(me), who(target), this.roomKind)
   }

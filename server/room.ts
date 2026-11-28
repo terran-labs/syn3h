@@ -12,7 +12,7 @@ import {
   NO_GEO, roomKind, sessionKind, sessionPaused, sessionSnapshot, startSession,
 } from './analytics'
 import { recipeIdForLook } from '../shared/recipes'
-import { canModerate, type Moderator, type RoomKind } from '../shared/moderation'
+import { botManagement, canModerate, type Moderator, type RoomKind } from '../shared/moderation'
 import { cleanDeviceLabel, cleanDeviceModel } from '../shared/device'
 import { BANISH_MS, BanishList, isBanishChoice, type Banish } from './banish'
 import { type ParamDef, params as registry, sanitize } from '../shared/params'
@@ -1975,7 +1975,9 @@ export class Room {
 
   private onEject(peer: Peer, actor: Player, id: unknown, banish: unknown): void {
     const target = typeof id === 'number' ? this.byId(id) ?? this.bots.get(id) : undefined
-    if (!target || !canModerate(this.moderator(actor), this.moderator(target), this.kind()).ok) return
+    if (!target) return
+    const permission = target.info.bot ? botManagement(actor.info.id === this.host) : canModerate(this.moderator(actor), this.moderator(target), this.kind())
+    if (!permission.ok) return
     this.noteCreator('eject', actor)
     if (target.info.bot) {
       // A bot: gone from the room, one fewer asked for (so the host does not refill it), and the
@@ -2029,7 +2031,7 @@ export class Room {
   }
   private onBotTraits(actor: Player, botId: unknown, raw: unknown): void {
     const bot = typeof botId === 'number' ? this.bots.get(botId) : undefined
-    if (!bot || !raw || typeof raw !== 'object' || !canModerate(this.moderator(actor), this.moderator(bot), this.kind()).ok) return
+    if (!bot || !raw || typeof raw !== 'object' || !botManagement(actor.info.id === this.host).ok) return
     const traits: BotTraits = { ...this.botTraits.get(bot.info.id), ...cleanTraits(raw) }
     // null drops that override: the trait goes back to the bot's nature.
     for (const key of BOT_TRAITS) if ((raw as Record<string, unknown>)[key] === null) delete traits[key]
@@ -2255,7 +2257,9 @@ export class Room {
   private resetWorld(reason: 'idle' | 'host', from: number): void {
     logEvent('world_reset', { room: this.tag, reason, by: from })
     this.cancelRace('World reset')
+    const keepBotCount = reason === 'host' && from !== this.host ? this.values.get('bots.count') : undefined
     this.setDefaults()
+    if (keepBotCount !== undefined) this.storeParam('bots.count', keepBotCount)
     this.resetRound()
     this.koth.zone = null
     this.locked = false

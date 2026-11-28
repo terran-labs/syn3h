@@ -1,6 +1,6 @@
 import { defineParam } from '../../shared/params'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `bots.${id}`, label, group: 'Bots', scope: 'world', default: value, min, max, step })
-export const botCount = number('count', 'Bot count', 4, 0, 16, 1)
+export { botCount } from '../../shared/params'
 /**
  * Keep the host's bot count whatever the frame rate: arrivals are still spaced, but no bot is
  * judged away for performance, the quality governor sheds none, and the quality level's bot

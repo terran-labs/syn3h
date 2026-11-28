@@ -150,6 +150,8 @@ export const worldNameSeed = defineParam({
   default: 0, min: -999999, max: 999999999, step: 1,
 })
 
+export const botCount = defineParam({ id: 'bots.count', label: 'Bot count', group: 'Bots', scope: 'world', default: 4, min: 0, max: 16, step: 1 })
+
 /** Numeric IDs also appear in exported personal settings. ID 1 is reserved for legacy Frost. */
 export const GLASS_LIQUID = 0, GLASS_FLAT = 2
 export const glassStyle = defineParam<number>({

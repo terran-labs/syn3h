@@ -1,7 +1,11 @@
 import { params } from '../../shared/params'
-export interface HostControls { readonly isHost: boolean; readonly locked: boolean; readonly canEditWorld: boolean; setLocked(value: boolean): boolean | void; resetWorld?(): boolean }
+export interface HostControls { readonly connected?: boolean; readonly isHost: boolean; readonly locked: boolean; readonly canEditWorld: boolean; setLocked(value: boolean): boolean | void; resetWorld?(): boolean }
 export function hostControls(): HostControls | undefined {
   return (window as unknown as { miraNet?: HostControls }).miraNet
+}
+export function canManageBots(): boolean {
+  const net = hostControls()
+  return !net || net.connected === false || net.isHost
 }
 export function canEditWorld(): boolean { return hostControls()?.canEditWorld ?? true }
 /**

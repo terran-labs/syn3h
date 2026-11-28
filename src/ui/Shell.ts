@@ -68,7 +68,7 @@ import { currentHour, formatDayLength, planetDayLength } from '../world/sky/dayC
 import { InviteView, inviteUrl } from './InviteView'
 import { Scoreboard, parseScoreRow, type PlayerRoster, type SessionPlayer } from './Scoreboard'
 import { markedText } from './playerMarks'
-import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
+import { canEditWorld, canManageBots, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
 import { aboutHtml, fillUpdates, showAboutTab, updatesSheetHtml, type AboutTab } from './updates/about'
@@ -474,8 +474,8 @@ export class Shell implements System {
     const botInput = botControls.querySelector('input')!
     const [minus, plus] = botControls.querySelectorAll('button')
     // The bot count's only control in play, so it carries the shared reset (resetControl.ts), as
-    // Connection diagnostics does; a room setting, so the host's lock applies to it too.
-    this.sessionBotsReset = resetButton(() => { if (canEditWorld()) this.setRequestedBots(String(botCount.def.default)) })
+    // Connection diagnostics does. The current host owns the count even in an unlocked room.
+    this.sessionBotsReset = resetButton(() => this.setRequestedBots(botCount.def.default))
     botControls.dataset.settingId = botCount.def.id; botControls.classList.add('has-reset'); botControls.append(this.sessionBotsReset.element)
     this.sessionBots = { input: botInput, output: botControls.querySelector('output')!, minus, plus }
     botInput.min = String(botCount.def.min)
@@ -2874,15 +2874,14 @@ export class Shell implements System {
   }
 
   private setRequestedBots(value: number | string): void {
-    // The Game card's world parameter uses the same host lock and registry path.
-    if (canEditWorld()) params.set(botCount.def.id, value)
+    if (canManageBots()) params.set(botCount.def.id, value)
     this.syncSessionBots()
   }
 
   private sessionBotsReset?: ReturnType<typeof resetButton>
   private syncSessionBots(): void {
     const { input, output, minus, plus } = this.sessionBots
-    const count = botCount.value, editable = canEditWorld()
+    const count = botCount.value, editable = canManageBots()
     const key = `${count}:${this.sessionBotCount}:${editable}`
     if (input.value !== String(count)) input.value = String(count)
     if (key === this.sessionBotsKey) return
@@ -2902,7 +2901,7 @@ export class Shell implements System {
     // its row text or membership changes; pause and chat settings can refresh it independently.
     const rows = this.sessionLines.filter(line => /^([ >]) /.test(line)).join('\n')
     const peers = net?.connected ? net.players : undefined
-    const key = `${peers ? net?.id : ''}\n${rows}`
+    const key = `${peers ? net?.id : ''}:${net?.hostId ?? 0}\n${rows}`
     let membershipChanged = peers?.size !== this.sessionPeers?.size
     if (!membershipChanged && peers) {
       for (const [id, peer] of peers) {
@@ -3027,7 +3026,7 @@ export class Shell implements System {
     this.element.classList.toggle('is-explore', !mode || Number(mode.value) === 2)
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!
     botsRow.hidden = !bots
-    if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
+    if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.disabled = !canManageBots() || invitedOnly; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
     const keep = params.get('bots.keepCount'), keepRow = this.element.querySelector<HTMLElement>('.bots-keep')!
     keepRow.hidden = !bots || !keep
     if (keep) { keepRow.querySelector<HTMLInputElement>('#bots-keep')!.checked = keep.value === true; }

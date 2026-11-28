@@ -46,7 +46,8 @@ export function archetypeOf(values: BotTraits): string {
 }
 
 /** Why a moderation control is or is not available (shared/moderation.ts canModerate). */
-export type ModerationReason = 'creator' | 'host-private' | 'not-host' | 'public-world' | 'self' | 'target-creator' | 'unknown'
+export type { ModerationReason } from '../../../shared/moderation'
+import type { ModerationReason } from '../../../shared/moderation'
 export interface Moderation { ok: boolean; reason: ModerationReason }
 
 /** The words under a control a viewer may not use, by the rule's reason and the control. */

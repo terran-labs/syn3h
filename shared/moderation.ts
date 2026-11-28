@@ -5,11 +5,15 @@
  * A creator (the server-granted role, feat/creator-badge) may in any room. A host may only in a
  * private room or a parallel universe: in a public world the host is merely whoever arrived first,
  * and on a busy day that stranger must not be able to eject or silence everyone. Nobody acts on
- * themselves, and nobody acts on a creator. Bots follow the same rule as players.
+ * themselves, and nobody acts on a creator. Bot removal and personality changes belong to the current host.
  */
 export type RoomKind = 'public' | 'universe' | 'private'
 export interface Moderator { id: number; host: boolean; role?: 'creator'; bot?: boolean }
-export type ModerationReason = 'creator' | 'host-private' | 'not-host' | 'public-world' | 'self' | 'target-creator' | 'unknown'
+export type ModerationReason = 'creator' | 'host-bot' | 'host-private' | 'not-host' | 'public-world' | 'self' | 'target-creator' | 'unknown'
+
+export function botManagement(host: boolean): { ok: boolean; reason: ModerationReason } {
+  return host ? { ok: true, reason: 'host-bot' } : { ok: false, reason: 'not-host' }
+}
 
 export function canModerate(actor: Moderator | undefined, target: Moderator | undefined, kind: RoomKind): { ok: boolean; reason: ModerationReason } {
   if (!actor || !target || actor.bot) return { ok: false, reason: 'unknown' }
