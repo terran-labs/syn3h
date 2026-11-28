@@ -350,11 +350,17 @@ export class Inspector {
       : [{ opacity: 0, transform: 'translateX(20px)' }, { opacity: 1, transform: 'translateX(0)' }]
     const duration = phone ? (value ? PHONE_PANEL_MS.show : PHONE_PANEL_MS.hide) : 180
     if (phone && value) this.arrive()
-    const motion = this.element.animate(value ? frames : [...frames].reverse(), { duration, easing: phone && !value ? 'cubic-bezier(.4,0,.8,.4)' : 'cubic-bezier(.2,.8,.2,1)' })
+    // Hold the transparent endpoint until the finish handler hides the panel.
+    // Otherwise Liquid can present the resting opacity for one frame as Chat closes.
+    const motion = this.element.animate(value ? frames : [...frames].reverse(), {
+      duration, easing: phone && !value ? 'cubic-bezier(.4,0,.8,.4)' : 'cubic-bezier(.2,.8,.2,1)',
+      fill: value ? 'none' : 'forwards',
+    })
     this.visibilityMotion = motion
     motion.onfinish = () => {
       if (this.visibilityMotion !== motion) return
       this.element.hidden = !this.shown
+      if (!value) motion.cancel()
       this.visibilityMotion = undefined
     }
   }

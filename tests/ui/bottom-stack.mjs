@@ -60,7 +60,7 @@ try {
     if (!touch) await context.addInitScript(() => { try { localStorage.setItem('mira.sidebar.width', '10000') } catch { /* storage optional */ } })
     const page = await context.newPage()
     const errors = []; page.on('pageerror', error => errors.push(String(error.message).slice(0, 300)))
-    await page.goto(`${base}?autoplay=1&vehicle=buggy&room=bottom-stack-${tag}-${Date.now()}`)
+    await page.goto(`${base}?autoplay=1&vehicle=buggy&gfx=3&room=bottom-stack-${tag}-${Date.now()}`)
     await page.waitForFunction(() => window.mira?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     await page.waitForFunction(() => document.querySelector('.mira-shell')?.classList.contains('is-playing') && !document.querySelector('.mira-shell').classList.contains('is-descending'), null, { timeout: 120000 })
@@ -103,7 +103,8 @@ try {
     // there for the rest of this visit, after each real sample.
     await page.evaluate(() => {
       const quality = window.mira.game.quality, history = quality.history, level = quality.governor.level
-      const offer = Object.freeze({ level, targetLevel: Math.max(0, level - 1), observedFps: 24, bots: 4, fewerBots: false })
+      const offer = { level, targetLevel: Math.max(0, level - 1), observedFps: 24, bots: 4, fewerBots: false }
+      window.__stackOfferDirection = direction => { offer.targetLevel = level + direction; quality.publishPerformance() }
       const sample = history.sample.bind(history)
       history.sample = (...args) => { const changed = sample(...args); history.recommendation = offer; return changed }
       history.recommendation = offer
@@ -133,6 +134,41 @@ try {
     assert.ok(await page.evaluate(() => { const n = document.getElementById('mira-build-notice'); const r = n.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === n && getComputedStyle(n).pointerEvents !== 'none' }), `${tag} in play: the build notice takes a tap`)
     assert.ok(play.items.length >= 2, `${tag} in play: the build notice and the offer both show (${play.items.map(i => i.name)})`)
 
+    if (width === 390 || width === 1280) {
+      const actions = page.locator('.bottom-stack > .performance-recommendation .performance-offer-actions')
+      const keep = actions.locator('[data-performance=ignore]')
+      const change = actions.locator('[data-performance=lower]')
+      const glyphs = await actions.evaluate(el => {
+        const group = el.getBoundingClientRect()
+        const buttons = [...el.querySelectorAll('button:not([hidden])')]
+        const first = buttons[0].getBoundingClientRect(), last = buttons.at(-1).getBoundingClientRect()
+        return { centerError: Math.abs((group.left + group.right - first.left - last.right) / 2),
+          gap: last.left - first.right, expectedGap: parseFloat(getComputedStyle(el).columnGap),
+          ink: buttons.map(button => {
+            const svg = button.querySelector('svg'), text = button.querySelector('span')
+            const b = button.getBoundingClientRect(), g = svg.getBoundingClientRect(), t = text.getBoundingClientRect()
+            return { beforeText: g.right <= t.left, centerError: Math.abs((b.top + b.bottom - g.top - g.bottom) / 2),
+              stroke: getComputedStyle(svg).strokeWidth, hidden: svg.getAttribute('aria-hidden') }
+          }) }
+      })
+      assert.ok(glyphs.centerError <= 1 && Math.abs(glyphs.gap - glyphs.expectedGap) <= 1, `${tag}: offer actions are centered and evenly spaced`)
+      assert.equal(glyphs.ink.length, 2, `${tag}: only Keep and Switch show in a level-only offer`)
+      for (const glyph of glyphs.ink) {
+        assert.ok(glyph.beforeText && glyph.centerError <= 1 && glyph.hidden === 'true', `${tag}: each decorative glyph is centered before its label`)
+      }
+      assert.equal(glyphs.ink[0].stroke, glyphs.ink[1].stroke)
+      assert.match(await keep.innerText(), /^Keep /)
+      assert.equal(await change.getAttribute('data-direction'), 'down')
+      assert.equal(await change.locator('svg').evaluate(svg => getComputedStyle(svg).transform), 'none')
+      // Send the opposite offer through the same live Performance panel.
+      await page.evaluate(() => window.__stackOfferDirection(1))
+      assert.equal(await change.getAttribute('data-direction'), 'up')
+      assert.equal(await change.locator('svg').evaluate(svg => new DOMMatrixReadOnly(getComputedStyle(svg).transform).d), -1)
+      assert.match(await change.innerText(), /^Switch to /)
+      if (out) await page.screenshot({ path: `${out}/${tag}-play-up-offer.png` })
+      await page.evaluate(() => window.__stackOfferDirection(-1))
+    }
+
     // Paused, with the build notice.
     // Paused as the player pauses (Shell.requestPause): wait for the thumb controls' fade out and
     // the pause bar's fade in to finish, so a control half faded is not measured as shown.
@@ -156,6 +192,24 @@ try {
     // which the overlap checks above cannot see. Every pause button lies wholly inside the view.
     const outside = await page.evaluate(() => [...document.querySelectorAll('.pause-actions button')].filter(b => { const r = b.getBoundingClientRect(); return r.left < 0 || r.top < 0 || r.right > innerWidth || r.bottom > innerHeight }).map(b => b.className.split(' ')[0]))
     assert.deepEqual(outside, [], `${tag} paused: every pause button lies inside the viewport`)
+    if (width === 390 || width === 1280) {
+      await page.evaluate(() => {
+        mira.shell.requestResume()
+        mira.shell.showCard('performance')
+      })
+      const level = page.locator('.world-inspector:not(.lobby-settings) .wi-card[data-section=performance] .wi-level')
+      await level.waitFor({ state: 'visible' })
+      const alignment = await level.evaluate(el => {
+        const centerY = node => { const rect = node.getBoundingClientRect(); return (rect.top + rect.bottom) / 2 }
+        const select = centerY(el.querySelector('.wi-level-select'))
+        return [...el.querySelectorAll('.wi-step')].map(button => ({
+          step: Math.abs(centerY(button) - select),
+          glyph: Math.abs(centerY(button.querySelector('svg')) - centerY(button)),
+        }))
+      })
+      assert.equal(alignment.length, 2)
+      for (const { step, glyph } of alignment) assert.ok(step <= 1 && glyph <= 1, `${tag}: each stepper and glyph centers on the quality selector`)
+    }
     assert.deepEqual(errors, [], `${tag}: no page errors`)
     await context.close()
     console.log(`${tag}: bottom stack ok`)
