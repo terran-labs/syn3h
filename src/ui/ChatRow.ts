@@ -26,7 +26,7 @@ export class ChatRow {
   constructor(parent: HTMLElement, signal?: AbortSignal) {
     this.element.className = 'hud-chat'
     this.button.type = 'button'; this.button.className = 'acc-row'; this.button.dataset.id = 'chat'
-    this.button.innerHTML = `<span class="acc-name" aria-hidden="true">Chat</span>${keycapHtml(CHAT_KEY)}<i class="acc-pip" aria-hidden="true"></i>`
+    this.button.innerHTML = `${keycapHtml(CHAT_KEY)}<span class="acc-name" aria-hidden="true">Chat</span><i class="acc-pip" aria-hidden="true"></i>`
     this.count.className = 'chat-count'; this.count.setAttribute('aria-hidden', 'true'); this.count.hidden = true
     // Just after the word, inside the name's fixed column: the key column never moves.
     this.button.querySelector('.acc-name')!.append(this.count)

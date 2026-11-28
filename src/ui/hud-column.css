@@ -15,8 +15,7 @@
    moment when something changes or is pointed at.
 
    One row form for every control (the owner, 17 November 2026: "standardize all of these"):
-   its node on the spine, then its name, then its key (18 November: the name first, the key in a
-   second column). No pill or outline around a row or around the selected gear. The keys of
+   its node on the spine, then its key and its name. No pill or outline around a row or around the selected gear. The keys of
    Wings, Flight, Zorb and Chat show always; the gear's number glyphs, its description and
    every other hint show only while the cursor is free (paused, a panel open, not captured). One type scale: --col-type for names
    and hints, --col-cap-type for key caps; the one larger size is the selected gear's name
@@ -39,11 +38,13 @@
      space between these, should be much, much lower ... a compact, integrated control"): the
      names stay separate lines, the selected one's larger type clear of its neighbours. The
      Wings, Zorb and Chat rows below keep --col-row, which their key caps need. */
-  --col-gear-row: 16px;
+  --col-gear-row: 20px;
   /* Between the drum and the rows below it; Chat follows the accessories at the row's own pitch. */
   --col-gap: 8px;
   /* The content line and the spine, from the column's left edge. */
   --col-inset: 24px;
+  --col-key-width: 15px;
+  --col-key-gap: 9px;
   /* Top edges, stacked down from the shared top edge: the drum (three rows), then the
      accessories, then Chat. */
   /* The column's top inset matches its left (the owner, 25 November 2026: "farther down from
@@ -156,7 +157,7 @@
    leftward, and the name never moves. Captured, the numbers leave and the names start at the
    row's inset. The charge bar and status start under the name's first letter. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector {
-  --gs-num: 15px; --gs-num-gap: 9px; --gs-name-x: calc(var(--gs-num) + var(--gs-num-gap));
+  --gs-num: var(--col-key-width); --gs-num-gap: var(--col-key-gap); --gs-name-x: calc(var(--gs-num) + var(--gs-num-gap));
   --gs-meter-left: var(--col-inset);
 }
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector[data-mode=locked] { --gs-name-x: 0px; }
@@ -168,7 +169,7 @@
 /* The number's cap is taller than the name's letters: it takes no extra height in the row, so
    the name stays centred on its node. */
 :root .mira-shell.exploration-ui:not(.has-touch) .gear-selector .gs-label .gs-index.keycap { margin-block: -.35em; }
-/* At the compact pitch the number caps are stacked 16 px apart: their box is a little shorter
+/* At the compact pitch their box is a little shorter
    here (the same cap, less padding above and below the digit), so the selected row's larger cap
    clears its neighbours' by more than 2 px with the cursor free. One pitch, free or captured,
    so nothing moves when the cursor locks. */
@@ -239,11 +240,12 @@
 :root .mira-shell :is(.hud-accessories, .hud-chat) button.acc-row:focus-visible .acc-name { text-decoration: underline 1px var(--s3-accent-2); text-underline-offset: 5px; }
 /* Every key in the column is the interface's one keycap (keycap.ts, keycap.css): the
    accessories' and Chat's keys, the gear's numbers and its hints. Touch has no keys. */
-/* Wings, Flight, Zorb and Chat: the name first, in a fixed column, then its key in a second
-   column, shown always, the cursor free or captured (the owner, 18 November 2026). The gear's
-   number glyphs still show only with the cursor free. Touch has no keys. */
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) .acc-name { flex: none; width: 66px; }
-:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { flex: none; }
+/* Center the accessory and Chat shortcuts on the same track as the gear numbers.
+   SP can extend a little past its track without shifting the name beside it. */
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) button.acc-row {
+  display: grid; grid-template-columns: var(--col-key-width) 1fr; gap: var(--col-key-gap);
+}
+:root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) kbd { justify-self: center; }
 /* The rows' keys take their names' ink: dim at rest, full white with the name when awake,
    pointed at or on (the owner, 25 November 2026: the keys no brighter than the names). */
 :root .mira-shell.exploration-ui:not(.has-touch) :is(.hud-accessories, .hud-chat) .is-on kbd { color: var(--s3-ink); }

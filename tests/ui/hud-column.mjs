@@ -196,7 +196,7 @@ try {
         onLines(await lines(page), `${w}x${h} gear ${g + 1}`)
         oneColumn(await names(page), `${w}x${h} gear ${g + 1}`)
       }
-      const keyX = () => page.evaluate(() => [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) kbd')].map((k) => k.getBoundingClientRect().left))
+      const keyX = () => page.evaluate(() => [...document.querySelectorAll(':is(.hud-accessories, .hud-chat) .acc-row:not([hidden]) kbd')].map((k) => { const box = k.getBoundingClientRect(); return box.left + box.width / 2 }))
       const still = await keyX()
       assert.ok(still.every((x) => Math.abs(x - still[0]) <= .5), `the keys share one column ${JSON.stringify(still)}`)
       for (const n of [1, 12, 0]) {
