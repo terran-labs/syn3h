@@ -1,3 +1,4 @@
+import { holdGain } from './holdGain'
 import { dirtVolume, engineIdle, engineRange, engineVolume, slipVolume, windVolume } from './params'
 
 export interface MotionAudio { speed: number; throttle: number; airborne: boolean; kind?: string; wings?: boolean; slip?: number; altitude?: number; clearance?: number; zorbed?: boolean; /** Metres per second the body moves sideways (along its right axis) with at least two wheels down: a slide. */ slide?: number; /** The ground under a sliding vehicle (src/world/terrain/surface.ts), read only while it slides. */ surface?: string }
@@ -177,7 +178,7 @@ export class Engine {
     if (Boolean(motion.zorbed) !== this.zorbed) {
       this.zorbed = Boolean(motion.zorbed)
       const now = this.context.currentTime
-      this.vehicleGain.gain.cancelAndHoldAtTime(now)
+      holdGain(this.vehicleGain.gain, now)
       this.vehicleGain.gain.linearRampToValueAtTime(this.zorbed ? 0 : 1, now + .2)
     }
     const m=motionMix(motion),p=voiceProfile(motion),now=this.context.currentTime,level=enabled?1:0
@@ -202,7 +203,7 @@ export class Engine {
     if(this.disposed)return;this.disposed=true
     if(immediate){for(const source of this.sources){source.onended=null;source.stop()}for(const node of this.nodes)node.disconnect();this.sources.length=0;this.nodes.length=0;return}
     const now=this.context.currentTime
-    for(const g of [this.tone,this.roar,this.dirt,this.wind,this.field,this.scrub,this.pulseDepth]){g.gain.cancelAndHoldAtTime(now);g.gain.linearRampToValueAtTime(0,now+.04)}
+    for(const g of [this.tone,this.roar,this.dirt,this.wind,this.field,this.scrub,this.pulseDepth]){holdGain(g.gain, now);g.gain.linearRampToValueAtTime(0,now+.04)}
     for(const source of this.sources)source.stop(now+.05)
     this.sources[0].onended=()=>{for(const node of this.nodes)node.disconnect()}
   }

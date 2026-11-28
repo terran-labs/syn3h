@@ -1,3 +1,4 @@
+import { holdGain } from './holdGain'
 import { touchdownFall } from '../world/water/spraySim'
 import * as THREE from 'three/webgpu'
 import type { System } from '../core/Game'
@@ -336,7 +337,7 @@ export class GameAudio implements System {
     const now = this.context.currentTime
     // A pause owns the master gain until it ends; the other buses can still follow their sliders.
     if (!this.paused) this.master!.gain.setTargetAtTime(muted.value ? 0 : masterVolume.value, now, 0.03)
-    this.music!.gain.cancelAndHoldAtTime(now)
+    holdGain(this.music!.gain, now)
     this.music!.gain.setTargetAtTime(musicVolume.value * (this.enabled ? 1 : LOBBY_LIFT), now, this.mixedFor === this.enabled ? 0.03 : 0.8)
     this.mixedFor = this.enabled
     this.effects!.gain.setTargetAtTime(effectsVolume.value, now, 0.03)
